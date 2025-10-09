@@ -1,0 +1,1933 @@
+<!DOCTYPE html>
+<html data-theme="light">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons|Material+Icons+Outlined" rel="stylesheet">
+  <!-- Google Sign-In スクリプトは不要なため削除 -->
+
+  <script>
+    (function(){
+      var pref = <?!= JSON.stringify(userInfo.theme || 'light') ?>;
+      var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      var resolved = pref === 'system' && media ? (media.matches ? 'dark' : 'light') : pref;
+      document.documentElement.setAttribute('data-theme', resolved);
+      document.documentElement.dataset.themePref = pref;
+    })();
+  </script>
+
+  <style>
+    :root{
+      color-scheme: light;
+      --primary:#517cb2;
+      --primary-700:#35567f;
+      --surface:#f2f4f9;
+      --card:#ffffff;
+      --card-border:#e8edf5;
+      --card-shadow:0 1px 2px rgba(15,23,42,.05);
+      --text-900:#0f172a;
+      --text-700:#1e293b;
+      --muted:#64748b;
+      --on-primary:#ffffff;
+      --warn:#f5a524;
+      --fab:#e85d6a;
+      --fab-shadow:0 14px 28px rgba(232,93,106,.35);
+      --dropdown-shadow:0 10px 28px rgba(0,0,0,.20);
+      --footer-h:56px;
+      --fade:220ms;
+      --body-bg:
+        radial-gradient(1100px 600px at 100% -10%, rgba(81,124,178,.12), transparent 60%),
+        radial-gradient(900px 400px at -10% 0%, rgba(81,124,178,.10), transparent 55%),
+        var(--surface);
+      --task-card-bg:linear-gradient(0deg, rgba(81,124,178,.10), rgba(81,124,178,.10)), var(--card);
+      --msg-card-unread-bg:linear-gradient(0deg, rgba(255,245,225,.95), rgba(255,245,225,.95)), var(--card);
+      --badge-bg:#e53935;
+      --topbar-hover-bg:rgba(255,255,255,.12);
+      --topbar-active-bg:#ffffff;
+      --topbar-active-fg:var(--primary);
+      --footer-bg:var(--primary);
+      --footer-indicator:#ffffff;
+      --footer-shadow:0 -8px 20px rgba(81,124,178,.18);
+      --skeleton-1:#cfdaf0;
+      --skeleton-2:#e6edfb;
+      --input-bg:#ffffff;
+      --input-border:#ced4da;
+      --assignee-border:#e8edf5;
+      --assignee-bg:#ffffff;
+      --assignee-divider:#e6ebf5;
+      --badge-counter-bg:#e7f0ff;
+      --badge-counter-fg:#1d4ed8;
+      --attach-meta:#64748b;
+      --divider:rgba(15,23,42,.08);
+      --focus-ring:rgba(81,124,178,.25);
+      --tab-hover-bg:rgba(81,124,178,.12);
+      --tab-active-bg:#ffffff;
+      --tab-active-text:var(--primary);
+      --priority-high-bg:rgba(229,57,53,.12);
+      --priority-high-text:#b91c1c;
+      --priority-middle-bg:rgba(81,124,178,.14);
+      --priority-middle-text:var(--primary-700);
+      --priority-low-bg:rgba(16,185,129,.14);
+      --priority-low-text:#166534;
+      --alert-info-bg:rgba(81,124,178,.12);
+      --alert-info-border:rgba(81,124,178,.25);
+      --alert-info-text:var(--text-900);
+    }
+    :root[data-theme="dark"]{
+      color-scheme: dark;
+      --primary:#5f7dff;
+      --primary-700:#4257d1;
+      --surface:#070d1d;
+      --card:#101a31;
+      --card-border:rgba(122,162,255,.25);
+      --card-shadow:0 28px 46px rgba(4,10,24,.68);
+      --text-900:#e8edff;
+      --text-700:#c7d5ff;
+      --muted:#97a4c7;
+      --on-primary:#f5f8ff;
+      --warn:#f5a524;
+      --fab:#f16fa2;
+      --fab-shadow:0 18px 36px rgba(241,111,162,.45);
+      --dropdown-shadow:0 24px 46px rgba(2,8,20,.75);
+      --body-bg:
+        radial-gradient(1200px 700px at 100% -10%, rgba(122,162,255,.20), transparent 60%),
+        radial-gradient(900px 500px at -10% 0%, rgba(79,114,255,.18), transparent 55%),
+        linear-gradient(160deg, #050912 0%, #0b1730 45%, #051126 100%);
+      --task-card-bg:linear-gradient(0deg, rgba(122,162,255,.18), rgba(122,162,255,.12)), var(--card);
+      --msg-card-unread-bg:linear-gradient(0deg, rgba(255,196,119,.22), rgba(255,196,119,.12)), var(--card);
+      --badge-bg:#f87171;
+      --topbar-hover-bg:rgba(236,242,255,.12);
+      --topbar-active-bg:rgba(236,242,255,.18);
+      --topbar-active-fg:#f5f8ff;
+      --footer-bg:#0b1326;
+      --footer-indicator:#7aa2ff;
+      --footer-shadow:0 -16px 30px rgba(2,8,20,.55);
+      --skeleton-1:#1a2742;
+      --skeleton-2:#253357;
+      --input-bg:#111d34;
+      --input-border:#27365b;
+      --assignee-border:#2f3e62;
+      --assignee-bg:#111d34;
+      --assignee-divider:#2a3a5e;
+      --badge-counter-bg:rgba(122,162,255,.22);
+      --badge-counter-fg:#9fb8ff;
+      --attach-meta:#a8b3d4;
+      --divider:rgba(148,163,184,.28);
+      --focus-ring:rgba(122,162,255,.32);
+      --tab-hover-bg:rgba(122,162,255,.22);
+      --tab-active-bg:rgba(122,162,255,.25);
+      --tab-active-text:#f5f8ff;
+      --priority-high-bg:rgba(248,113,113,.22);
+      --priority-high-text:#fecaca;
+      --priority-middle-bg:rgba(122,162,255,.22);
+      --priority-middle-text:#dbe4ff;
+      --priority-low-bg:rgba(74,222,128,.22);
+      --priority-low-text:#bbf7d0;
+      --alert-info-bg:rgba(95,125,255,.22);
+      --alert-info-border:rgba(95,125,255,.4);
+      --alert-info-text:#f5f8ff;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      overflow-x:hidden;
+      background:var(--body-bg);
+      color:var(--text-900);
+    }
+
+    /* Header */
+    header.navbar{
+      background:var(--primary);
+      color:var(--on-primary);
+      border-bottom:1px solid rgba(255,255,255,.18);
+      min-height:44px;
+    }
+    header .container-xl{ padding-top:2px; padding-bottom:2px; }
+    header .navbar-brand{
+      color:var(--on-primary) !important;
+      font-weight:800;
+      margin:0;
+      letter-spacing:.02em;
+    }
+
+    /* PC topbar */
+    .topbar{
+      background:var(--primary);
+      border-top:1px solid rgba(255,255,255,.12);
+      border-bottom:1px solid var(--divider);
+      padding:2px 0;
+    }
+    .topbar .nav-link{
+      color:var(--on-primary);
+      padding:.25rem .6rem;
+      border-radius:10px;
+      display:flex; align-items:center; position:relative;
+    }
+    .topbar .nav-link:hover{ background:var(--topbar-hover-bg); color:var(--on-primary); }
+    .topbar .nav-link.active{ background:var(--topbar-active-bg); color:var(--topbar-active-fg); }
+    .badge-unread{
+      --s:20px;
+      background:var(--badge-bg)!important;
+      color:#fff; font-weight:800; font-size:12px;
+      min-width:var(--s); height:var(--s); border-radius:50%;
+      display:inline-flex; align-items:center; justify-content:center; padding:0;
+    }
+
+    :root[data-theme="dark"] header.navbar,
+    :root[data-theme="dark"] .topbar{
+      background:linear-gradient(135deg, rgba(95,125,255,.92), rgba(36,45,110,.95));
+    }
+    :root[data-theme="dark"] .footer-nav{
+      background:linear-gradient(135deg, rgba(10,18,40,.92), rgba(5,12,30,.95));
+    }
+
+    /* Footer nav mobile */
+    .footer-nav{
+      position:fixed; bottom:0; width:100%; height:var(--footer-h);
+      background:var(--footer-bg);
+      z-index:1020;
+      border-top:1px solid var(--divider);
+      box-shadow:var(--footer-shadow);
+    }
+    .footer-nav .nav-link{
+      color:var(--on-primary);
+      display:flex; flex-direction:column; align-items:center; gap:.1rem;
+      padding:.25rem 0; position:relative;
+    }
+    .footer-nav .nav-link .material-icons-outlined{ font-size:26px; color:var(--on-primary); }
+    .footer-nav .nav-link .label{ display:none; }
+    .footer-nav .nav-link.active::after{
+      content:""; position:absolute; bottom:4px; left:50%; width:24px; height:3px;
+      transform:translateX(-50%); background:var(--footer-indicator); border-radius:2px;
+    }
+
+    .nav-tabs{
+      border-bottom:1px solid var(--divider);
+      gap:12px;
+      flex-wrap:nowrap;
+      overflow-x:auto;
+      padding-bottom:4px;
+    }
+    .nav-tabs .nav-link{
+      border:0;
+      border-radius:999px;
+      padding:.45rem 1.1rem;
+      color:var(--muted);
+      background:transparent;
+      font-weight:600;
+      transition:all .2s ease;
+      white-space:nowrap;
+    }
+    .nav-tabs .nav-link:hover,
+    .nav-tabs .nav-link:focus{
+      color:var(--text-900);
+      background:var(--tab-hover-bg);
+    }
+    .nav-tabs .nav-link.active{
+      color:var(--tab-active-text);
+      background:var(--tab-active-bg);
+      box-shadow:0 8px 18px rgba(15,23,42,.08);
+    }
+    :root[data-theme="dark"] .nav-tabs .nav-link.active{
+      box-shadow:0 12px 24px rgba(2,8,20,.45);
+    }
+
+    /* Layout / cards */
+    .page-body{ padding-bottom:120px; }
+    .container-xl{
+      max-width:1080px;
+      width:100%;
+      margin-left:auto;
+      margin-right:auto;
+      padding-left: calc(12px + env(safe-area-inset-left));
+      padding-right: calc(12px + env(safe-area-inset-right));
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--card-border);
+      border-radius:14px;
+      box-shadow:var(--card-shadow);
+      overflow:hidden;
+      background-clip:padding-box;
+      color:var(--text-900);
+    }
+    .card .card-body{ padding:14px 16px; min-width:0; }
+    .section-head{ display:flex; align-items:center; gap:.5rem; }
+    .section-head .material-icons{
+      color:var(--on-primary); background:var(--primary);
+      width:26px; height:26px; border-radius:8px; font-size:18px;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+
+    /* Task / Message */
+    .msg-card{ border-radius:14px; overflow:hidden; background-clip:padding-box; }
+    .task-card{
+      border-left:4px solid var(--primary);
+      background:var(--task-card-bg);
+      border-radius:14px; overflow:hidden; background-clip:padding-box;
+    }
+    .msg-card.unread{
+      background:var(--msg-card-unread-bg);
+      border-left:4px solid var(--warn);
+    }
+    .msg-icon{ width:24px; display:inline-flex; justify-content:center; margin-right:6px; color:var(--muted); }
+    .msg-card.unread .msg-icon{ color:var(--warn); }
+    .msg-card .title{ font-weight:700; }
+    .msg-header{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .msg-card .priority-pill{ font-size:.7rem; padding:2px 8px; }
+
+    .msg-lines{ display:flex; flex-direction:column; gap:2px; line-height:1.25; min-width:0; }
+    .marquee{ position:relative; overflow:hidden; white-space:nowrap; color:var(--muted); font-size:.95rem;width:100%; }
+    .marquee .track{ display:inline-block; padding-left:100%; will-change:transform; animation:marq 10s linear infinite; }
+    .marquee.line2 .track{ animation-delay:.6s; }
+    @keyframes marq{ 0%{ transform:translateX(0) } 100%{ transform:translateX(-100%) } }
+    @media (prefers-reduced-motion: reduce){ .marquee .track{ animation:none !important; } }
+
+    /* Fade / Shimmer */
+    .fade-container{ opacity:0; transition:opacity var(--fade) ease; }
+    .fade-container.show{ opacity:1; }
+    .skeleton{ border-radius:14px; background:linear-gradient(90deg,var(--skeleton-1) 25%, var(--skeleton-2) 50%, var(--skeleton-1) 75%); background-size:200% 100%; animation:shim 2.6s infinite; min-height:72px; }
+    .skeleton.sm{ min-height:50px; }
+    .skeleton.text{ height:16px; width:70%; min-height:16px; }
+    @keyframes shim{0%{background-position:-200% 0}100%{background-position:200% 0}}
+
+    /* Swipe views (px aligned) */
+    .views-wrapper{ position:relative; overflow:hidden; }
+    .views-track{
+      display:flex;
+      transition:transform 650ms cubic-bezier(.25,.8,.25,1);
+      will-change:transform;
+    }
+    .view-panel{ flex:0 0 100%; min-width:0; }
+    .view-panel.is-hidden{ visibility:hidden; pointer-events:none; }
+
+    /* FAB */
+    .fab.dropup-center{ position:fixed; left:50%; bottom:calc(var(--footer-h) - 28px); transform:translateX(-50%); z-index:1030; }
+    .fab .btn{ width:60px; height:60px; border-radius:50%; padding:0; background:var(--fab); border-color:var(--fab); box-shadow:var(--fab-shadow); display:flex; align-items:center; justify-content:center; }
+    .fab .btn .material-icons{ font-size:30px; color:var(--on-primary); }
+    .fab .dropdown-toggle::after{ display:none!important; }
+    .fab .dropdown-menu{ display:none; padding:8px 12px; border-radius:14px; box-shadow:var(--dropdown-shadow); gap:12px; background:var(--card); border:1px solid var(--card-border); }
+    .fab .dropdown-menu .dropdown-item{
+      border-radius:999px;
+      padding:.55rem 1.1rem;
+      font-weight:600;
+      color:var(--text-900);
+      display:flex;
+      align-items:center;
+      gap:.5rem;
+    }
+    .fab .dropdown-menu .dropdown-item .material-icons-outlined{ color:var(--text-900); }
+    .fab .dropdown-menu .dropdown-item:hover,
+    .fab .dropdown-menu .dropdown-item:focus{
+      background:var(--tab-hover-bg);
+      color:var(--text-900);
+    }
+    :root[data-theme="dark"] .fab .dropdown-menu .dropdown-item{
+      color:#f5f8ff;
+    }
+    :root[data-theme="dark"] .fab .dropdown-menu .dropdown-item .material-icons-outlined{
+      color:#f5f8ff;
+    }
+    .fab .dropdown-menu.show{ display:flex; align-items:center; justify-content:center; }
+
+    @media (max-width: 576px){
+      .page-body{ padding-left:12px; padding-right:12px; }
+    }
+
+    /* 検索バー */
+    .subhead-bar .input-group-text{ background:var(--input-bg); border-right:0; border-color:var(--input-border); color:var(--text-700); }
+    .subhead-bar .form-control{ border-left:0; background:var(--input-bg); border-color:var(--input-border); color:var(--text-900); }
+    .subhead-bar .form-control::placeholder{ color:var(--muted); }
+
+    /* 設定ビュー - ユーザー表 */
+    .role-badge{ font-size:.85rem; }
+
+    /* 担当者選択UI */
+    .assignees-wrap{ border:1px solid var(--assignee-border); border-radius:12px; padding:10px; background:var(--assignee-bg); }
+    .assignees-toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+    .assignees-list{ max-height:260px; overflow:auto; border-top:1px dashed var(--assignee-divider); padding-top:8px; }
+    .assignees-list .form-check{ margin-bottom:6px; }
+    .badge-counter{ background:var(--badge-counter-bg); color:var(--badge-counter-fg); border:1px solid transparent; }
+
+    /* 添付表示 */
+    .attach-list .list-group-item{ display:flex; align-items:center; justify-content:space-between; }
+    .attach-meta{ font-size:.9rem; color:var(--attach-meta); }
+
+    .list-group-item{
+      background:var(--card);
+      border-color:var(--card-border);
+      color:var(--text-900);
+    }
+    .text-muted{ color:var(--muted)!important; }
+    .task-title-line{ color:var(--text-900); }
+    .task-title-line strong{ color:var(--text-900); }
+    .link-surface{
+      color:var(--text-900)!important;
+    }
+    .link-surface:hover,
+    .link-surface:focus{
+      color:var(--text-900)!important;
+    }
+    .link-surface .text-muted{
+      color:var(--muted)!important;
+    }
+    .task-meta{
+      min-width:84px;
+      text-align:right;
+      font-size:.85rem;
+      color:var(--muted);
+    }
+
+    .alert-info{
+      background:var(--alert-info-bg);
+      color:var(--alert-info-text);
+      border-color:var(--alert-info-border);
+    }
+
+    .priority-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      padding:2px 10px;
+      border-radius:999px;
+      font-size:.75rem;
+      font-weight:700;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .priority-pill.priority-high{
+      background:var(--priority-high-bg);
+      color:var(--priority-high-text);
+    }
+    .priority-pill.priority-middle{
+      background:var(--priority-middle-bg);
+      color:var(--priority-middle-text);
+    }
+    .priority-pill.priority-low{
+      background:var(--priority-low-bg);
+      color:var(--priority-low-text);
+    }
+
+    .task-assignee-line,
+    .task-meta-line{
+      color:var(--muted);
+      font-size:.85rem;
+    }
+    .task-meta-line{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      margin-top:4px;
+    }
+    .badge-soft{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      background:var(--priority-middle-bg);
+      color:var(--priority-middle-text);
+      border:1px solid transparent;
+      border-radius:999px;
+      font-size:.72rem;
+      font-weight:600;
+      padding:2px 10px;
+    }
+    .badge-soft .material-icons{
+      font-size:14px;
+    }
+    :root[data-theme="dark"] .badge-soft{
+      background:rgba(122,162,255,.26);
+      color:#e8edff;
+    }
+
+    .modal-modern{
+      border-radius:18px;
+      border:1px solid var(--card-border);
+      background:var(--card);
+      overflow:hidden;
+    }
+    .modal-modern .modal-header{
+      border-bottom:1px solid var(--divider);
+      padding:18px 22px;
+      background:linear-gradient(135deg, rgba(81,124,178,.08), transparent);
+    }
+    :root[data-theme="dark"] .modal-modern .modal-header{
+      background:linear-gradient(135deg, rgba(95,125,255,.22), rgba(16,26,53,.4));
+    }
+    .modal-modern .modal-title,
+    .modal-modern h6{
+      font-weight:700;
+    }
+    .modal-modern .modal-body{
+      padding:22px;
+      background:linear-gradient(180deg, rgba(148,163,184,.04), transparent 24%);
+    }
+    .modal-modern .modal-footer{
+      border-top:1px solid var(--divider);
+      padding:16px 22px;
+      background:var(--card);
+    }
+    .modal-modern .btn{
+      border-radius:999px;
+    }
+    .modal-modern .btn.btn-link{
+      border-radius:50px;
+      padding:6px 10px;
+    }
+
+    .form-section{
+      border:1px solid var(--card-border);
+      border-radius:14px;
+      padding:16px 18px;
+      background:var(--card);
+      box-shadow:0 12px 28px rgba(15,23,42,.05);
+      margin-bottom:18px;
+    }
+    :root[data-theme="dark"] .form-section{
+      box-shadow:0 18px 32px rgba(2,8,20,.35);
+    }
+    .form-section-title{
+      font-size:.9rem;
+      font-weight:700;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+    .form-section .form-label{
+      font-weight:600;
+    }
+    .form-section .section-note{
+      font-size:.85rem;
+      color:var(--muted);
+      margin-top:4px;
+    }
+    .form-section .section-body{
+      color:var(--text-900);
+    }
+
+    .modal-content{
+      background:var(--card);
+      border:1px solid var(--card-border);
+      box-shadow:var(--card-shadow);
+      color:var(--text-900);
+    }
+    .modal-header,
+    .modal-footer{
+      background:var(--card);
+      border-color:var(--divider);
+    }
+    .modal-backdrop.show{
+      opacity:1;
+      background:rgba(5,10,20,.6);
+    }
+    :root[data-theme="light"] .modal-backdrop.show{
+      background:rgba(15,23,42,.35);
+    }
+
+    .form-label,
+    .modal-title{
+      color:var(--text-900);
+    }
+    .form-control,
+    .form-select,
+    textarea.form-control{
+      background:var(--input-bg);
+      border-color:var(--input-border);
+      color:var(--text-900);
+    }
+    .form-control:focus,
+    .form-select:focus,
+    textarea.form-control:focus{
+      border-color:var(--primary);
+      box-shadow:0 0 0 .2rem var(--focus-ring);
+    }
+    .form-control::placeholder,
+    textarea.form-control::placeholder{
+      color:var(--muted);
+    }
+    .form-control:disabled,
+    .form-select:disabled{
+      opacity:.8;
+    }
+    .form-control-plaintext{
+      color:var(--muted);
+    }
+
+    .btn-outline-primary{
+      color:var(--primary);
+      border-color:var(--primary);
+    }
+    .btn-outline-primary:hover,
+    .btn-outline-primary:focus{
+      background:var(--primary);
+      color:var(--on-primary);
+    }
+    [data-theme="dark"] .btn-secondary{
+      background:rgba(148,163,184,.18);
+      border-color:rgba(148,163,184,.35);
+      color:var(--text-900);
+    }
+    [data-theme="dark"] .btn-secondary:hover,
+    [data-theme="dark"] .btn-secondary:focus{
+      background:rgba(148,163,184,.28);
+      border-color:rgba(148,163,184,.48);
+    }
+
+    /* 認証ゲート（削除） */
+    .text-truncate-container {
+      min-width: 0;
+    }
+  </style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="plane" viewBox="0 0 24 24">
+    <path d="M2.2 11.2L20.6 2.6c.9-.4 1.8.6 1.3 1.5l-6.3 11.6c-.2.4-.7.6-1.1.5l-4.1-1.1a.8.8 0 0 1-.2-1.5l6.7-4.3-8.2 3.5c-.2.1-.5.1-.7-.1L2 12.3c-.6-.4-.5-1.2.2-1.6zM9.6 14.6l-.6 5a.8.8 0 0 0 1.3.7l3.9-3.4-4.6-1.3z"/>
+  </symbol>
+</svg>
+
+<div id="notification-area" style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2000;width:92%;max-width:520px;"></div>
+
+<header class="navbar navbar-expand-md d-print-none">
+  <div class="container-xl">
+    <a href="#" class="navbar-brand" data-view="home" title="<?!= userInfo.email ?>">ShiftFlow</a>
+    <div class="navbar-nav ms-auto flex-row align-items-center gap-2 order-md-last">
+      <!-- ログアウトボタンはGASの組み込み認証では不要なため削除 -->
+      <button type="button" class="btn btn-sm btn-outline-light" id="btn-admin-menu">
+        <span class="material-icons-outlined align-middle me-1">admin_panel_settings</span>管理者メニュー（準備中）
+      </button>
+      <span class="nav-link d-flex lh-1 text-reset p-0">
+        <img src="<?!= userInfo.imageUrl ?>" class="avatar avatar-sm" alt="User">
+        <span class="d-none d-xl-block ps-2">
+          <strong><?!= userInfo.name ?></strong>
+          <small class="d-block" style="opacity:.9">ログイン中</small>
+        </span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<nav class="navbar navbar-expand-md topbar d-none d-md-block">
+  <div class="container-xl">
+    <ul class="navbar-nav">
+      <li class="nav-item"><a class="nav-link active" href="#" data-view="home" title="ホーム"><span class="material-icons-outlined">home</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-view="tasks" title="タスク"><span class="material-icons-outlined">send</span></a></li>
+      <li class="nav-item position-relative">
+        <a class="nav-link" href="#" data-view="messages" title="メッセージ">
+          <span class="material-icons-outlined">mail</span>
+          <span class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none" id="badge-unread-top">0</span>
+        </a>
+      </li>
+      <li class="nav-item"><a class="nav-link" href="#" data-view="settings" title="設定"><span class="material-icons-outlined">settings</span></a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- 認証ゲート（ログイン画面）はGASが自動で表示するため、HTMLからは削除 -->
+
+<main class="page-body">
+
+  <div class="views-wrapper container-xl" id="viewsWrapper">
+    <div class="views-track" id="viewsTrack">
+      <section class="view-panel fade-container show" id="view-home">
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="section-head"><span class="material-icons">send</span><h3 class="m-0">未完了タスク</h3></div>
+          <a href="#" class="link-soft" data-view="tasks">すべて表示</a>
+        </div>
+        <div id="home-today-tasks" class="mt-2"></div>
+
+        <div class="d-flex justify-content-between align-items-center mt-4">
+          <div class="section-head"><span class="material-icons">mark_email_unread</span><h3 class="m-0">未読メッセージ</h3></div>
+          <a href="#" class="link-soft" data-view="messages">すべて表示</a>
+        </div>
+        <div id="home-unread" class="mt-2"></div>
+      </section>
+
+      <section class="view-panel fade-container is-hidden" id="view-tasks">
+        <h3 class="mt-3"><span class="material-icons align-middle me-1">send</span>タスク</h3>
+        <div class="subhead-bar mt-2">
+          <div class="input-group">
+            <span class="input-group-text material-icons-outlined">search</span>
+            <input type="text" class="form-control" id="task-search-box" placeholder="タイトル・担当・メモで検索">
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-2" id="tasksTabs">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-my">マイタスク</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-today">今日</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-all">全体タスク</button></li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="tab-my">
+            <div class="d-flex justify-content-end mt-2">
+              <button class="btn btn-outline-primary" id="btn-my-reload" type="button">再読込</button>
+            </div>
+            <div id="list-my" class="mt-2"></div>
+          </div>
+          <div class="tab-pane fade" id="tab-today"><div id="list-today" class="mt-2"></div></div>
+
+          <div class="tab-pane fade" id="tab-all">
+            <div class="d-flex justify-content-end mt-2">
+              <button class="btn btn-outline-primary" id="btn-all-reload" type="button">再読込</button>
+            </div>
+            <div id="list-all" class="mt-2"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view-panel fade-container is-hidden" id="view-messages">
+        <h3 class="mt-3"><span class="material-icons align-middle me-1">mail</span>メッセージ</h3>
+        <div class="subhead-bar mt-2">
+          <div class="input-group">
+            <span class="input-group-text material-icons-outlined">search</span>
+            <input type="text" class="form-control" id="msg-search-box" placeholder="件名・本文で検索">
+          </div>
+        </div>
+        <div class="row g-2 align-items-end mt-2">
+          <div class="col-auto">
+            <label class="form-label">フォルダ</label>
+            <select id="flt-msg-folder" class="form-select">
+              <option value="">すべて</option>
+              <? var __folders = (typeof folders !== 'undefined' && folders) ? folders : []; for (var i=0;i<__folders.length;i++){ ?>
+                <option value="<?!= __folders[i].id ?>"><?!= __folders[i].name ?></option>
+              <? } ?>
+            </select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label d-block">&nbsp;</label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="flt-msg-unread">
+              <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
+            </div>
+          </div>
+          <div class="col-auto">
+            <label class="form-label d-block">&nbsp;</label>
+            <button class="btn btn-outline-success" id="btn-msg-markall" type="button" aria-label="表示中の未読を一括既読">
+              <span class="material-icons align-middle me-1">done_all</span>一括既読
+            </button>
+          </div>
+        </div>
+        <div id="msg-list" class="mt-2"></div>
+      </section>
+
+      <section class="view-panel fade-container is-hidden" id="view-settings">
+        <h3 class="mt-3"><span class="material-icons align-middle me-1">settings</span>設定</h3>
+        <form class="mt-2" id="form-settings">
+          <div class="mb-3"><label class="form-label">表示名</label><input class="form-control" id="setting-name"/></div>
+          <div class="mb-3"><label class="form-label">プロフィール画像URL</label><input class="form-control" id="setting-image"/></div>
+          <div class="mb-3">
+            <label class="form-label d-flex align-items-center gap-2">テーマ<span class="badge bg-secondary">調整中</span></label>
+            <div class="form-control-plaintext text-muted small" id="setting-theme-display">自動適用中</div>
+            <input type="hidden" id="setting-theme" value="light">
+          </div>
+          <button class="btn btn-primary" type="button" id="btn-settings-save">
+            <span class="label">保存</span>
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <hr class="my-4">
+        <div class="alert alert-secondary" role="alert">
+          <span class="material-icons-outlined align-middle me-1">admin_panel_settings</span>
+          管理者メニュー（準備中）：この画面からのユーザー管理は近日対応予定です。
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div class="fab dropup dropup-center">
+  <button class="btn dropdown-toggle" id="fabButton" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-offset="10,10" aria-expanded="false" aria-label="作成">
+    <span class="material-icons">add</span>
+  </button>
+  <ul class="dropdown-menu" aria-labelledby="fabButton">
+    <li><button class="dropdown-item" type="button" id="btn-open-new-task"><span class="material-icons-outlined">send</span> タスク</button></li>
+    <li><button class="dropdown-item" type="button" id="btn-open-new-msg"><span class="material-icons-outlined">mail</span> メッセージ</button></li>
+  </ul>
+</div>
+
+<nav class="navbar navbar-expand footer-nav d-md-none">
+  <div class="container-fluid">
+    <ul class="navbar-nav w-100 justify-content-around">
+      <li class="nav-item"><a class="nav-link text-center active" href="#" data-view="home"><span class="material-icons-outlined">home</span><span class="label">ホーム</span></a></li>
+      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="tasks"><span class="material-icons-outlined">send</span><span class="label">タスク</span></a></li>
+      <li class="nav-item position-relative">
+        <a class="nav-link text-center" href="#" data-view="messages"><span class="material-icons-outlined">mail</span><span class="label">メッセージ</span><span class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none" id="badge-unread-bottom">0</span></a>
+      </li>
+      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="settings"><span class="material-icons-outlined">settings</span><span class="label">設定</span></a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Modals -->
+<div class="modal" id="newTaskModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content modal-modern">
+      <div class="modal-header">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal"><span class="material-icons">arrow_back</span></button>
+        <h6 class="modal-title m-0">新しいタスク</h6>
+      </div>
+      <div class="modal-body">
+        <form id="newTaskForm" class="modal-form">
+          <div class="form-section">
+            <div id="taskFromMsgHint" class="alert alert-info py-2 px-3 d-none mb-3" role="alert" style="border-radius:10px;">
+              <span class="material-icons align-middle me-1">link</span>
+              <strong>元メッセージ：</strong><a href="#" id="backToMsgLink" class="text-decoration-none">—</a>
+            </div>
+            <div class="form-section-title">基本情報</div>
+            <div class="mb-3">
+              <label class="form-label">タイトル</label>
+              <input type="text" class="form-control" id="taskTitle" required>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label">期限</label>
+                <input type="date" class="form-control" id="taskDueDate" required>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label">優先度</label>
+                <select class="form-select" id="taskPriority">
+                  <option>中</option><option>高</option><option>低</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title d-flex align-items-center justify-content-between">
+              担当者
+              <span class="ms-2 badge badge-counter" id="assignee-count-badge">選択 0 件</span>
+            </div>
+            <div class="assignees-wrap">
+              <div class="assignees-toolbar">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-assignee-selectall">すべて選択</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-assignee-clear">すべて解除</button>
+              </div>
+              <div id="assignee-list" class="assignees-list"></div>
+            </div>
+            <div class="section-note">タスクの担当者を1名以上選択してください。自分自身も選択できます。</div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">繰り返し</div>
+            <div class="mb-3">
+              <label class="form-label">パターン</label>
+              <select class="form-select" id="taskRepeatType">
+                <option value="none">単発（繰り返しなし）</option>
+                <option value="daily">毎日</option>
+                <option value="weekly">毎週</option>
+                <option value="monthly">毎月</option>
+              </select>
+              <div class="section-note">完了時に次回タスクを自動で生成します。</div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="saveTaskButton">
+          <span class="label">保存する</span>
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="newMessageModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content modal-modern">
+      <div class="modal-header">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal"><span class="material-icons">arrow_back</span></button>
+        <h6 class="modal-title m-0">新しいメッセージ</h6>
+      </div>
+      <div class="modal-body">
+        <form id="newMessageForm" class="modal-form">
+          <div class="form-section">
+            <div class="form-section-title">基本情報</div>
+            <div class="mb-3">
+              <label class="form-label">件名</label>
+              <input type="text" class="form-control" id="messageTitle" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">本文</label>
+              <textarea class="form-control" id="messageBody" rows="5" required></textarea>
+            </div>
+          </div>
+          <div class="form-section">
+            <div class="form-section-title">詳細設定</div>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label">フォルダ</label>
+                <select class="form-select" id="messageFolder">
+                  <option value="全体">全体</option><option value="ブッフェ">ブッフェ</option><option value="レセプション">レセプション</option><option value="ホール">ホール</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label">優先度</label>
+                <select class="form-select" id="messagePriority"><option>中</option><option>高</option><option>低</option></select>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="saveMessageButton">
+          <span class="label">投稿する</span>
+          <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="taskDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content modal-modern">
+      <div class="modal-header">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal"><span class="material-icons">arrow_back</span></button>
+        <h6 class="m-0">タスク詳細</h6>
+      </div>
+      <div class="modal-body">
+        <div id="task-detail-loading" class="skeleton mb-3"></div>
+        <div id="task-detail-content" class="d-none">
+          <h4 id="detailTaskTitle" class="mb-3"></h4>
+          <div id="taskDetailBody" class="form-section mb-3"></div>
+          <div id="taskAttachments" class="mb-3 d-none">
+            <div class="form-section">
+              <h6 class="mb-2"><span class="material-icons align-middle me-1">attach_file</span>添付</h6>
+              <ul class="list-group attach-list" id="taskAttachList"></ul>
+            </div>
+          </div>
+          <div class="form-section mb-2">
+            <div class="row g-2">
+              <div class="col-12 col-md-4">
+                <label class="form-label">ステータス</label>
+                <select id="detailStatus" class="form-select">
+                  <option>未着手</option><option>対応中</option><option>完了</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label">期限</label>
+                <input id="detailDue" type="date" class="form-control">
+              </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label">優先度</label>
+                <select id="detailPriority" class="form-select">
+                  <option>中</option><option>高</option><option>低</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3 d-flex gap-2 flex-wrap">
+              <button class="btn btn-primary" id="btnTaskQuickSave">
+                <span class="label">この内容で更新</span>
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+              </button>
+              <button class="btn btn-success" id="btnTaskComplete">
+                <span class="label"><span class="material-icons align-middle me-1">task_alt</span>完了にする</span>
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger me-auto d-none" id="deleteTaskButton">削除</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="messageDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-sm-down">
+    <div class="modal-content modal-modern">
+      <div class="modal-header">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal"><span class="material-icons">arrow_back</span></button>
+        <h6 class="m-0">メッセージ詳細</h6>
+      </div>
+      <div class="modal-body">
+        <div id="msg-detail-loading" class="skeleton mb-3"></div>
+        <div id="msg-detail-content" class="d-none">
+          <h4 id="msgDetailTitle" class="mb-3"></h4>
+          <div id="msgDetailBody" class="form-section mb-3"><div class="section-body"></div></div>
+          <div id="msgAttachments" class="mb-3 d-none">
+            <div class="form-section">
+              <h6 class="mb-2"><span class="material-icons align-middle me-1">attach_file</span>添付</h6>
+              <ul class="list-group attach-list" id="msgAttachList"></ul>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-outline-primary" id="btnMsgToTask"><span class="material-icons align-middle me-1">send</span>この内容でタスク</button>
+            <button class="btn btn-primary" id="btnMsgMarkRead">既読にする</button>
+          </div>
+          <h5 class="mt-4">コメント</h5>
+          <div id="comments-list" class="mb-2"></div>
+          <textarea id="newCommentBody" class="form-control" rows="3" placeholder="コメントを入力..."></textarea>
+          <button class="btn btn-secondary mt-2" id="btnCommentPost">コメントを投稿</button>
+          <div class="mt-4">
+            <p><strong>既読:</strong> <span id="msgReadUsers"></span></p>
+            <p><strong>未読:</strong> <span id="msgUnreadUsers"></span></p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger me-auto d-none" id="deleteMessageButton">削除</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
+
+<script type="application/json" id="__BOOT__">
+<?!= JSON.stringify({ users: users, currentEmail: userInfo.email, theme: userInfo.theme }) ?>
+</script>
+
+<script>
+  // ===== サーバー埋め込みデータ =====
+  const __BOOT__ = JSON.parse(document.getElementById('__BOOT__').innerHTML || '{}');
+  const ACTIVE_USERS = Array.isArray(__BOOT__.users) ? __BOOT__.users : [];
+  const CURRENT_USER_EMAIL = String(__BOOT__.currentEmail || '');
+  const HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
+  let AUTH_NOTICE_SHOWN = false;
+  let MANAGER_NOTICE_SHOWN = false;
+  var _rszTimer = null;
+
+  // ===== テーマ適用 =====
+  const THEME_MEDIA = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  let themePreference = (typeof document.documentElement.dataset.themePref === 'string' && document.documentElement.dataset.themePref) || 'light';
+  if (__BOOT__.theme) themePreference = __BOOT__.theme || themePreference;
+
+  function resolveThemePreference(pref){
+    if (pref === 'system'){
+      return (THEME_MEDIA && THEME_MEDIA.matches) ? 'dark' : 'light';
+    }
+    return pref || 'light';
+  }
+  function applyResolvedTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  function applyThemePreference(pref){
+    themePreference = pref || 'light';
+    document.documentElement.dataset.themePref = themePreference;
+    applyResolvedTheme(resolveThemePreference(themePreference));
+  }
+
+  applyThemePreference(themePreference);
+
+  if (THEME_MEDIA){
+    var themeMediaListener = function(){
+      if (themePreference === 'system'){
+        applyResolvedTheme(resolveThemePreference(themePreference));
+      }
+    };
+    if (typeof THEME_MEDIA.addEventListener === 'function'){
+      THEME_MEDIA.addEventListener('change', themeMediaListener);
+    }else if (typeof THEME_MEDIA.addListener === 'function'){
+      THEME_MEDIA.addListener(themeMediaListener);
+    }
+  }
+
+  function describeThemeValue(value){
+    switch((value || '').toLowerCase()){
+      case 'dark': return 'ダークテーマ（調整中）';
+      case 'system': return 'システム設定に連動（調整中）';
+      default: return 'ライトテーマ（自動適用中）';
+    }
+  }
+
+  // ===== ヘルパ =====
+  var $$ = function(s,r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); };
+  var byId = function(id){ return document.getElementById(id); };
+  const userMap = new Map(ACTIVE_USERS.map(u => [u.email, u.name]));
+
+  function getNameByEmail(email) {
+    return userMap.get(email) || email;
+  }
+  function on(id, ev, fn){ var el = byId(id); if(el){ el.addEventListener(ev, fn); } }
+  function notify(msg, ok){
+    var wrap = byId('notification-area'); if(!wrap) return;
+    var el = document.createElement('div');
+    el.className='alert '+(ok!==false?'alert-success':'alert-danger')+' alert-dismissible fade show';
+    el.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    wrap.appendChild(el);
+    setTimeout(function(){ el.classList.remove('show'); setTimeout(function(){ el.remove(); },150); }, 2200);
+  }
+  function authRequiredCard(){
+    return '<div class="card border-warning"><div class="card-body">'+
+      '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">lock</span>Googleアカウントの情報が取得できません。</p>'+
+      '<p class="mb-2">以下を確認してください。</p>'+
+      '<ul class="mb-0 ps-3">'+
+        '<li>Apps Script の Webアプリ設定で「アクセスできるユーザー」を匿名許可からサインイン必須に変更します。</li>'+
+        '<li>設定更新後に再デプロイし、このページを再読み込みします。</li>'+
+      '</ul>'+
+    '</div></div>';
+  }
+  function managerRequiredCard(info){
+    info = info || {};
+    var role = esc(info.userRole || '（不明）');
+    var normalized = esc(info.normalizedRole || '（不明）');
+    var reason = esc(info.reason || '管理者権限が確認できません。');
+    var total = typeof info.totalRows === 'number' ? info.totalRows : '—';
+    var excluded = typeof info.excludedByStatus === 'number' ? info.excludedByStatus : '—';
+    var returned = typeof info.returned === 'number' ? info.returned : '—';
+    var statusSamples = Array.isArray(info.statusSampleIds) && info.statusSampleIds.length
+      ? '<p class="mb-0 small text-muted">除外されたタスクID例: '+esc(info.statusSampleIds.join(', '))+'</p>'
+      : '';
+    return '<div class="card border-warning"><div class="card-body">'+
+      '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">admin_panel_settings</span>'+reason+'</p>'+
+      '<p class="mb-1 small text-muted">ロール: '+role+'</p>'+
+      '<p class="mb-1 small text-muted">評価ロール: '+normalized+'</p>'+
+      '<p class="mb-1 small text-muted">行数: 総数 '+total+' / 完了で除外 '+excluded+' / 返却 '+returned+'</p>'+
+      statusSamples +
+    '</div></div>';
+  }
+  function esc(s){
+    return String(s||'').replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+  }
+  function scrollToTopNow(){
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    requestAnimationFrame(function(){
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  }
+  function debounce(fn, ms){
+    var t=null; return function(){ var ctx=this, args=arguments; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,args); }, ms); };
+  }
+  function humanBytes(n){
+    n = Number(n||0);
+    if(n<1024) return n+' B';
+    var u=['KB','MB','GB','TB'], i=-1;
+    do{ n/=1024; i++; }while(n>=1024 && i<u.length-1);
+    return n.toFixed(n>=10?0:1)+' '+u[i];
+  }
+
+  function priorityClassName(pr){
+    switch(String(pr||'中')){
+      case '高': return 'priority-high';
+      case '低': return 'priority-low';
+      default: return 'priority-middle';
+    }
+  }
+  function formatDateLabel(iso){
+    if(!iso) return '—';
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return iso;
+    return (d.getMonth()+1) + '/' + d.getDate();
+  }
+  function normalizeArray(data){
+    if(Array.isArray(data)) return data;
+    if(!data) return [];
+    if(typeof data.length === 'number'){
+      try{
+        return Array.prototype.slice.call(data);
+      }catch(e){}
+    }
+    if(typeof data === 'object'){
+      return Object.keys(data)
+        .filter(function(k){ return !isNaN(k); })
+        .sort(function(a,b){ return Number(a)-Number(b); })
+        .map(function(k){ return data[k]; });
+    }
+    return [];
+  }
+  function extractTaskPayload(result, label){
+    var debug = null;
+    var rows = null;
+    if(result && typeof result === 'object' && !Array.isArray(result)){
+      if (result.debug) debug = result.debug;
+      if (Array.isArray(result.tasks)) rows = result.tasks;
+    }
+    if(!Array.isArray(rows)){
+      rows = normalizeArray(result);
+    }
+    if(debug && label){
+      console.log('['+label+'] debug', debug);
+    }
+    return { rows: rows, debug: debug || null };
+  }
+
+  (function syncThemeDisplayInitial(){
+    var hidden = byId('setting-theme');
+    if(hidden){ hidden.value = themePreference; }
+    var display = byId('setting-theme-display');
+    if(display){ display.textContent = describeThemeValue(themePreference); }
+  })();
+
+  // ===== スワイプビュー =====
+  var order = ['home','tasks','messages','settings'];
+  var CURRENT_VIEW='home', SWIPE_LOCK=false;
+
+  function trackTo(view){
+    var track = byId('viewsTrack');
+    var panel = byId('view-'+view);
+    if(!track || !panel) return;
+    var offset = panel.offsetLeft;
+    track.style.transform = 'translateX(' + (-offset) + 'px)';
+  }
+
+  function setActiveNav(view){
+    $$('.topbar .nav-link').forEach(function(a){ a.classList.toggle('active', a.getAttribute('data-view')===view); });
+    $$('.footer-nav [data-view]').forEach(function(a){ a.classList.toggle('active', a.getAttribute('data-view')===view); });
+  }
+  function showPanel(view){
+    order.forEach(function(v){
+      var el = byId('view-'+v);
+      if(!el) return;
+      if(v===view){ el.classList.remove('is-hidden'); el.classList.add('show'); }
+      else{ el.classList.add('is-hidden'); el.classList.remove('show'); }
+    });
+  }
+  function navigateTo(v){
+    CURRENT_VIEW=v; setActiveNav(v); showPanel(v); trackTo(v); scrollToTopNow();
+    if(v==='home') loadHome();
+    if(v==='tasks'){ loadMyTasks(); loadTodayTasks(); loadAllTasks(); }
+    if(v==='messages') loadMessages();
+    if(v==='settings') loadSettings();
+  }
+
+  (function enableSwipe(){
+    var wrap = byId('viewsWrapper');
+    var x0=null, y0=null, t0=0;
+    var unify=function(e){ return e.changedTouches? e.changedTouches[0] : e; };
+
+    wrap.addEventListener('touchstart', function(e){
+      var t = unify(e); x0=t.clientX; y0=t.clientY; t0=Date.now();
+    }, {passive:true});
+
+    wrap.addEventListener('touchend', function(e){
+      if(x0===null||SWIPE_LOCK) return;
+      var t=unify(e), dx=t.clientX-x0, dy=t.clientY-y0, dt=Date.now()-t0;
+      if(Math.abs(dx)>90 && Math.abs(dy)<50 && dt<900){
+        SWIPE_LOCK=true;
+        var idx=order.indexOf(CURRENT_VIEW);
+        if(dx<0 && idx<order.length-1){
+          navigateTo(order[idx+1]);
+        }else if(dx>0 && idx>0){
+          navigateTo(order[idx-1]);
+        }
+        setTimeout(function(){ SWIPE_LOCK=false; }, 650);
+      }
+      x0=y0=null;
+    }, {passive:true});
+  })();
+
+  window.addEventListener('resize', function(){
+    clearTimeout(_rszTimer);
+    _rszTimer = setTimeout(function(){ trackTo(CURRENT_VIEW); }, 120);
+  });
+
+  function skel(n){ var h=''; for(var i=0;i<(n||4);i++){ h+='<div class="skeleton mb-2"></div>'; } return h; }
+
+  // ===== Home =====
+  function loadHome(){
+    if(!HAS_ACTIVE_EMAIL){
+      var card = authRequiredCard();
+      byId('home-today-tasks').innerHTML = card;
+      byId('home-unread').innerHTML = card;
+      if(!AUTH_NOTICE_SHOWN){
+        notify('Google へのサインイン情報が取得できません。Webアプリ公開設定を見直し、再デプロイしてください。', false);
+        AUTH_NOTICE_SHOWN = true;
+      }
+      return;
+    }
+    byId('home-today-tasks').innerHTML=skel(3);
+    byId('home-unread').innerHTML=skel(3);
+    google.script.run.withSuccessHandler(function(d){
+      var tasks = normalizeArray(d && d.tasks);
+      var tHTML = tasks.length
+        ? tasks.map(function(t){
+            return '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\''+t.id+'\')">'+
+                     '<div class="card-body d-flex justify-content-between">'+
+                       '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>'+esc(t.title)+'</strong>'+
+                       '<span class="text-muted">'+esc(t.dueDate)+'</span>'+
+                     '</div>'+
+                   '</a>';
+          }).join('')
+        : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+      byId('home-today-tasks').innerHTML=tHTML;
+
+      var unread = normalizeArray(d && d.messages).filter(function(x){ return !x.isRead; });
+      [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function(b){ if(!b) return; b.textContent=unread.length; b.classList.toggle('d-none', unread.length===0); });
+
+      var mHTML = unread.length
+        ? unread.map(function(m){
+            return '<div class="card mb-2 msg-card unread"><div class="card-body">'+
+                     '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\''+m.id+'\')">'+
+                       '<div class="d-flex align-items-center">'+
+                         '<span class="msg-icon material-icons">priority_high</span>'+
+                         '<div class="msg-lines flex-grow-1">'+
+                           '<div class="fw-bold">'+esc(m.title)+'</div>'+
+                           '<div class="marquee line1"><span class="track">'+esc(m.preview || m.body || '')+'</span></div>'+
+                         '</div>'+
+                       '</div>'+
+                     '</a>'+
+                   '</div></div>';
+          }).join('')
+        : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
+      byId('home-unread').innerHTML=mHTML;
+    }).withFailureHandler(function(e){ notify('ホーム読み込み失敗: '+e.message,false); }).getHomeContent();
+  }
+
+  // ===== Tasks =====
+  function displayAssignees(r){
+    const assigneeEmails = r.assignees || (r.assignee ? [r.assignee] : []);
+    if (Array.isArray(assigneeEmails) && assigneeEmails.length) {
+      return assigneeEmails.map(email => getNameByEmail(email)).join(', ');
+    }
+    return '';
+  }
+  function rowTask(r, showAssignee){
+    var priority = r.priority || '中';
+    var priorityCls = priorityClassName(priority);
+    var priorityPill = '<span class="priority-pill '+priorityCls+'">'+esc(priority)+'</span>';
+    var dueLabel = formatDateLabel(r.dueDate);
+    var text = '<a href="#" class="card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\''+r.id+'\')">'+
+      '<div class="card-body task-card d-flex align-items-start justify-content-between gap-3">'+
+        '<div class="task-info-wrap flex-grow-1">'+
+          '<div class="task-title-line d-flex align-items-center gap-2 flex-wrap">'+
+            priorityPill+
+            '<strong>'+esc(r.title)+'</strong>'+
+          '</div>';
+    if (showAssignee) {
+      var assigneesText = displayAssignees(r);
+      text += '<div class="task-assignee-line">'+ (assigneesText ? '@'+esc(assigneesText) : '担当者未設定') +'</div>';
+    }
+    var createdByMe = r.createdBy && CURRENT_USER_EMAIL && String(r.createdBy).toLowerCase() === CURRENT_USER_EMAIL.toLowerCase();
+    if (createdByMe){
+      text += '<div class="task-meta-line"><span class="badge-soft"><span class="material-icons">outgoing_mail</span>あなたが作成</span></div>';
+    }
+    text += '</div>'+
+            '<div class="task-meta text-end">'+
+              '<div>期限 '+esc(dueLabel)+'</div>'+
+              (r.status ? '<div class="small text-muted">'+esc(r.status)+'</div>' : '')+
+            '</div>'+
+          '</div></a>';
+    return text;
+  }
+  function loadMyTasks(){
+    var tgt='list-my'; byId(tgt).innerHTML=skel(6);
+    if(!HAS_ACTIVE_EMAIL){
+      byId(tgt).innerHTML = authRequiredCard();
+      return;
+    }
+    google.script.run.withSuccessHandler(function(result){
+      var payload = extractTaskPayload(result, 'listMyTasks');
+      var rows = normalizeArray(payload.rows).filter(function(t){
+        return String(t.status || '') !== '完了';
+      });
+      if(payload.debug && payload.debug.excludedByOwnership > 0){
+        console.warn('[listMyTasks] 除外されたタスク数 (担当外):', payload.debug.excludedByOwnership);
+        if(Array.isArray(payload.debug.ownershipSampleIds) && payload.debug.ownershipSampleIds.length){
+          console.warn('[listMyTasks] 担当外サンプルID:', payload.debug.ownershipSampleIds);
+        }
+      }
+      if(payload.debug && payload.debug.excludedByStatus > 0){
+        console.warn('[listMyTasks] 除外された完了タスク数:', payload.debug.excludedByStatus);
+        if(Array.isArray(payload.debug.statusSampleIds) && payload.debug.statusSampleIds.length){
+          console.warn('[listMyTasks] 完了サンプルID:', payload.debug.statusSampleIds);
+        }
+      }
+      if(payload.debug){
+        console.info('[listMyTasks] 返却件数: '+payload.debug.returned+' / 総数 '+payload.debug.totalRows);
+      }
+      var kw = (byId('task-search-box').value||'').trim();
+      if(kw){
+        rows = rows.filter(function(t){
+          return (t.title||'').indexOf(kw)>=0 ||
+                 (displayAssignees(t)||'').indexOf(kw)>=0;
+        });
+      }
+      var hasItems = rows.length > 0;
+      byId(tgt).innerHTML = hasItems ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">タスクはありません。</div></div>';
+    }).withFailureHandler(function(e){ notify('マイタスク取得失敗: '+e.message,false); }).listMyTasks();
+  }
+  function loadTodayTasks(){
+    var tgt='list-today'; byId(tgt).innerHTML=skel(4);
+    if(!HAS_ACTIVE_EMAIL){
+      byId(tgt).innerHTML = authRequiredCard();
+      return;
+    }
+    google.script.run.withSuccessHandler(function(d){
+      var baseTasks = normalizeArray(d && d.tasks);
+      var rows = baseTasks.map(function(t){
+        return {
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate,
+          assignees: t.assignees,
+          assignee: t.assignee,
+          priority: t.priority,
+          createdBy: t.createdBy
+        };
+      });
+      var kw = (byId('task-search-box').value||'').trim();
+      if(kw){ rows = rows.filter(function(t){ return (t.title||'').indexOf(kw)>=0; }); }
+      byId(tgt).innerHTML = rows.length > 0 ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+    }).withFailureHandler(function(e){ notify('今日のタスク取得失敗: '+e.message,false); }).getHomeContent();
+  }
+  function loadAllTasks(){
+    var tgt='list-all'; byId(tgt).innerHTML=skel(8);
+    if(!HAS_ACTIVE_EMAIL){
+      byId(tgt).innerHTML = authRequiredCard();
+      return;
+    }
+    google.script.run.withSuccessHandler(function(result){
+      var payload = extractTaskPayload(result, 'listAllTasks');
+      if(payload.debug && payload.debug.isManager === false){
+        byId(tgt).innerHTML = managerRequiredCard(payload.debug);
+        if(!MANAGER_NOTICE_SHOWN){
+          notify('全体タスクの表示には管理者権限が必要です。現在のロール: ' + (payload.debug.userRole || '不明'), false);
+          MANAGER_NOTICE_SHOWN = true;
+        }
+        return;
+      }
+      var rows = normalizeArray(payload.rows).filter(function(t){
+        return String(t.status || '') !== '完了';
+      });
+      if(payload.debug && payload.debug.excludedByStatus > 0){
+        console.warn('[listAllTasks] 除外された完了タスク数:', payload.debug.excludedByStatus);
+        if(Array.isArray(payload.debug.statusSampleIds) && payload.debug.statusSampleIds.length){
+          console.warn('[listAllTasks] 完了サンプルID:', payload.debug.statusSampleIds);
+        }
+      }
+      if(payload.debug){
+        console.info('[listAllTasks] 返却件数: '+payload.debug.returned+' / 総数 '+payload.debug.totalRows);
+      }
+      var kw = (byId('task-search-box').value||'').trim();
+      if(kw){
+        rows = rows.filter(function(t){
+          return (t.title||'').indexOf(kw)>=0 ||
+                 (displayAssignees(t)||'').indexOf(kw)>=0;
+        });
+      }
+      var hasItemsAll = rows.length > 0;
+      byId(tgt).innerHTML = hasItemsAll ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">タスクはありません。</div></div>';
+    }).withFailureHandler(function(e){ notify('全体タスク取得失敗: '+e.message,false); }).listAllTasks();
+  }
+
+  // ===== Messages =====
+  function rowMsg(m){
+    var cls = m.isRead ? 'card mb-2 msg-card' : 'card mb-2 msg-card unread';
+    var lab = m.isRead ? '未読にする' : '既読にする';
+    var style = m.isRead ? 'btn-outline-primary' : 'btn-primary';
+    var priority = m.priority || '中';
+    var priorityPill = '<span class="priority-pill '+priorityClassName(priority)+'">'+esc(priority)+'</span>';
+    var preview = m.preview || m.body || '';
+    return '<div class="'+cls+'" data-memo="'+m.id+'">'+
+      '<div class="card-body d-flex align-items-start justify-content-between">'+
+        '<a href="#" class="text-decoration-none link-surface flex-grow-1 me-2 pe-3 text-truncate-container" onclick="event.preventDefault(); openMessageModal(\''+m.id+'\')">'+
+          '<div class="d-flex align-items-center">'+
+            '<span class="msg-icon material-icons">'+(m.isRead?'mark_email_read':'mark_email_unread')+'</span>'+
+            '<div class="msg-lines flex-grow-1">'+
+              '<div class="msg-header">'+priorityPill+'<div class="fw-bold '+(m.isRead?'text-muted':'')+'">'+esc(m.title)+'</div></div>'+
+              '<div class="marquee"><span class="track">'+esc(preview)+'</span></div>'+
+            '</div>'+
+          '</div>'+
+        '</a>'+
+        '<button class="btn '+style+' btn-sm msg-action-btn flex-shrink-0" onclick="event.preventDefault(); toggleRead(this,\''+m.id+'\','+(m.isRead ? 'false' : 'true')+')">'+
+          '<span class="label">'+lab+'</span>'+
+          '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>'+
+        '</button>'+
+      '</div>'+
+    '</div>';
+  }
+  function filterMessages(list){
+    var folderId = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+    var unreadOnly = byId('flt-msg-unread') ? !!byId('flt-msg-unread').checked : false;
+    var kw = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
+    var rows = normalizeArray(list).slice();
+    if(unreadOnly) rows = rows.filter(function(x){ return !x.isRead; });
+    if(folderId) rows = rows.filter(function(x){ return String(x.folderId || '') === String(folderId); });
+    if(kw){
+      rows = rows.filter(function(x){
+        return (String(x.title||'').indexOf(kw) >= 0) || (String(x.body||'').indexOf(kw) >= 0);
+      });
+    }
+    return rows;
+  }
+  function setMsgLoading(loading){
+    if(loading) byId('msg-list').innerHTML=skel(6);
+    var btnAll = byId('btn-msg-markall');
+    if(btnAll) btnAll.disabled = !!loading;
+  }
+  function loadMessages(){
+    if(!HAS_ACTIVE_EMAIL){
+      byId('msg-list').innerHTML = authRequiredCard();
+      if(!AUTH_NOTICE_SHOWN){
+        notify('Google へのサインイン情報が取得できません。Webアプリ公開設定を見直し、再デプロイしてください。', false);
+        AUTH_NOTICE_SHOWN = true;
+      }
+      return;
+    }
+    setMsgLoading(true);
+    google.script.run
+      .withSuccessHandler(function(list){
+        var rows = filterMessages(list);
+        byId('msg-list').innerHTML = rows.length
+          ? rows.map(function(m){ return rowMsg(m); }).join('')
+          : '<div class="card"><div class="card-body text-muted">メッセージはありません。</div></div>';
+        setMsgLoading(false);
+      })
+      .withFailureHandler(function(e){
+        notify('メッセージ取得失敗: '+e.message,false);
+        setMsgLoading(false);
+      })
+      .getMessages({ folderId: (byId('flt-msg-folder')||{}).value || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
+  }
+  function toggleRead(btn, memoId, shouldRead){
+    btn.disabled=true;
+    var lbl=btn.querySelector('.label'), sp=btn.querySelector('.spinner-border');
+    if(lbl) lbl.classList.add('d-none');
+    if(sp) sp.classList.remove('d-none');
+    google.script.run
+      .withSuccessHandler(function(){ loadMessages(); loadHome(); })
+      .withFailureHandler(function(e){ notify('既読処理に失敗: '+e.message,false); btn.disabled=false; })
+      .toggleMemoRead(memoId, shouldRead);
+  }
+  on('btn-msg-markall','click', function(){
+    var btn = byId('btn-msg-markall');
+    if(!btn) return;
+    btn.disabled = true;
+    var originalHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>処理中...';
+    google.script.run
+      .withSuccessHandler(function(list){
+        var rows = filterMessages(list).filter(function(x){ return !x.isRead; });
+        var ids = rows.map(function(x){ return x.id; });
+        if(ids.length === 0){
+          notify('一括既読の対象（未読）がありません。', true);
+          btn.disabled = false; btn.innerHTML = originalHTML;
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function(res){
+            notify(res && res.message ? res.message : '未読を一括で既読にしました', res && res.success !== false);
+            btn.disabled = false; btn.innerHTML = originalHTML;
+            loadMessages(); loadHome();
+          })
+          .withFailureHandler(function(e){
+            notify('一括既読に失敗: '+e.message, false);
+            btn.disabled = false; btn.innerHTML = originalHTML;
+          })
+          .markMemosReadBulk(ids);
+      })
+      .withFailureHandler(function(e){
+        notify('メッセージ再取得に失敗: '+e.message,false);
+        btn.disabled = false; btn.innerHTML = originalHTML;
+      })
+      .getMessages({ folderId: (byId('flt-msg-folder')||{}).value || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
+  });
+
+  // ===== Detail / Modal =====
+  function renderAttachList(list){
+    if(!Array.isArray(list) || list.length===0) return '';
+    return list.map(function(a){
+      var name = esc(a.name||'(不明)');
+      var size = humanBytes(a.size||0);
+      var mime = esc(a.mimeType||'');
+      var url  = esc(a.url||'#');
+      return '<li class="list-group-item">'+
+               '<div class="me-2 flex-grow-1"><div>'+name+'</div>'+
+               '<div class="attach-meta">'+mime+' ・ '+size+'</div></div>'+
+               '<a class="btn btn-sm btn-outline-primary" href="'+url+'" target="_blank" rel="noopener">開く</a>'+
+             '</li>';
+    }).join('');
+  }
+  var CURRENT_TASK_ID = null;
+  function openTaskDetail(id){
+    CURRENT_TASK_ID = id;
+    var modalEl=byId('taskDetailModal'); if(!modalEl){ notify('タスク詳細モーダルが見つかりません', false); return; }
+    var m = new bootstrap.Modal(modalEl); m.show();
+    byId('task-detail-loading').classList.remove('d-none');
+    byId('task-detail-content').classList.add('d-none');
+    byId('deleteTaskButton').classList.add('d-none');
+    byId('taskAttachments').classList.add('d-none');
+    byId('taskAttachList').innerHTML='';
+    google.script.run.withSuccessHandler(function(t){
+      if(!t){ notify('タスクが見つかりませんでした', false); return; }
+      byId('detailTaskTitle').textContent = t.title;
+      var assigneeEmails = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assignee ? [t.assignee] : []);
+      var assigneesText = assigneeEmails.map(email => getNameByEmail(email)).join(', ');
+      if(!assigneesText) assigneesText = '担当者未設定';
+      var repeatLabel = 'なし';
+      if(t.repeatRule){
+        var rule = String(t.repeatRule).toUpperCase();
+        if(rule === 'DAILY') repeatLabel = '毎日';
+        else if(rule === 'WEEKLY') repeatLabel = '毎週';
+        else if(rule === 'MONTHLY') repeatLabel = '毎月';
+        else repeatLabel = t.repeatRule;
+      }
+      var detailSection = byId('taskDetailBody');
+      detailSection.innerHTML =
+        '<div class="section-body">'+
+          '<p class="mb-2"><strong>担当者:</strong> ' + esc(assigneesText) + '</p>'+
+          '<p class="mb-0"><strong>繰り返し:</strong> ' + esc(repeatLabel) + '</p>'+
+        '</div>';
+      var att = Array.isArray(t.attachments)? t.attachments : [];
+      if(att.length){
+        byId('taskAttachList').innerHTML = renderAttachList(att);
+        byId('taskAttachments').classList.remove('d-none');
+      }
+      byId('detailStatus').value = t.status || '未着手';
+      byId('detailDue').value = t.dueDate || '';
+      byId('detailPriority').value = t.priority || '中';
+      if(t.canDelete) byId('deleteTaskButton').classList.remove('d-none');
+      byId('task-detail-loading').classList.add('d-none');
+      byId('task-detail-content').classList.remove('d-none');
+    }).getTaskById(id);
+  }
+  on('btnTaskQuickSave','click', function(){
+    if(!CURRENT_TASK_ID) return;
+    var btn = byId('btnTaskQuickSave');
+    var payload = { id: CURRENT_TASK_ID, title: byId('detailTaskTitle').textContent, dueDate: byId('detailDue').value, status: byId('detailStatus').value, priority: byId('detailPriority').value };
+    setButtonLoading(btn, true);
+    google.script.run.withSuccessHandler(function(res){
+      setButtonLoading(btn, false);
+      notify(res && res.message ? res.message : '更新しました', res && res.success !== false);
+      loadHome(); loadMyTasks(); loadAllTasks();
+      openTaskDetail(CURRENT_TASK_ID);
+    }).withFailureHandler(function(e){
+      setButtonLoading(btn, false);
+      notify('更新に失敗: '+e.message,false);
+    }).updateTask(payload);
+  });
+  on('btnTaskComplete','click', function(){
+    if(!CURRENT_TASK_ID) return;
+    var btn = byId('btnTaskComplete');
+    if(!confirm('このタスクを完了にします。よろしいですか？')) return;
+    setButtonLoading(btn, true);
+    google.script.run
+      .withSuccessHandler(function(res){
+        setButtonLoading(btn, false);
+        notify(res && res.message ? res.message : '完了しました', res && res.success !== false);
+        var inst = bootstrap.Modal.getInstance(byId('taskDetailModal')); if(inst) inst.hide();
+        loadHome(); loadMyTasks(); loadAllTasks();
+      })
+      .withFailureHandler(function(e){
+        setButtonLoading(btn, false);
+        notify('完了処理に失敗: '+e.message, false);
+      })
+      .completeTask(CURRENT_TASK_ID);
+  });
+  on('deleteTaskButton','click', function(){
+    if(!CURRENT_TASK_ID) return;
+    if(!confirm('このタスクを削除します。よろしいですか？')) return;
+    google.script.run.withSuccessHandler(function(res){
+      notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+      var inst = bootstrap.Modal.getInstance(byId('taskDetailModal')); if(inst) inst.hide();
+      loadHome(); loadMyTasks(); loadAllTasks();
+    }).withFailureHandler(function(e){ notify('削除に失敗: '+e.message,false); }).deleteTaskById(CURRENT_TASK_ID);
+  });
+  var CURRENT_MEMO_ID = null;
+  function openMessageModal(memoId){
+    CURRENT_MEMO_ID = memoId;
+    var modalEl=byId('messageDetailModal'); if(!modalEl){ notify('メッセージ詳細モーダルが見つかりません', false); return; }
+    var m = new bootstrap.Modal(modalEl); m.show();
+    byId('msg-detail-loading').classList.remove('d-none');
+    byId('msg-detail-content').classList.add('d-none');
+    byId('deleteMessageButton').classList.add('d-none');
+    byId('msgAttachments').classList.add('d-none');
+    byId('msgAttachList').innerHTML='';
+    google.script.run.withSuccessHandler(function(){
+      google.script.run.withSuccessHandler(function(data){
+        if(!data){ notify('メッセージ取得失敗', false); return; }
+        byId('msgDetailTitle').textContent = data.title || '';
+        var bodySection = byId('msgDetailBody').querySelector('.section-body');
+        if(bodySection){
+          bodySection.innerHTML = esc(data.body || '').replace(/\n/g,'<br>');
+        }
+        var att = Array.isArray(data.attachments)? data.attachments : [];
+        if(att.length){
+          byId('msgAttachList').innerHTML = renderAttachList(att);
+          byId('msgAttachments').classList.remove('d-none');
+        }
+        var commentsHtml = '';
+        (data.comments||[]).forEach(function(c){
+          commentsHtml += '<div class="card mb-2"><div class="card-body"><p class="mb-0">'+esc(c.body)+'</p><small class="text-muted">'+esc(c.author)+' - '+esc(c.createdAt)+'</small></div></div>';
+        });
+        if (!data.comments || data.comments.length===0) commentsHtml = '<p class="text-muted">コメントはまだありません。</p>';
+        byId('comments-list').innerHTML = commentsHtml;
+        byId('msgReadUsers').textContent = (data.readUsers||[]).join(', ');
+        byId('msgUnreadUsers').textContent = (data.unreadUsers||[]).join(', ');
+        if (data.canDelete) byId('deleteMessageButton').classList.remove('d-none');
+        byId('msg-detail-loading').classList.add('d-none');
+        byId('msg-detail-content').classList.remove('d-none');
+        loadHome();
+      }).getMessageById(memoId);
+    }).markMemoAsRead(memoId);
+  }
+  on('btnCommentPost','click', function(){
+    var body = (byId('newCommentBody').value || '').trim();
+    if(!body){ notify('コメントが未入力です', false); return; }
+    google.script.run.withSuccessHandler(function(res){
+      if(res && res.success){ byId('newCommentBody').value=''; openMessageModal(CURRENT_MEMO_ID); }
+      notify(res.message || '完了', res.success !== false);
+    }).addNewComment({ memoId: CURRENT_MEMO_ID, body: body });
+  });
+  on('btnMsgMarkRead','click', function(){ toggleRead(document.createElement('button'), CURRENT_MEMO_ID, true); });
+  on('btnMsgToTask','click', function(){
+    google.script.run.withSuccessHandler(function(data){
+      if(!data) return;
+      var hint=byId('taskFromMsgHint');
+      hint.classList.remove('d-none');
+      byId('backToMsgLink').textContent = data.title || '元メッセージ';
+      byId('backToMsgLink').onclick = function(e){ e.preventDefault(); new bootstrap.Modal(byId('messageDetailModal')).show(); };
+      byId('taskTitle').value = '[From Message] ' + (data.title || '');
+      var today = new Date(); var y=today.getFullYear(), m=('0'+(today.getMonth()+1)).slice(-2), d=('0'+today.getDate()).slice(-2);
+      byId('taskDueDate').value = y+'-'+m+'-'+d;
+      byId('taskPriority').value = (data.priority || '中');
+      resetAssigneeList();
+      new bootstrap.Modal(byId('newTaskModal')).show();
+      setTimeout(function(){ byId('taskTitle').focus(); }, 120);
+    }).getMessageById(CURRENT_MEMO_ID);
+  });
+  on('deleteMessageButton','click', function(){
+    if(!CURRENT_MEMO_ID) return;
+    if(!confirm('このメッセージを削除します。よろしいですか？')) return;
+    google.script.run.withSuccessHandler(function(res){
+      notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+      var inst = bootstrap.Modal.getInstance(byId('messageDetailModal')); if(inst) inst.hide();
+      loadMessages(); loadHome();
+    }).withFailureHandler(function(e){ notify('削除に失敗: '+e.message,false); }).deleteMessageById(CURRENT_MEMO_ID);
+  });
+
+  // ===== 設定 =====
+  function loadSettings(){
+    if(!HAS_ACTIVE_EMAIL){
+      notify('Google へのサインイン情報が取得できません。設定画面は利用できません。', false);
+      return;
+    }
+    google.script.run.withSuccessHandler(function(s){
+      if(!s) return;
+      byId('setting-name').value = s.name || '';
+      byId('setting-image').value = s.imageUrl || '';
+      var themeVal = s.theme || 'light';
+      var themeInput = byId('setting-theme');
+      if(themeInput){ themeInput.value = themeVal; }
+      var themeDisplay = byId('setting-theme-display');
+      if(themeDisplay){ themeDisplay.textContent = describeThemeValue(themeVal); }
+      applyThemePreference(themeVal);
+    }).withFailureHandler(function(e){ notify('設定読み込み失敗: '+e.message,false); }).getUserSettings();
+  }
+  on('btn-settings-save','click', function(){
+    var btn = byId('btn-settings-save');
+    var lbl = btn.querySelector('.label'); var sp = btn.querySelector('.spinner-border');
+    btn.disabled = true; if(lbl) lbl.classList.add('d-none'); if(sp) sp.classList.remove('d-none');
+    var payload = {
+      name: byId('setting-name').value || '',
+      imageUrl: byId('setting-image').value || '',
+      theme: byId('setting-theme').value || 'light'
+    };
+    google.script.run.withSuccessHandler(function(res){
+      notify(res && res.message ? res.message : '保存しました', res && res.success !== false);
+      btn.disabled = false; if(lbl) lbl.classList.remove('d-none'); if(sp) sp.classList.add('d-none');
+    }).withFailureHandler(function(e){
+      notify('保存に失敗: '+e.message, false);
+      btn.disabled = false; if(lbl) lbl.classList.remove('d-none'); if(sp) sp.classList.add('d-none');
+    }).saveUserSettings(payload);
+  });
+
+  // ===== 担当者選択（複数） =====
+  var selectedAssignees = new Set();
+  function renderAssigneeList(){
+    var listEl = byId('assignee-list');
+    if(!listEl) return;
+    var rows = ACTIVE_USERS.slice().sort(function(a,b){
+      return String(a.name||'').localeCompare(String(b.name||''), 'ja');
+    });
+    var html = rows.map(function(u){
+      var id = 'assignee__' + (u.email||'').replace(/[^a-z0-9]/gi,'_');
+      var checked = selectedAssignees.has(u.email) ? ' checked' : '';
+      return '<div class="form-check">' +
+               '<input class="form-check-input assignee-chk" type="checkbox" id="'+id+'" data-email="'+esc(u.email)+'"'+checked+'>' +
+               '<label class="form-check-label" for="'+id+'">'+esc(u.name)+'</label>' +
+             '</div>';
+    }).join('');
+    listEl.innerHTML = html;
+    updateSelectedCount();
+  }
+  function toggleSelectAll(toSelect){
+    ACTIVE_USERS.forEach(function(u){
+      if(toSelect) {
+        selectedAssignees.add(u.email);
+      } else {
+        selectedAssignees.delete(u.email);
+      }
+    });
+    renderAssigneeList();
+  }
+  function updateSelectedCount(){
+    var cnt = selectedAssignees.size;
+    var badge = byId('assignee-count-badge');
+    if(badge) badge.textContent = '選択 ' + cnt + ' 件';
+  }
+  function getSelectedAssignees(){
+    return Array.from(selectedAssignees);
+  }
+  function resetAssigneeList(){
+      selectedAssignees.clear();
+      renderAssigneeList();
+  }
+  (function bindAssigneeHandlers(){
+    var listEl = byId('assignee-list');
+    if (listEl) {
+      listEl.addEventListener('change', function(e){
+        var target = e.target;
+        if(target.matches('.assignee-chk')){
+          var email = target.getAttribute('data-email');
+          if(!email) return;
+          if(target.checked) {
+            selectedAssignees.add(email);
+          } else {
+            selectedAssignees.delete(email);
+          }
+          updateSelectedCount();
+        }
+      });
+    }
+    on('btn-assignee-selectall', 'click', function(){ toggleSelectAll(true); });
+    on('btn-assignee-clear', 'click', function(){ toggleSelectAll(false); });
+  })();
+
+  function setButtonLoading(btn, loading){
+    if(!btn) return;
+    var label = btn.querySelector('.label');
+    var spinner = btn.querySelector('.spinner-border');
+    btn.disabled = !!loading;
+    btn.setAttribute('aria-busy', loading ? 'true' : 'false');
+    if(label){ label.classList.toggle('d-none', !!loading); }
+    if(spinner){ spinner.classList.toggle('d-none', !loading); }
+  }
+
+  // ===== 保存ハンドラ =====
+  function attachSaveHandlers(){
+    on('saveTaskButton','click', function(){
+      var btn = byId('saveTaskButton');
+      var assignees = getSelectedAssignees();
+      if(assignees.length === 0){
+        notify('担当者を1名以上選択してください。', false);
+        return;
+      }
+      var task = {
+        title: byId('taskTitle').value,
+        dueDate: byId('taskDueDate').value,
+        priority: byId('taskPriority').value,
+        assignees: assignees
+      };
+      if (!task.title || !task.dueDate){
+        notify('タイトルと期限は必須です。', false);
+        return;
+      }
+      var repeatTypeEl = byId('taskRepeatType');
+      var repeatType = repeatTypeEl ? repeatTypeEl.value : 'none';
+      if(repeatType === 'daily') task.repeatRule = 'DAILY';
+      else if(repeatType === 'weekly') task.repeatRule = 'WEEKLY';
+      else if(repeatType === 'monthly') task.repeatRule = 'MONTHLY';
+      else task.repeatRule = '';
+
+      setButtonLoading(btn, true);
+      google.script.run.withSuccessHandler(function(res){
+        setButtonLoading(btn, false);
+        if(res && res.success){
+          var inst = bootstrap.Modal.getInstance(byId('newTaskModal'));
+          if(inst) inst.hide();
+          notify('タスクを作成しました。', true);
+        } else {
+          notify((res && res.message) || 'タスクの作成に失敗しました。', false);
+        }
+        loadHome();
+        loadMyTasks();
+        loadAllTasks();
+      }).withFailureHandler(function(e){
+        setButtonLoading(btn, false);
+        notify('タスクの作成に失敗しました: ' + e.message, false);
+      }).addNewTask(task);
+    });
+    on('saveMessageButton','click', function(){
+      var btn = byId('saveMessageButton');
+      var messageData = { title: byId('messageTitle').value, body: byId('messageBody').value, priority: byId('messagePriority').value, folderId: byId('messageFolder').value };
+      if(!messageData.title || !messageData.body){ notify('件名と本文は必須です。', false); return; }
+      setButtonLoading(btn, true);
+      google.script.run.withSuccessHandler(function(res){
+        setButtonLoading(btn, false);
+        if(res && res.success){
+          var inst = bootstrap.Modal.getInstance(byId('newMessageModal')); if(inst) inst.hide();
+        }
+        notify(res.message || '完了', res.success !== false);
+        loadHome(); loadMessages();
+      }).withFailureHandler(function(e){
+        setButtonLoading(btn, false);
+        notify('メッセージの投稿に失敗しました: '+e.message,false);
+      }).addNewMessage(messageData);
+    });
+  }
+
+  // ===== モーダル初期化 =====
+  document.addEventListener('shown.bs.modal', function(e){
+    if(e.target && e.target.id === 'newTaskModal'){
+      byId('newTaskForm').reset();
+      byId('taskFromMsgHint').classList.add('d-none');
+      var today = new Date();
+      var y = today.getFullYear(),
+          m = ('0'+(today.getMonth()+1)).slice(-2),
+          d = ('0'+today.getDate()).slice(-2);
+      byId('taskDueDate').value = y+'-'+m+'-'+d;
+      byId('taskPriority').value = '中';
+      var repeatTypeEl = byId('taskRepeatType');
+      if(repeatTypeEl){ repeatTypeEl.value = 'none'; }
+      resetAssigneeList();
+      setButtonLoading(byId('saveTaskButton'), false);
+      setTimeout(function(){ byId('taskTitle').focus(); }, 60);
+    }
+    if(e.target && e.target.id === 'newMessageModal'){
+      byId('newMessageForm').reset();
+      byId('messageFolder').value = '全体';
+      byId('messagePriority').value = '中';
+      setButtonLoading(byId('saveMessageButton'), false);
+      setTimeout(function(){ byId('messageTitle').focus(); }, 60);
+    }
+  });
+
+
+  // ===== 初期化 =====
+  window.addEventListener('load', function(){
+    // GAS組み込み認証では、このスクリプトが実行される時点で
+    // 常に認証済みのため、ログイン画面の表示切り替えは不要。
+
+    // ナビゲーションやボタンのイベントリスナーを設定
+    $$('[data-view]').forEach(function(a){
+      a.addEventListener('click', function(e){ e.preventDefault(); navigateTo(a.getAttribute('data-view')); });
+    });
+
+    on('btn-open-new-task','click', function(e){ e.preventDefault(); byId('taskFromMsgHint').classList.add('d-none'); new bootstrap.Modal(byId('newTaskModal')).show(); });
+    on('btn-open-new-msg','click',  function(e){ e.preventDefault(); new bootstrap.Modal(byId('newMessageModal')).show(); });
+
+    on('btn-my-reload','click', loadMyTasks);
+    on('btn-all-reload','click', loadAllTasks);
+
+    on('flt-msg-folder','change', loadMessages);
+    on('flt-msg-unread','change', loadMessages);
+    on('msg-search-box','input', debounce(loadMessages, 400));
+    on('task-search-box','input', debounce(function(){ loadMyTasks(); loadAllTasks(); }, 400));
+
+    on('btn-admin-menu','click', function(){
+      notify('管理者メニューは準備中です。機能は近日追加されます。', true);
+    });
+
+    attachSaveHandlers();
+
+    // 初回読み込み
+    navigateTo('home');
+  });
+</script>
+
+</body>
+</html>

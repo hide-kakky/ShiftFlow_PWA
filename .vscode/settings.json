@@ -1,0 +1,24 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.git/**": true,
+    "**/dist/**": true,
+    "**/build/**": true
+  },
+  "search.exclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/build/**": true
+  },
+  "editor.formatOnSave": true,
+  "editor.trimAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.encoding": "utf8",
+  "html.format.wrapAttributes": "force-expand-multiline",
+  "css.lint.unknownAtRules": "ignore",
+  "prettier.printWidth": 100,
+  "prettier.singleQuote": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "chatgpt.defaultLanguage": "ja",
+  "chatgpt.responseTone": "concise"
+}

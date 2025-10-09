@@ -1,0 +1,5 @@
+[
+  { "key": "cmd+shift+/", "command": "chat.open" },
+  { "key": "cmd+shift+e", "command": "chat.explainSelection", "when": "editorHasSelection" },
+  { "key": "cmd+shift+r", "command": "chat.rewriteSelection", "when": "editorHasSelection" }
+]

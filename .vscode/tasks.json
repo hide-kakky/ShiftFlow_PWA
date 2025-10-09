@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "GAS: status",
+      "type": "shell",
+      "command": "clasp status",
+      "group": "none",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "GAS: pull",
+      "type": "shell",
+      "command": "clasp pull",
+      "group": "none",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "GAS: push",
+      "type": "shell",
+      "command": "clasp push",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "GAS: deploy",
+      "type": "shell",
+      "command": "clasp deploy --description 'auto'",
+      "group": "none",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# ========================
+# 不要ファイルをクラウド同期から除外
+# ========================
+node_modules/
+.vscode/
+.git/
+dist/
+build/
+README.md
+package.json
+package-lock.json
+**/*.map
+**/*.log
+**/*.md
