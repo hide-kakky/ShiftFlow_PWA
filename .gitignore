@@ -1,0 +1,6 @@
+# clasp 関連
+.clasp.json
+# 一時キャッシュ
+node_modules/
+# Mac関連
+.DS_Store
