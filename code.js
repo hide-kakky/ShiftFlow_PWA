@@ -5,9 +5,6 @@ const SPREADSHEET_ID = '1bL7cdFqtFd7eKAj0ZOUrmQ2kbPtGvDt6EMXt6fi5i_M';
 // GCPクライアントIDは不要になったため削除します。
 // const OAUTH_CLIENT_ID = '...';
 
-
-
-
 // ====== 共通ユーティリティ ======
 function _openSheet(name) {
   Logger.log('openSheet: ' + name);
@@ -39,6 +36,29 @@ function _priorityWeight(p) {
   return 3;
 }
 
+function _coerceDateValue(value) {
+  if (!value) return null;
+  let dateObj;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    dateObj = new Date(value.getTime());
+  } else if (typeof value === 'number') {
+    dateObj = new Date(value);
+  } else if (typeof value === 'string') {
+    if (value.trim() === '') return null;
+    dateObj = new Date(value);
+  } else {
+    return null;
+  }
+  if (isNaN(dateObj.getTime())) return null;
+  return dateObj.getTime();
+}
+
+function _startOfToday() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
 function _isManagerRole(role) {
   const normalized = String(role || '')
     .trim()
@@ -50,6 +70,14 @@ function _isManagerRole(role) {
     normalized === 'administrator' ||
     normalized === 'manager'
   );
+}
+
+function _normalizeStatus(status) {
+  return String(status || '').trim();
+}
+
+function _isCompletedStatus(status) {
+  return _normalizeStatus(status) === '完了';
 }
 
 function _normalizeEmail(email) {
@@ -325,6 +353,47 @@ function getLoggedInUserInfo() {
   return info;
 }
 
+function getAuthStatus() {
+  const activeEmail = String(_getCurrentEmail() || '').trim();
+  const normalized = _normalizeEmail(activeEmail);
+  const status = {
+    activeEmail: activeEmail,
+    normalizedActiveEmail: normalized,
+    effectiveUserEmail: String(Session.getEffectiveUser().getEmail() || '').trim(),
+    hasSpreadsheetAccess: false,
+    sheetUrl: 'https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID,
+    userRecord: null,
+    error: '',
+  };
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    status.hasSpreadsheetAccess = true;
+    const userSheet = ss.getSheetByName('M_Users');
+    if (userSheet && normalized) {
+      const header = _getHeaderMap(userSheet);
+      const values = userSheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        if (_normalizeEmail(values[i][header['Email']]) === normalized) {
+          status.userRecord = {
+            email: values[i][header['Email']],
+            name: values[i][header['DisplayName']] || '',
+            role: values[i][header['Role']] || '',
+            isActive:
+              String(values[i][header['IsActive']] || '')
+                .trim()
+                .toUpperCase() === 'TRUE',
+            theme: header['Theme'] != null ? values[i][header['Theme']] || '' : '',
+          };
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    status.error = String(err);
+  }
+  return status;
+}
+
 function isManagerUser() {
   const u = getLoggedInUserInfo();
   return _isManagerRole(u.role);
@@ -395,72 +464,40 @@ function doGet(e) {
 
 // ====== ホーム（今日のタスク/メッセージ） ======
 function getHomeContent() {
-  const email = _getCurrentEmail();
-  const normalizedEmail = _normalizeEmail(email);
-  const taskSh = _openSheet('T_Tasks');
-  const header = _ensureColumns(taskSh, [
-    'TaskID',
-    'Title',
-    'AssigneeEmail',
-    'DueDate',
-    'Status',
-    'CreatedBy',
-    'CreatedAt',
-    'Priority',
-    'AssigneeEmails',
-    'RRULE',
-    'ParentTaskID',
-    'Attachments',
-    'UpdatedAt',
-    'RepeatRule',
-    'AttachmentIDs',
-  ]);
-  const tasks = taskSh.getDataRange().getValues();
-  const todayKey = _formatJST(new Date(), 'yyyy-MM-dd');
-
-  const todays = [];
-  for (let i = 1; i < tasks.length; i++) {
-    const row = tasks[i];
-    const due = _formatJST(row[header['DueDate']], 'yyyy-MM-dd');
-    if (!due) continue;
-    const status = row[header['Status']];
-    const pr = row[header['Priority']] || '中';
-
-    const assigneesArr =
-      header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
-    let isMine = false;
-    const candidateEmails = normalizedEmail ? [email, normalizedEmail] : [email];
-    if (candidateEmails.length) {
-      isMine = candidateEmails.some(function (target) {
-        return _emailArrayContains(assigneesArr, target);
-      });
-    }
-    if (!isMine && normalizedEmail) {
-      isMine = _normalizeEmail(row[header['AssigneeEmail']]) === normalizedEmail;
-    }
-
-    if (isMine && status !== '完了' && due <= todayKey) {
-      todays.push({
-        id: row[header['TaskID']],
-        title: row[header['Title']],
-        dueDate: _formatJST(row[header['DueDate']], 'M/d'),
-        priority: pr,
-        assignees: assigneesArr,
-        assignee: assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']],
-      });
-    }
-  }
-  todays.sort(function (a, b) {
-    const ad = a.dueDate;
-    const bd = b.dueDate;
-    if (ad < bd) return -1;
-    if (ad > bd) return 1;
-    return _priorityWeight(a.priority) - _priorityWeight(b.priority);
-  });
-
+  const rawEmail = _getCurrentEmail();
+  const normalizedEmail = _normalizeEmail(rawEmail);
+  const todayMs = _startOfToday();
+  const data = _loadTaskTable();
+  const myTasks = data.tasks
+    .filter(function (task) {
+      if (!normalizedEmail) return false;
+      if (_emailArrayContains(task.assignees, rawEmail)) return true;
+      if (_emailArrayContains(task.assignees, normalizedEmail)) return true;
+      if (_normalizeEmail(task.assignee) === normalizedEmail) return true;
+      return false;
+    })
+    .filter(function (task) {
+      return !task.isCompleted;
+    })
+    .sort(function (a, b) {
+      return _compareTasksForList(a, b, todayMs);
+    })
+    .slice(0, 5)
+    .map(function (task) {
+      return {
+        id: task.id,
+        title: task.title,
+        dueDate: task.dueDate ? _formatJST(task.dueDate, 'M/d') : '',
+        priority: task.priority,
+        assignees: task.assignees,
+        assignee: task.assignee,
+        status: task.status,
+        isCompleted: task.isCompleted,
+      };
+    });
   const messages = getMessages();
 
-  return { tasks: todays, messages: messages };
+  return { tasks: myTasks, messages: messages };
 }
 
 // ====== タスク CRUD/一覧 ======
@@ -490,9 +527,7 @@ function addNewTask(taskObject) {
     const current = _getCurrentEmail();
 
     const assignees = Array.isArray(taskObject.assignees)
-      ? taskObject.assignees
-          .map((addr) => String(addr || '').trim())
-          .filter(Boolean)
+      ? taskObject.assignees.map((addr) => String(addr || '').trim()).filter(Boolean)
       : current
       ? [current]
       : [];
@@ -510,13 +545,8 @@ function addNewTask(taskObject) {
     row[header['Priority']] = taskObject.priority || '中';
     if (header['AssigneeEmails'] != null) row[header['AssigneeEmails']] = assigneesCsv;
     const repeatRuleValue = taskObject.repeatRule || '';
-    if (header['RRULE'] != null) row[header['RRULE']] = repeatRuleValue;
     if (header['RepeatRule'] != null) row[header['RepeatRule']] = repeatRuleValue;
-    if (header['ParentTaskID'] != null) row[header['ParentTaskID']] = taskObject.parentTaskId || '';
-    const attachmentsCsv = _arrayToCsv(taskObject.attachmentIds || []);
-    if (header['Attachments'] != null) row[header['Attachments']] = attachmentsCsv;
-    if (header['AttachmentIDs'] != null) row[header['AttachmentIDs']] = attachmentsCsv;
-    if (header['UpdatedAt'] != null) row[header['UpdatedAt']] = now;
+    if (header['UpdatedAt'] != null) row[header['UpdatedAt']] = '';
 
     const lastCol = sh.getLastColumn();
     for (let c = 0; c < lastCol; c++) {
@@ -538,6 +568,7 @@ function addNewTask(taskObject) {
 }
 
 function getTaskById(taskId) {
+  const targetId = String(taskId || '').trim();
   const sh = _openSheet('T_Tasks');
   const header = _ensureColumns(sh, [
     'TaskID',
@@ -549,12 +580,8 @@ function getTaskById(taskId) {
     'CreatedAt',
     'Priority',
     'AssigneeEmails',
-    'RRULE',
-    'ParentTaskID',
-    'Attachments',
     'UpdatedAt',
     'RepeatRule',
-    'AttachmentIDs',
   ]);
   const v = sh.getDataRange().getValues();
   const current = _getCurrentEmail();
@@ -562,36 +589,27 @@ function getTaskById(taskId) {
 
   for (let i = 1; i < v.length; i++) {
     const row = v[i];
-    if (row[header['TaskID']] === taskId) {
+    const taskId = String(row[header['TaskID']] || '').trim();
+    if (String(row[header['TaskID']] || '').trim() === targetId) {
       const createdBy = row[header['CreatedBy']];
       const canDelete = _normalizeEmail(createdBy) === normalizedCurrent || isManagerUser();
       const assigneesArr =
         header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
       const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
-      let attachIds = [];
-      if (header['AttachmentIDs'] != null) {
-        attachIds = _parseAttachmentIds(row[header['AttachmentIDs']]);
-      } else if (header['Attachments'] != null) {
-        attachIds = _parseAttachmentIds(row[header['Attachments']]);
-      }
-      const repeatRuleValue =
-        header['RRULE'] != null
-          ? row[header['RRULE']] || row[header['RepeatRule']] || ''
-          : row[header['RepeatRule']] || '';
+      const repeatRuleValue = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
       return {
-        id: row[header['TaskID']],
+        id: targetId,
         title: row[header['Title']],
         assignee: assigneeSingle,
         dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
-        status: row[header['Status']],
+        status: _normalizeStatus(row[header['Status']]),
         priority: row[header['Priority']] || '中',
         createdBy: createdBy,
         canDelete: canDelete,
         assignees: assigneesArr,
-        attachments: _getAttachmentMetas(attachIds),
+        attachments: [],
         repeatRule: repeatRuleValue,
         updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
-        parentTaskId: header['ParentTaskID'] != null ? row[header['ParentTaskID']] || '' : '',
       };
     }
   }
@@ -600,6 +618,7 @@ function getTaskById(taskId) {
 
 function updateTask(taskObject) {
   try {
+    const targetId = String(taskObject.id || '').trim();
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, [
       'TaskID',
@@ -611,16 +630,12 @@ function updateTask(taskObject) {
       'CreatedAt',
       'Priority',
       'AssigneeEmails',
-      'RRULE',
-      'ParentTaskID',
-      'Attachments',
       'UpdatedAt',
       'RepeatRule',
-      'AttachmentIDs',
     ]);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
-      if (v[i][header['TaskID']] === taskObject.id) {
+      if (String(v[i][header['TaskID']] || '').trim() === targetId) {
         if (taskObject.title != null)
           sh.getRange(i + 1, header['Title'] + 1).setValue(taskObject.title);
         if (taskObject.dueDate != null)
@@ -637,31 +652,22 @@ function updateTask(taskObject) {
             taskObject.assignees[0] || v[i][header['AssigneeEmail']]
           );
         }
-        if (taskObject.repeatRule != null) {
-          if (header['RRULE'] != null) sh.getRange(i + 1, header['RRULE'] + 1).setValue(taskObject.repeatRule);
-          if (header['RepeatRule'] != null) sh.getRange(i + 1, header['RepeatRule'] + 1).setValue(taskObject.repeatRule);
-        }
-        if (Array.isArray(taskObject.attachmentIds)) {
-          const csv = _arrayToCsv(taskObject.attachmentIds);
-          if (header['Attachments'] != null) sh.getRange(i + 1, header['Attachments'] + 1).setValue(csv);
-          if (header['AttachmentIDs'] != null) sh.getRange(i + 1, header['AttachmentIDs'] + 1).setValue(csv);
-        }
-        if (taskObject.parentTaskId != null && header['ParentTaskID'] != null) {
-          sh.getRange(i + 1, header['ParentTaskID'] + 1).setValue(taskObject.parentTaskId);
+        if (taskObject.repeatRule != null && header['RepeatRule'] != null) {
+          sh.getRange(i + 1, header['RepeatRule'] + 1).setValue(taskObject.repeatRule);
         }
         if (header['UpdatedAt'] != null) {
           sh.getRange(i + 1, header['UpdatedAt'] + 1).setValue(new Date());
         }
 
-        _audit('task', taskObject.id, 'update', { payload: taskObject });
+        _audit('task', targetId, 'update', { payload: taskObject });
         return { success: true, message: 'タスクを更新しました。' };
       }
     }
-    const logId = _audit('task', taskObject.id || '', 'update_not_found', { payload: taskObject });
+    const logId = _audit('task', targetId || '', 'update_not_found', { payload: taskObject });
     return { success: false, message: '更新対象のタスクが見つかりませんでした。', logId: logId };
   } catch (e) {
     Logger.log(e);
-    const logId = _audit('task', taskObject.id || '', 'update_fail', {
+    const logId = _audit('task', targetId || '', 'update_fail', {
       error: String(e),
       payload: taskObject,
     });
@@ -671,6 +677,7 @@ function updateTask(taskObject) {
 
 function completeTask(taskId) {
   try {
+    const targetId = String(taskId || '').trim();
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, [
       'TaskID',
@@ -682,25 +689,19 @@ function completeTask(taskId) {
       'CreatedAt',
       'Priority',
       'AssigneeEmails',
-      'RRULE',
-      'ParentTaskID',
-      'Attachments',
       'UpdatedAt',
       'RepeatRule',
-      'AttachmentIDs',
     ]);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
-      if (v[i][header['TaskID']] === taskId) {
+      if (String(v[i][header['TaskID']] || '').trim() === targetId) {
         sh.getRange(i + 1, header['Status'] + 1).setValue('完了');
-        if (header['UpdatedAt'] != null) sh.getRange(i + 1, header['UpdatedAt'] + 1).setValue(new Date());
+        if (header['UpdatedAt'] != null)
+          sh.getRange(i + 1, header['UpdatedAt'] + 1).setValue(new Date());
         const row = v[i];
-        const repeatSource =
-          header['RRULE'] != null
-            ? row[header['RRULE']] || row[header['RepeatRule']] || ''
-            : row[header['RepeatRule']] || '';
+        const repeatSource = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
         const repeat = String(repeatSource || '').toUpperCase();
-        _audit('task', taskId, 'complete', { repeatRule: repeat });
+        _audit('task', targetId, 'complete', { repeatRule: repeat });
 
         if (repeat === 'DAILY' || repeat === 'WEEKLY' || repeat === 'MONTHLY') {
           const baseDue = new Date(row[header['DueDate']]);
@@ -718,9 +719,6 @@ function completeTask(taskId) {
           }
           const assigneesCsv =
             header['AssigneeEmails'] != null ? String(row[header['AssigneeEmails']] || '') : '';
-          const attachCsv =
-            header['AttachmentIDs'] != null ? String(row[header['AttachmentIDs']] || '') :
-            header['Attachments'] != null ? String(row[header['Attachments']] || '') : '';
           const newId = Utilities.getUuid();
           const now = new Date();
           const current = _getCurrentEmail();
@@ -736,19 +734,15 @@ function completeTask(taskId) {
           newRow[header['CreatedAt']] = now;
           newRow[header['Priority']] = row[header['Priority']] || '中';
           if (header['AssigneeEmails'] != null) newRow[header['AssigneeEmails']] = assigneesCsv;
-          if (header['RRULE'] != null) newRow[header['RRULE']] = repeat;
           if (header['RepeatRule'] != null) newRow[header['RepeatRule']] = repeat;
-          if (header['ParentTaskID'] != null) newRow[header['ParentTaskID']] = taskId;
-          if (header['Attachments'] != null) newRow[header['Attachments']] = attachCsv;
-          if (header['AttachmentIDs'] != null) newRow[header['AttachmentIDs']] = attachCsv;
-          if (header['UpdatedAt'] != null) newRow[header['UpdatedAt']] = now;
+          if (header['UpdatedAt'] != null) newRow[header['UpdatedAt']] = '';
           const lastCol = sh.getLastColumn();
           for (let c = 0; c < lastCol; c++) {
             if (newRow[c] === undefined) newRow[c] = '';
           }
           sh.appendRow(newRow);
           _audit('task', newId, 'repeat_spawn', {
-            parent: taskId,
+            parent: targetId,
             dueDate: nextDue,
             repeatRule: repeat,
           });
@@ -757,17 +751,18 @@ function completeTask(taskId) {
         return { success: true, message: 'タスクを完了にしました。' };
       }
     }
-    const logId = _audit('task', taskId, 'complete_not_found', {});
+    const logId = _audit('task', targetId, 'complete_not_found', {});
     return { success: false, message: '対象のタスクが見つかりません。', logId: logId };
   } catch (e) {
     Logger.log(e);
-    const logId = _audit('task', taskId || '', 'complete_fail', { error: String(e) });
+    const logId = _audit('task', targetId || '', 'complete_fail', { error: String(e) });
     return { success: false, message: '完了処理エラー: ' + e.message, logId: logId };
   }
 }
 
 function deleteTaskById(taskId) {
   try {
+    const targetId = String(taskId || '').trim();
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, [
       'TaskID',
@@ -780,29 +775,131 @@ function deleteTaskById(taskId) {
       'Priority',
       'AssigneeEmails',
       'RepeatRule',
-      'AttachmentIDs',
+      'UpdatedAt',
     ]);
     const v = sh.getDataRange().getValues();
     const current = _getCurrentEmail();
     for (let i = v.length - 1; i >= 1; i--) {
-      if (v[i][header['TaskID']] === taskId) {
+      if (String(v[i][header['TaskID']] || '').trim() === targetId) {
         sh.deleteRow(i + 1);
-        _audit('task', taskId, 'delete', {});
+        _audit('task', targetId, 'delete', {});
         return { success: true, message: 'タスクを削除しました。' };
       }
     }
-    const logId = _audit('task', taskId, 'delete_not_found', {});
+    const logId = _audit('task', targetId, 'delete_not_found', {});
     return { success: false, message: '該当のタスクが見つかりませんでした。', logId: logId };
   } catch (e) {
     Logger.log(e);
-    const logId = _audit('task', taskId || '', 'delete_fail', { error: String(e) });
+    const logId = _audit('task', targetId || '', 'delete_fail', { error: String(e) });
     return { success: false, message: 'エラーが発生しました: ' + e.message, logId: logId };
   }
 }
 
-function listMyTasks() {
+function listMyTasks(filter) {
   const rawEmail = _getCurrentEmail();
   const normalizedEmail = _normalizeEmail(rawEmail);
+  if (!normalizedEmail) {
+    return { tasks: [], meta: { statuses: [] } };
+  }
+
+  const data = _loadTaskTable();
+  const todayMs = _startOfToday();
+  const statusFilter = filter && filter.status ? _normalizeStatus(filter.status) : '';
+
+  const statuses = new Set();
+  const mine = data.tasks.filter(function (task) {
+    if (_emailArrayContains(task.assignees, rawEmail)) return true;
+    if (_emailArrayContains(task.assignees, normalizedEmail)) return true;
+    if (_normalizeEmail(task.assignee) === normalizedEmail) return true;
+    return false;
+  });
+
+  mine.forEach(function (task) {
+    if (task.status) statuses.add(task.status);
+  });
+
+  const filtered = mine.filter(function (task) {
+    if (!statusFilter) return true;
+    return _normalizeStatus(task.status) === statusFilter;
+  });
+
+  filtered.sort(function (a, b) {
+    return _compareTasksForList(a, b, todayMs);
+  });
+
+  return {
+    tasks: filtered,
+    meta: {
+      statuses: Array.from(statuses).sort(),
+      currentEmail: rawEmail,
+      normalizedEmail: normalizedEmail,
+      totalTasks: data.tasks.length,
+      mineCount: mine.length,
+      filteredCount: filtered.length,
+    },
+  };
+}
+
+function listCreatedTasks(filter) {
+  const rawEmail = _getCurrentEmail();
+  const normalizedEmail = _normalizeEmail(rawEmail);
+  if (!normalizedEmail) {
+    return { tasks: [], meta: { statuses: [] } };
+  }
+
+  const data = _loadTaskTable();
+  const todayMs = _startOfToday();
+  const statusFilter = filter && filter.status ? _normalizeStatus(filter.status) : '';
+  const sortMode = filter && filter.sort ? String(filter.sort) : 'due';
+
+  const mine = data.tasks.filter(function (task) {
+    return _normalizeEmail(task.createdBy) === normalizedEmail;
+  });
+
+  const statuses = new Set();
+  mine.forEach(function (task) {
+    if (task.status) statuses.add(task.status);
+  });
+
+  let filtered = mine.filter(function (task) {
+    if (!statusFilter) return true;
+    return _normalizeStatus(task.status) === statusFilter;
+  });
+
+  if (sortMode === 'created_desc') {
+    filtered.sort(function (a, b) {
+      const ca = a.createdAt != null ? a.createdAt : 0;
+      const cb = b.createdAt != null ? b.createdAt : 0;
+      if (cb !== ca) return cb - ca;
+      return _compareTasksForList(a, b, todayMs);
+    });
+  } else if (sortMode === 'created_asc') {
+    filtered.sort(function (a, b) {
+      const ca = a.createdAt != null ? a.createdAt : Number.MAX_SAFE_INTEGER;
+      const cb = b.createdAt != null ? b.createdAt : Number.MAX_SAFE_INTEGER;
+      if (ca !== cb) return ca - cb;
+      return _compareTasksForList(a, b, todayMs);
+    });
+  } else {
+    filtered.sort(function (a, b) {
+      return _compareTasksForList(a, b, todayMs);
+    });
+  }
+
+  return {
+    tasks: filtered,
+    meta: {
+      statuses: Array.from(statuses).sort(),
+      sort: sortMode,
+      currentEmail: rawEmail,
+      totalTasks: data.tasks.length,
+      createdCount: mine.length,
+      filteredCount: filtered.length,
+    },
+  };
+}
+
+function _loadTaskTable() {
   const sh = _openSheet('T_Tasks');
   const header = _ensureColumns(sh, [
     'TaskID',
@@ -821,182 +918,120 @@ function listMyTasks() {
     'RepeatRule',
     'AttachmentIDs',
   ]);
-  const v = sh.getDataRange().getValues();
-  const debug = {
-    currentEmail: rawEmail,
-    normalizedEmail: normalizedEmail,
-    hasNormalizedEmail: !!normalizedEmail,
-    totalRows: Math.max(v.length - 1, 0),
-    excludedByOwnership: 0,
-    excludedByStatus: 0,
-  };
-  const ownershipRejectedIds = [];
-  const statusRejectedIds = [];
-  const out = [];
-  for (let i = 1; i < v.length; i++) {
-    const row = v[i];
-
-    const assigneesArr =
-      header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
-    let mine = false;
-    const candidateEmails = normalizedEmail ? [rawEmail, normalizedEmail] : [rawEmail];
-    if (candidateEmails.length) {
-      mine = candidateEmails.some(function (target) {
-        return _emailArrayContains(assigneesArr, target);
-      });
-    }
-    if (!mine && normalizedEmail) {
-      mine = _normalizeEmail(row[header['AssigneeEmail']]) === normalizedEmail;
-    }
-    if (!mine && normalizedEmail) {
-      mine = _normalizeEmail(row[header['CreatedBy']]) === normalizedEmail;
-    }
-    if (!mine) {
-      debug.excludedByOwnership++;
-      if (ownershipRejectedIds.length < 5) ownershipRejectedIds.push(row[header['TaskID']]);
-      continue;
-    }
-
-    const status = row[header['Status']];
-    if (String(status || '') === '完了') {
-      debug.excludedByStatus++;
-      if (statusRejectedIds.length < 5) statusRejectedIds.push(row[header['TaskID']]);
-      continue;
-    }
-
-    const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
-
-    const attachCsv =
-      header['AttachmentIDs'] != null ? String(row[header['AttachmentIDs']] || '') : '';
-    const repeatRuleRaw =
-      header['RRULE'] != null
-        ? row[header['RRULE']] || row[header['RepeatRule']] || ''
-        : row[header['RepeatRule']] || '';
-
-    out.push({
-      id: row[header['TaskID']],
-      title: row[header['Title']],
-      assignee: assigneeSingle,
-      dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
-      status: status,
-      priority: row[header['Priority']] || '中',
-      assignees: assigneesArr,
-      createdBy: row[header['CreatedBy']] || '',
-      createdAt: row[header['CreatedAt']] || '',
-      updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
-      repeatRule: repeatRuleRaw,
-      attachmentIds: _csvToArray(attachCsv),
-      parentTaskId: header['ParentTaskID'] != null ? row[header['ParentTaskID']] || '' : '',
-    });
+  const rows = sh.getDataRange().getValues();
+  const statuses = new Set();
+  const tasks = [];
+  for (let i = 1; i < rows.length; i++) {
+    const record = _buildTaskRecord(rows[i], header);
+    if (!record) continue;
+    if (record.status) statuses.add(record.status);
+    tasks.push(record);
   }
-  debug.returned = out.length;
-  debug.ownershipSampleIds = ownershipRejectedIds;
-  debug.statusSampleIds = statusRejectedIds;
-  out.sort(function (a, b) {
-    const ap = _priorityWeight(a.priority || '中');
-    const bp = _priorityWeight(b.priority || '中');
-    if (ap !== bp) return ap - bp;
-    const ad = a.dueDate || '';
-    const bd = b.dueDate || '';
-    if (ad && bd && ad !== bd) return ad < bd ? -1 : 1;
-    if (!ad && bd) return 1;
-    if (ad && !bd) return -1;
-    return String(a.id || '').localeCompare(String(b.id || ''));
-  });
-  debug.sorted = true;
-  return { tasks: out, debug: debug };
+  return {
+    tasks: tasks,
+    statuses: Array.from(statuses).sort(),
+  };
 }
 
-function listAllTasks() {
+function _buildTaskRecord(row, header) {
+  const id = String(row[header['TaskID']] || '').trim();
+  if (!id) return null;
+
+  const assigneesArr =
+    header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
+  const primaryAssignee = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
+
+  const status = _normalizeStatus(row[header['Status']]);
+  const dueDateString = _formatJST(row[header['DueDate']], 'yyyy-MM-dd');
+  const dueValue = _coerceDateValue(row[header['DueDate']]);
+  const createdAtValue = _coerceDateValue(row[header['CreatedAt']]);
+  const updatedAtValue =
+    header['UpdatedAt'] != null ? _coerceDateValue(row[header['UpdatedAt']]) : null;
+
+  return {
+    id: id,
+    title: row[header['Title']] || '',
+    assignee: primaryAssignee || '',
+    assignees: assigneesArr,
+    dueDate: dueDateString,
+    dueValue: dueValue,
+    status: status,
+    priority: row[header['Priority']] || '中',
+    createdBy: row[header['CreatedBy']] || '',
+    createdAt: createdAtValue,
+    createdAtRaw: row[header['CreatedAt']] || '',
+    updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
+    updatedAtValue: updatedAtValue,
+    repeatRule: header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '',
+    isCompleted: _isCompletedStatus(status),
+  };
+}
+
+function _taskBucket(task, todayMs) {
+  if (task.isCompleted) return 3;
+  if (task.dueValue == null) return 2;
+  if (task.dueValue < todayMs) return 0;
+  return 1;
+}
+
+function _compareTasksForList(a, b, todayMs) {
+  const bucketA = _taskBucket(a, todayMs);
+  const bucketB = _taskBucket(b, todayMs);
+  if (bucketA !== bucketB) return bucketA - bucketB;
+
+  const dueA = a.dueValue != null ? a.dueValue : Number.MAX_SAFE_INTEGER;
+  const dueB = b.dueValue != null ? b.dueValue : Number.MAX_SAFE_INTEGER;
+  if (dueA !== dueB) return dueA - dueB;
+
+  const priorityDiff = _priorityWeight(a.priority || '中') - _priorityWeight(b.priority || '中');
+  if (priorityDiff !== 0) return priorityDiff;
+
+  const createdA = a.createdAt != null ? -a.createdAt : 0;
+  const createdB = b.createdAt != null ? -b.createdAt : 0;
+  if (createdA !== createdB) return createdA - createdB;
+
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+function listAllTasks(filter) {
   const userInfo = getLoggedInUserInfo();
   const roleRaw = String((userInfo && userInfo.role) || '').trim();
   const normalizedRole = roleRaw.toLowerCase();
   const isManager = _isManagerRole(roleRaw);
-  const debug = {
-    currentEmail: userInfo ? userInfo.email : '',
-    userRole: roleRaw,
-    normalizedRole: normalizedRole,
-    isManager: isManager,
-    totalRows: 0,
-    excludedByStatus: 0,
-  };
   if (!isManager) {
-    debug.reason = 'not_manager';
-    return { tasks: [], debug: debug };
+    return {
+      tasks: [],
+      meta: {
+        managerOnly: true,
+        userRole: roleRaw,
+        normalizedRole: normalizedRole,
+        reason: '管理者権限が必要です。',
+      },
+    };
   }
-  const sh = _openSheet('T_Tasks');
-  const header = _ensureColumns(sh, [
-    'TaskID',
-    'Title',
-    'AssigneeEmail',
-    'DueDate',
-    'Status',
-    'CreatedBy',
-    'CreatedAt',
-    'Priority',
-    'AssigneeEmails',
-    'RRULE',
-    'ParentTaskID',
-    'Attachments',
-    'UpdatedAt',
-    'RepeatRule',
-    'AttachmentIDs',
-  ]);
-  const v = sh.getDataRange().getValues();
-  debug.totalRows = Math.max(v.length - 1, 0);
-  const out = [];
-  const statusRejectedIds = [];
-  for (let i = 1; i < v.length; i++) {
-    const row = v[i];
-    const status = row[header['Status']];
-    if (String(status || '') === '完了') {
-      debug.excludedByStatus++;
-      if (statusRejectedIds.length < 5) statusRejectedIds.push(row[header['TaskID']]);
-      continue;
-    }
 
-    const assigneesArr =
-      header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
-    const primaryAssignee = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
+  const data = _loadTaskTable();
+  const todayMs = _startOfToday();
+  const statusFilter = filter && filter.status ? _normalizeStatus(filter.status) : '';
 
-    const attachCsv =
-      header['AttachmentIDs'] != null ? String(row[header['AttachmentIDs']] || '') : '';
-    const repeatRuleRaw =
-      header['RRULE'] != null
-        ? row[header['RRULE']] || row[header['RepeatRule']] || ''
-        : row[header['RepeatRule']] || '';
-
-    out.push({
-      id: row[header['TaskID']],
-      title: row[header['Title']],
-      assignee: primaryAssignee,
-      dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
-      status: status,
-      priority: row[header['Priority']] || '中',
-      assignees: assigneesArr,
-      createdBy: row[header['CreatedBy']] || '',
-      createdAt: row[header['CreatedAt']] || '',
-      updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
-      repeatRule: repeatRuleRaw,
-      attachmentIds: _csvToArray(attachCsv),
-      parentTaskId: header['ParentTaskID'] != null ? row[header['ParentTaskID']] || '' : '',
-    });
-  }
-  debug.returned = out.length;
-  debug.statusSampleIds = statusRejectedIds;
-  out.sort(function (a, b) {
-    const ap = _priorityWeight(a.priority || '中');
-    const bp = _priorityWeight(b.priority || '中');
-    if (ap !== bp) return ap - bp;
-    const ad = a.dueDate || '';
-    const bd = b.dueDate || '';
-    if (ad && bd && ad !== bd) return ad < bd ? -1 : 1;
-    if (!ad && bd) return 1;
-    if (ad && !bd) return -1;
-    return String(a.id || '').localeCompare(String(b.id || ''));
+  const filtered = data.tasks.filter(function (task) {
+    if (!statusFilter) return true;
+    return _normalizeStatus(task.status) === statusFilter;
   });
-  debug.sorted = true;
-  return { tasks: out, debug: debug };
+
+  filtered.sort(function (a, b) {
+    return _compareTasksForList(a, b, todayMs);
+  });
+
+  return {
+    tasks: filtered,
+    meta: {
+      statuses: data.statuses,
+      totalTasks: data.tasks.length,
+      filteredCount: filtered.length,
+      isManager: true,
+    },
+  };
 }
 
 // ====== メッセージ ======
@@ -1033,8 +1068,7 @@ function getMessages(opt) {
   for (let i = 1; i < memos.length; i++) {
     const id = memos[i][mHdr['MemoID']];
     const fullBody = String(memos[i][mHdr['Body']] || '');
-    const preview =
-      fullBody.length > 80 ? fullBody.substring(0, 78).trimEnd() + '...' : fullBody;
+    const preview = fullBody.length > 80 ? fullBody.substring(0, 78).trimEnd() + '...' : fullBody;
     const createdAtVal = memos[i][mHdr['CreatedAt']];
     const createdAtDate = createdAtVal ? new Date(createdAtVal) : null;
     const obj = {

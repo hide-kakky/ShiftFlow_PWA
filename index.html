@@ -441,6 +441,31 @@
       background:rgba(122,162,255,.26);
       color:#e8edff;
     }
+    .card.task-card-completed{
+      border:1px dashed var(--divider);
+      background:linear-gradient(0deg, rgba(148,163,184,.12), rgba(148,163,184,.04)), var(--card);
+      opacity:.88;
+    }
+    .card.task-card-completed .task-title-line strong{
+      text-decoration:line-through;
+      color:var(--muted);
+    }
+    .badge-soft.badge-completed{
+      background:var(--priority-low-bg);
+      color:var(--priority-low-text);
+    }
+    :root[data-theme="dark"] .badge-soft.badge-completed{
+      background:rgba(74,222,128,.28);
+      color:#bbf7d0;
+    }
+    .badge-soft.badge-overdue{
+      background:var(--priority-high-bg);
+      color:var(--priority-high-text);
+    }
+    :root[data-theme="dark"] .badge-soft.badge-overdue{
+      background:rgba(248,113,113,.28);
+      color:#fecaca;
+    }
 
     .modal-modern{
       border-radius:18px;
@@ -656,21 +681,61 @@
         </div>
         <ul class="nav nav-tabs mt-2" id="tasksTabs">
           <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-my">マイタスク</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-today">今日</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-created">自分が飛ばした</button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-all">全体タスク</button></li>
         </ul>
         <div class="tab-content">
           <div class="tab-pane fade show active" id="tab-my">
-            <div class="d-flex justify-content-end mt-2">
-              <button class="btn btn-outline-primary" id="btn-my-reload" type="button">再読込</button>
+            <div class="row g-2 align-items-end mt-2">
+              <div class="col-auto">
+                <label class="form-label" for="flt-my-status">ステータス</label>
+                <select class="form-select" id="flt-my-status">
+                  <option value="">すべて</option>
+                </select>
+              </div>
+              <div class="col-auto ms-auto">
+                <label class="form-label d-block">&nbsp;</label>
+                <button class="btn btn-outline-primary" id="btn-my-reload" type="button">再読込</button>
+              </div>
             </div>
             <div id="list-my" class="mt-2"></div>
           </div>
-          <div class="tab-pane fade" id="tab-today"><div id="list-today" class="mt-2"></div></div>
+          <div class="tab-pane fade" id="tab-created">
+            <div class="row g-2 align-items-end mt-2">
+              <div class="col-auto">
+                <label class="form-label" for="flt-created-status">ステータス</label>
+                <select class="form-select" id="flt-created-status">
+                  <option value="">すべて</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <label class="form-label" for="flt-created-sort">並び順</label>
+                <select class="form-select" id="flt-created-sort">
+                  <option value="due">期限が近い順</option>
+                  <option value="created_desc">作成が新しい順</option>
+                  <option value="created_asc">作成が古い順</option>
+                </select>
+              </div>
+              <div class="col-auto ms-auto">
+                <label class="form-label d-block">&nbsp;</label>
+                <button class="btn btn-outline-primary" id="btn-created-reload" type="button">再読込</button>
+              </div>
+            </div>
+            <div id="list-created" class="mt-2"></div>
+          </div>
 
           <div class="tab-pane fade" id="tab-all">
-            <div class="d-flex justify-content-end mt-2">
-              <button class="btn btn-outline-primary" id="btn-all-reload" type="button">再読込</button>
+            <div class="row g-2 align-items-end mt-2">
+              <div class="col-auto">
+                <label class="form-label" for="flt-all-status">ステータス</label>
+                <select class="form-select" id="flt-all-status">
+                  <option value="">すべて</option>
+                </select>
+              </div>
+              <div class="col-auto ms-auto">
+                <label class="form-label d-block">&nbsp;</label>
+                <button class="btn btn-outline-primary" id="btn-all-reload" type="button">再読込</button>
+              </div>
             </div>
             <div id="list-all" class="mt-2"></div>
           </div>
@@ -718,9 +783,13 @@
           <div class="mb-3"><label class="form-label">表示名</label><input class="form-control" id="setting-name"/></div>
           <div class="mb-3"><label class="form-label">プロフィール画像URL</label><input class="form-control" id="setting-image"/></div>
           <div class="mb-3">
-            <label class="form-label d-flex align-items-center gap-2">テーマ<span class="badge bg-secondary">調整中</span></label>
-            <div class="form-control-plaintext text-muted small" id="setting-theme-display">自動適用中</div>
-            <input type="hidden" id="setting-theme" value="light">
+            <label class="form-label">テーマ</label>
+            <select class="form-select" id="setting-theme">
+              <option value="light">ライト</option>
+              <option value="dark">ダーク</option>
+              <option value="system">システムに合わせる</option>
+            </select>
+            <div class="form-text" id="setting-theme-display">ライトテーマ（自動適用中）</div>
           </div>
           <button class="btn btn-primary" type="button" id="btn-settings-save">
             <span class="label">保存</span>
@@ -996,6 +1065,7 @@
   const HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
   let AUTH_NOTICE_SHOWN = false;
   let MANAGER_NOTICE_SHOWN = false;
+  let AUTH_HELP_REQUESTED = false;
   var _rszTimer = null;
 
   // ===== テーマ適用 =====
@@ -1035,9 +1105,9 @@
 
   function describeThemeValue(value){
     switch((value || '').toLowerCase()){
-      case 'dark': return 'ダークテーマ（調整中）';
-      case 'system': return 'システム設定に連動（調整中）';
-      default: return 'ライトテーマ（自動適用中）';
+      case 'dark': return 'ダークテーマ';
+      case 'system': return 'システム設定に連動';
+      default: return 'ライトテーマ';
     }
   }
 
@@ -1058,7 +1128,51 @@
     wrap.appendChild(el);
     setTimeout(function(){ el.classList.remove('show'); setTimeout(function(){ el.remove(); },150); }, 2200);
   }
+  function requestAuthHelp(){
+    if (AUTH_HELP_REQUESTED) return;
+    AUTH_HELP_REQUESTED = true;
+    google.script.run
+      .withSuccessHandler(renderAuthHelpDetails)
+      .withFailureHandler(function(err){
+        var box = byId('auth-help-details');
+        if (!box) return;
+        var msg = err && err.message ? err.message : err;
+        box.innerHTML = '<div class="alert alert-danger small mb-0">診断情報の取得に失敗しました: '+esc(msg || '不明なエラー')+'</div>';
+      })
+      .getAuthStatus();
+  }
+  function renderAuthHelpDetails(info){
+    var box = byId('auth-help-details');
+    if (!box) return;
+    if (!info){
+      box.innerHTML = '<div class="alert alert-danger small mb-0">診断データが取得できませんでした。</div>';
+      return;
+    }
+    var parts = [];
+    parts.push('<div class="alert alert-info small mb-2">');
+    parts.push('<div class="fw-bold mb-1">現在の診断結果</div>');
+    parts.push('<ul class="mb-2 ps-3">');
+    parts.push('<li>ActiveUser: '+(info.activeEmail ? esc(info.activeEmail) : '<span class="text-danger">取得不可</span>')+'</li>');
+    parts.push('<li>EffectiveUser: '+(info.effectiveUserEmail ? esc(info.effectiveUserEmail) : '<span class="text-muted">不明</span>')+'</li>');
+    parts.push('<li>スプレッドシートアクセス: '+(info.hasSpreadsheetAccess ? 'OK' : '<span class="text-danger">権限不足</span>')+'</li>');
+    if (info.userRecord){
+      parts.push('<li>ユーザー登録: '+esc(info.userRecord.role || '一般')+' / '+(info.userRecord.isActive ? 'アクティブ' : '<span class="text-danger">停止中</span>')+'</li>');
+    } else if (info.normalizedActiveEmail){
+      parts.push('<li>ユーザー登録: <span class="text-danger">未登録</span></li>');
+    }
+    parts.push('</ul>');
+    if (info.error){
+      parts.push('<div class="text-danger mb-2">エラー: '+esc(info.error)+'</div>');
+    }
+    if (info.sheetUrl){
+      parts.push('<div class="mb-1"><a class="link-primary" href="'+esc(info.sheetUrl)+'" target="_blank" rel="noopener">シートの共有設定を確認</a></div>');
+    }
+    parts.push('<div class="mb-0">ウェブアプリを再デプロイし、「実行するユーザー: アクセスするユーザー」「アクセスできるユーザー: 組織内のユーザー」等に設定しているか確認してください。</div>');
+    parts.push('</div>');
+    box.innerHTML = parts.join('');
+  }
   function authRequiredCard(){
+    requestAuthHelp();
     return '<div class="card border-warning"><div class="card-body">'+
       '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">lock</span>Googleアカウントの情報が取得できません。</p>'+
       '<p class="mb-2">以下を確認してください。</p>'+
@@ -1066,6 +1180,7 @@
         '<li>Apps Script の Webアプリ設定で「アクセスできるユーザー」を匿名許可からサインイン必須に変更します。</li>'+
         '<li>設定更新後に再デプロイし、このページを再読み込みします。</li>'+
       '</ul>'+
+      '<div id="auth-help-details" class="mt-3"></div>'+
     '</div></div>';
   }
   function managerRequiredCard(info){
@@ -1073,18 +1188,17 @@
     var role = esc(info.userRole || '（不明）');
     var normalized = esc(info.normalizedRole || '（不明）');
     var reason = esc(info.reason || '管理者権限が確認できません。');
-    var total = typeof info.totalRows === 'number' ? info.totalRows : '—';
-    var excluded = typeof info.excludedByStatus === 'number' ? info.excludedByStatus : '—';
-    var returned = typeof info.returned === 'number' ? info.returned : '—';
-    var statusSamples = Array.isArray(info.statusSampleIds) && info.statusSampleIds.length
-      ? '<p class="mb-0 small text-muted">除外されたタスクID例: '+esc(info.statusSampleIds.join(', '))+'</p>'
-      : '';
+    var stats = '';
+    if (typeof info.totalRows === 'number' || typeof info.returned === 'number') {
+      var total = typeof info.totalRows === 'number' ? info.totalRows : '—';
+      var returned = typeof info.returned === 'number' ? info.returned : '—';
+      stats += '<p class="mb-1 small text-muted">対象行数: 総数 '+total+' / 返却 '+returned+'</p>';
+    }
     return '<div class="card border-warning"><div class="card-body">'+
       '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">admin_panel_settings</span>'+reason+'</p>'+
       '<p class="mb-1 small text-muted">ロール: '+role+'</p>'+
-      '<p class="mb-1 small text-muted">評価ロール: '+normalized+'</p>'+
-      '<p class="mb-1 small text-muted">行数: 総数 '+total+' / 完了で除外 '+excluded+' / 返却 '+returned+'</p>'+
-      statusSamples +
+      '<p class="mb-2 small text-muted">評価ロール: '+normalized+'</p>'+
+      stats +
     '</div></div>';
   }
   function esc(s){
@@ -1139,27 +1253,67 @@
     return [];
   }
   function extractTaskPayload(result, label){
-    var debug = null;
-    var rows = null;
+    var rows = [];
+    var meta = {};
     if(result && typeof result === 'object' && !Array.isArray(result)){
-      if (result.debug) debug = result.debug;
       if (Array.isArray(result.tasks)) rows = result.tasks;
-    }
-    if(!Array.isArray(rows)){
+      if (result.meta && typeof result.meta === 'object') meta = result.meta;
+    } else if (Array.isArray(result)) {
+      rows = result;
+    } else {
       rows = normalizeArray(result);
     }
-    if(debug && label){
-      console.log('['+label+'] debug', debug);
+    if(label){
+      console.info('['+label+'] 件数:', Array.isArray(rows) ? rows.length : 0, meta);
     }
-    return { rows: rows, debug: debug || null };
+    return { rows: Array.isArray(rows) ? rows : [], meta: meta || {} };
+  }
+
+  function updateStatusSelect(selectId, statuses){
+    var select = byId(selectId);
+    if(!select) return;
+    var current = select.value || '';
+    var values = [''];
+    if(Array.isArray(statuses)){
+      statuses.forEach(function(st){
+        if(st != null && st !== '' && values.indexOf(st) === -1){
+          values.push(st);
+        }
+      });
+    }
+    var needsUpdate = select.options.length !== values.length ||
+      values.some(function(val, idx){
+        var opt = select.options[idx];
+        return !opt || opt.value !== val;
+      });
+    if(needsUpdate){
+      select.innerHTML = '';
+      values.forEach(function(val, idx){
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = idx === 0 ? 'すべて' : val;
+        select.appendChild(opt);
+      });
+    }
+    if(values.indexOf(current) >= 0){
+      select.value = current;
+    }else{
+      select.value = '';
+    }
   }
 
   (function syncThemeDisplayInitial(){
-    var hidden = byId('setting-theme');
-    if(hidden){ hidden.value = themePreference; }
+    var select = byId('setting-theme');
+    if(select){ select.value = themePreference; }
     var display = byId('setting-theme-display');
-    if(display){ display.textContent = describeThemeValue(themePreference); }
+    if(display){ display.textContent = describeThemeValue(themePreference) + ' を適用中'; }
   })();
+  on('setting-theme','change', function(){
+    var value = this.value || 'light';
+    var display = byId('setting-theme-display');
+    if(display){ display.textContent = describeThemeValue(value) + ' を適用中'; }
+    applyThemePreference(value);
+  });
 
   // ===== スワイプビュー =====
   var order = ['home','tasks','messages','settings'];
@@ -1188,7 +1342,7 @@
   function navigateTo(v){
     CURRENT_VIEW=v; setActiveNav(v); showPanel(v); trackTo(v); scrollToTopNow();
     if(v==='home') loadHome();
-    if(v==='tasks'){ loadMyTasks(); loadTodayTasks(); loadAllTasks(); }
+    if(v==='tasks'){ loadMyTasks(); loadCreatedTasks(); loadAllTasks(); }
     if(v==='messages') loadMessages();
     if(v==='settings') loadSettings();
   }
@@ -1251,7 +1405,7 @@
                      '</div>'+
                    '</a>';
           }).join('')
-        : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+        : '<div class="card"><div class="card-body text-muted">表示できるマイタスクはありません。</div></div>';
       byId('home-today-tasks').innerHTML=tHTML;
 
       var unread = normalizeArray(d && d.messages).filter(function(x){ return !x.isRead; });
@@ -1289,7 +1443,19 @@
     var priorityCls = priorityClassName(priority);
     var priorityPill = '<span class="priority-pill '+priorityCls+'">'+esc(priority)+'</span>';
     var dueLabel = formatDateLabel(r.dueDate);
-    var text = '<a href="#" class="card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\''+r.id+'\')">'+
+    var isCompleted = !!r.isCompleted || String(r.status || '').trim() === '完了';
+    var dueDateObj = r.dueDate ? new Date(r.dueDate) : null;
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    var isOverdue = false;
+    if (dueDateObj instanceof Date && !isNaN(dueDateObj.getTime())) {
+      var dueStart = new Date(dueDateObj.getTime());
+      dueStart.setHours(0,0,0,0);
+      isOverdue = !isCompleted && dueStart.getTime() < today.getTime();
+    }
+    var cardClass = 'card mb-2 text-decoration-none link-surface';
+    if (isCompleted) cardClass += ' task-card-completed';
+    var text = '<a href="#" class="'+cardClass+'" onclick="event.preventDefault(); openTaskDetail(\''+r.id+'\')">'+
       '<div class="card-body task-card d-flex align-items-start justify-content-between gap-3">'+
         '<div class="task-info-wrap flex-grow-1">'+
           '<div class="task-title-line d-flex align-items-center gap-2 flex-wrap">'+
@@ -1303,6 +1469,11 @@
     var createdByMe = r.createdBy && CURRENT_USER_EMAIL && String(r.createdBy).toLowerCase() === CURRENT_USER_EMAIL.toLowerCase();
     if (createdByMe){
       text += '<div class="task-meta-line"><span class="badge-soft"><span class="material-icons">outgoing_mail</span>あなたが作成</span></div>';
+    }
+    if (isCompleted){
+      text += '<div class="task-meta-line"><span class="badge-soft badge-completed"><span class="material-icons">task_alt</span>完了</span></div>';
+    } else if (isOverdue){
+      text += '<div class="task-meta-line"><span class="badge-soft badge-overdue"><span class="material-icons">warning</span>期限超過</span></div>';
     }
     text += '</div>'+
             '<div class="task-meta text-end">'+
@@ -1318,60 +1489,61 @@
       byId(tgt).innerHTML = authRequiredCard();
       return;
     }
+    var statusSel = byId('flt-my-status');
+    var status = statusSel ? statusSel.value || '' : '';
     google.script.run.withSuccessHandler(function(result){
       var payload = extractTaskPayload(result, 'listMyTasks');
-      var rows = normalizeArray(payload.rows).filter(function(t){
-        return String(t.status || '') !== '完了';
-      });
-      if(payload.debug && payload.debug.excludedByOwnership > 0){
-        console.warn('[listMyTasks] 除外されたタスク数 (担当外):', payload.debug.excludedByOwnership);
-        if(Array.isArray(payload.debug.ownershipSampleIds) && payload.debug.ownershipSampleIds.length){
-          console.warn('[listMyTasks] 担当外サンプルID:', payload.debug.ownershipSampleIds);
-        }
-      }
-      if(payload.debug && payload.debug.excludedByStatus > 0){
-        console.warn('[listMyTasks] 除外された完了タスク数:', payload.debug.excludedByStatus);
-        if(Array.isArray(payload.debug.statusSampleIds) && payload.debug.statusSampleIds.length){
-          console.warn('[listMyTasks] 完了サンプルID:', payload.debug.statusSampleIds);
-        }
-      }
-      if(payload.debug){
-        console.info('[listMyTasks] 返却件数: '+payload.debug.returned+' / 総数 '+payload.debug.totalRows);
-      }
-      var kw = (byId('task-search-box').value||'').trim();
+      updateStatusSelect('flt-my-status', payload.meta && payload.meta.statuses);
+      if(statusSel){ status = statusSel.value || ''; }
+      var rows = normalizeArray(payload.rows);
+      var kw = (byId('task-search-box').value||'').trim().toLowerCase();
       if(kw){
         rows = rows.filter(function(t){
-          return (t.title||'').indexOf(kw)>=0 ||
-                 (displayAssignees(t)||'').indexOf(kw)>=0;
+          var title = String(t.title||'').toLowerCase();
+          var assignees = displayAssignees(t).toLowerCase();
+          var statusText = String(t.status || '').toLowerCase();
+          return title.indexOf(kw)>=0 || assignees.indexOf(kw)>=0 || statusText.indexOf(kw)>=0;
         });
       }
       var hasItems = rows.length > 0;
-      byId(tgt).innerHTML = hasItems ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">タスクはありません。</div></div>';
-    }).withFailureHandler(function(e){ notify('マイタスク取得失敗: '+e.message,false); }).listMyTasks();
+      byId(tgt).innerHTML = hasItems
+        ? rows.map(function(r){ return rowTask(r,true); }).join('')
+        : '<div class="card"><div class="card-body text-muted">表示できるタスクはありません。</div></div>';
+    }).withFailureHandler(function(e){ notify('マイタスク取得失敗: '+e.message,false); }).listMyTasks({ status: status });
   }
-  function loadTodayTasks(){
-    var tgt='list-today'; byId(tgt).innerHTML=skel(4);
+  function loadCreatedTasks(){
+    var tgt='list-created'; byId(tgt).innerHTML=skel(4);
     if(!HAS_ACTIVE_EMAIL){
       byId(tgt).innerHTML = authRequiredCard();
       return;
     }
-    google.script.run.withSuccessHandler(function(d){
-      var baseTasks = normalizeArray(d && d.tasks);
-      var rows = baseTasks.map(function(t){
-        return {
-          id: t.id,
-          title: t.title,
-          dueDate: t.dueDate,
-          assignees: t.assignees,
-          assignee: t.assignee,
-          priority: t.priority,
-          createdBy: t.createdBy
-        };
-      });
-      var kw = (byId('task-search-box').value||'').trim();
-      if(kw){ rows = rows.filter(function(t){ return (t.title||'').indexOf(kw)>=0; }); }
-      byId(tgt).innerHTML = rows.length > 0 ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
-    }).withFailureHandler(function(e){ notify('今日のタスク取得失敗: '+e.message,false); }).getHomeContent();
+    var statusSel = byId('flt-created-status');
+    var sortSel = byId('flt-created-sort');
+    var status = statusSel ? statusSel.value || '' : '';
+    var sort = sortSel ? sortSel.value || 'due' : 'due';
+    google.script.run.withSuccessHandler(function(result){
+      var payload = extractTaskPayload(result, 'listCreatedTasks');
+      updateStatusSelect('flt-created-status', payload.meta && payload.meta.statuses);
+      if(sortSel && payload.meta && payload.meta.sort){
+        sortSel.value = payload.meta.sort;
+      }
+      if(statusSel){ status = statusSel.value || ''; }
+      var rows = normalizeArray(payload.rows);
+      var kw = (byId('task-search-box').value||'').trim().toLowerCase();
+      if(kw){
+        rows = rows.filter(function(t){
+          var title = String(t.title||'').toLowerCase();
+          var assignees = displayAssignees(t).toLowerCase();
+          var statusText = String(t.status || '').toLowerCase();
+          return title.indexOf(kw)>=0 || assignees.indexOf(kw)>=0 || statusText.indexOf(kw)>=0;
+        });
+      }
+      byId(tgt).innerHTML = rows.length
+        ? rows.map(function(r){ return rowTask(r,true); }).join('')
+        : '<div class="card"><div class="card-body text-muted">表示できるタスクはありません。</div></div>';
+    }).withFailureHandler(function(e){
+      notify('作成タスク取得失敗: '+e.message,false);
+    }).listCreatedTasks({ status: status, sort: sort });
   }
   function loadAllTasks(){
     var tgt='list-all'; byId(tgt).innerHTML=skel(8);
@@ -1379,38 +1551,35 @@
       byId(tgt).innerHTML = authRequiredCard();
       return;
     }
+    var statusSel = byId('flt-all-status');
+    var status = statusSel ? statusSel.value || '' : '';
     google.script.run.withSuccessHandler(function(result){
       var payload = extractTaskPayload(result, 'listAllTasks');
-      if(payload.debug && payload.debug.isManager === false){
-        byId(tgt).innerHTML = managerRequiredCard(payload.debug);
+      if(payload.meta && payload.meta.managerOnly){
+        byId(tgt).innerHTML = managerRequiredCard(payload.meta);
         if(!MANAGER_NOTICE_SHOWN){
-          notify('全体タスクの表示には管理者権限が必要です。現在のロール: ' + (payload.debug.userRole || '不明'), false);
+          notify('全体タスクの表示には管理者権限が必要です。現在のロール: ' + (payload.meta.userRole || '不明'), false);
           MANAGER_NOTICE_SHOWN = true;
         }
         return;
       }
-      var rows = normalizeArray(payload.rows).filter(function(t){
-        return String(t.status || '') !== '完了';
-      });
-      if(payload.debug && payload.debug.excludedByStatus > 0){
-        console.warn('[listAllTasks] 除外された完了タスク数:', payload.debug.excludedByStatus);
-        if(Array.isArray(payload.debug.statusSampleIds) && payload.debug.statusSampleIds.length){
-          console.warn('[listAllTasks] 完了サンプルID:', payload.debug.statusSampleIds);
-        }
-      }
-      if(payload.debug){
-        console.info('[listAllTasks] 返却件数: '+payload.debug.returned+' / 総数 '+payload.debug.totalRows);
-      }
-      var kw = (byId('task-search-box').value||'').trim();
+      updateStatusSelect('flt-all-status', payload.meta && payload.meta.statuses);
+      if(statusSel){ status = statusSel.value || ''; }
+      var rows = normalizeArray(payload.rows);
+      var kw = (byId('task-search-box').value||'').trim().toLowerCase();
       if(kw){
         rows = rows.filter(function(t){
-          return (t.title||'').indexOf(kw)>=0 ||
-                 (displayAssignees(t)||'').indexOf(kw)>=0;
+          var title = String(t.title||'').toLowerCase();
+          var assignees = displayAssignees(t).toLowerCase();
+          var statusText = String(t.status || '').toLowerCase();
+          return title.indexOf(kw)>=0 || assignees.indexOf(kw)>=0 || statusText.indexOf(kw)>=0;
         });
       }
       var hasItemsAll = rows.length > 0;
-      byId(tgt).innerHTML = hasItemsAll ? rows.map(function(r){ return rowTask(r,true); }).join('') : '<div class="card"><div class="card-body text-muted">タスクはありません。</div></div>';
-    }).withFailureHandler(function(e){ notify('全体タスク取得失敗: '+e.message,false); }).listAllTasks();
+      byId(tgt).innerHTML = hasItemsAll
+        ? rows.map(function(r){ return rowTask(r,true); }).join('')
+        : '<div class="card"><div class="card-body text-muted">表示できるタスクはありません。</div></div>';
+    }).withFailureHandler(function(e){ notify('全体タスク取得失敗: '+e.message,false); }).listAllTasks({ status: status });
   }
 
   // ===== Messages =====
@@ -1711,10 +1880,14 @@
       byId('setting-image').value = s.imageUrl || '';
       var themeVal = s.theme || 'light';
       var themeInput = byId('setting-theme');
-      if(themeInput){ themeInput.value = themeVal; }
-      var themeDisplay = byId('setting-theme-display');
-      if(themeDisplay){ themeDisplay.textContent = describeThemeValue(themeVal); }
-      applyThemePreference(themeVal);
+      if(themeInput){
+        themeInput.value = themeVal;
+        themeInput.dispatchEvent(new Event('change'));
+      }else{
+        applyThemePreference(themeVal);
+        var themeDisplay = byId('setting-theme-display');
+        if(themeDisplay){ themeDisplay.textContent = describeThemeValue(themeVal) + ' を適用中'; }
+      }
     }).withFailureHandler(function(e){ notify('設定読み込み失敗: '+e.message,false); }).getUserSettings();
   }
   on('btn-settings-save','click', function(){
@@ -1845,6 +2018,7 @@
         }
         loadHome();
         loadMyTasks();
+        loadCreatedTasks();
         loadAllTasks();
       }).withFailureHandler(function(e){
         setButtonLoading(btn, false);
@@ -1911,12 +2085,17 @@
     on('btn-open-new-msg','click',  function(e){ e.preventDefault(); new bootstrap.Modal(byId('newMessageModal')).show(); });
 
     on('btn-my-reload','click', loadMyTasks);
+    on('btn-created-reload','click', loadCreatedTasks);
     on('btn-all-reload','click', loadAllTasks);
+    on('flt-my-status','change', loadMyTasks);
+    on('flt-created-status','change', loadCreatedTasks);
+    on('flt-created-sort','change', loadCreatedTasks);
+    on('flt-all-status','change', loadAllTasks);
 
     on('flt-msg-folder','change', loadMessages);
     on('flt-msg-unread','change', loadMessages);
     on('msg-search-box','input', debounce(loadMessages, 400));
-    on('task-search-box','input', debounce(function(){ loadMyTasks(); loadAllTasks(); }, 400));
+    on('task-search-box','input', debounce(function(){ loadMyTasks(); loadCreatedTasks(); loadAllTasks(); }, 400));
 
     on('btn-admin-menu','click', function(){
       notify('管理者メニューは準備中です。機能は近日追加されます。', true);
