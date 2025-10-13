@@ -80,6 +80,11 @@ function _isCompletedStatus(status) {
   return _normalizeStatus(status) === '完了';
 }
 
+function _normalizeTaskId(taskId) {
+  if (taskId == null) return '';
+  return String(taskId).trim();
+}
+
 function _normalizeEmail(email) {
   return String(email || '')
     .trim()
@@ -455,6 +460,7 @@ function doGet(e) {
   tpl.isManager = isManagerUser();
   tpl.users = listActiveUsers();
   tpl.folders = listActiveFolders();
+  tpl.initialTasks = listMyTasks();
   const out = tpl
     .evaluate()
     .setTitle('ShiftFlow')
@@ -468,7 +474,7 @@ function getHomeContent() {
   const normalizedEmail = _normalizeEmail(rawEmail);
   const todayMs = _startOfToday();
   const data = _loadTaskTable();
-  const myTasks = data.tasks
+  const todays = data.tasks
     .filter(function (task) {
       if (!normalizedEmail) return false;
       if (_emailArrayContains(task.assignees, rawEmail)) return true;
@@ -477,12 +483,11 @@ function getHomeContent() {
       return false;
     })
     .filter(function (task) {
-      return !task.isCompleted;
+      return !task.isCompleted && task.dueValue != null && task.dueValue <= todayMs;
     })
     .sort(function (a, b) {
       return _compareTasksForList(a, b, todayMs);
     })
-    .slice(0, 5)
     .map(function (task) {
       return {
         id: task.id,
@@ -497,7 +502,7 @@ function getHomeContent() {
     });
   const messages = getMessages();
 
-  return { tasks: myTasks, messages: messages };
+  return { tasks: todays, messages: messages };
 }
 
 // ====== タスク CRUD/一覧 ======
@@ -568,7 +573,8 @@ function addNewTask(taskObject) {
 }
 
 function getTaskById(taskId) {
-  const targetId = String(taskId || '').trim();
+  const normalizedId = _normalizeTaskId(taskId);
+  if (!normalizedId) return null;
   const sh = _openSheet('T_Tasks');
   const header = _ensureColumns(sh, [
     'TaskID',
@@ -583,37 +589,63 @@ function getTaskById(taskId) {
     'UpdatedAt',
     'RepeatRule',
   ]);
-  const v = sh.getDataRange().getValues();
+  const rows = sh.getDataRange().getValues();
   const current = _getCurrentEmail();
   const normalizedCurrent = _normalizeEmail(current);
 
-  for (let i = 1; i < v.length; i++) {
-    const row = v[i];
-    const taskId = String(row[header['TaskID']] || '').trim();
-    if (String(row[header['TaskID']] || '').trim() === targetId) {
-      const createdBy = row[header['CreatedBy']];
-      const canDelete = _normalizeEmail(createdBy) === normalizedCurrent || isManagerUser();
-      const assigneesArr =
-        header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
-      const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
-      const repeatRuleValue = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
-      return {
-        id: targetId,
-        title: row[header['Title']],
-        assignee: assigneeSingle,
-        dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
-        status: _normalizeStatus(row[header['Status']]),
-        priority: row[header['Priority']] || '中',
-        createdBy: createdBy,
-        canDelete: canDelete,
-        assignees: assigneesArr,
-        attachments: [],
-        repeatRule: repeatRuleValue,
-        updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
-      };
+  const located = _findTaskRowById(rows, header, normalizedId);
+  let row = located ? located.row : null;
+
+  if (!row) {
+    const fallback = listMyTasks();
+    if (fallback && Array.isArray(fallback.tasks)) {
+      const candidate = fallback.tasks.find(function (t) {
+        return _normalizeTaskId(t.id) === normalizedId;
+      });
+      if (candidate) {
+        const createdByFallback = candidate.createdBy || '';
+        const canDeleteFallback =
+          _normalizeEmail(createdByFallback) === normalizedCurrent || isManagerUser();
+        return {
+          id: candidate.id,
+          title: candidate.title,
+          assignee: candidate.assignee,
+          dueDate: candidate.dueDate || '',
+          status: _normalizeStatus(candidate.status),
+          priority: candidate.priority || '中',
+          createdBy: createdByFallback,
+          canDelete: canDeleteFallback,
+          assignees: Array.isArray(candidate.assignees) ? candidate.assignees : [],
+          attachments: [],
+          repeatRule: candidate.repeatRule || '',
+          updatedAt: candidate.updatedAt || '',
+        };
+      }
     }
+    return null;
   }
-  return null;
+
+  const createdBy = row[header['CreatedBy']];
+  const canDelete = _normalizeEmail(createdBy) === normalizedCurrent || isManagerUser();
+  const assigneesArr =
+    header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
+  const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
+  const repeatRuleValue = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
+
+  return {
+    id: normalizedId,
+    title: row[header['Title']],
+    assignee: assigneeSingle,
+    dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
+    status: _normalizeStatus(row[header['Status']]),
+    priority: row[header['Priority']] || '中',
+    createdBy: createdBy,
+    canDelete: canDelete,
+    assignees: assigneesArr,
+    attachments: [],
+    repeatRule: repeatRuleValue,
+    updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
+  };
 }
 
 function updateTask(taskObject) {
@@ -795,47 +827,61 @@ function deleteTaskById(taskId) {
   }
 }
 
-function listMyTasks(filter) {
+function listMyTasks() {
   const rawEmail = _getCurrentEmail();
   const normalizedEmail = _normalizeEmail(rawEmail);
-  if (!normalizedEmail) {
-    return { tasks: [], meta: { statuses: [] } };
-  }
-
   const data = _loadTaskTable();
   const todayMs = _startOfToday();
-  const statusFilter = filter && filter.status ? _normalizeStatus(filter.status) : '';
 
-  const statuses = new Set();
   const mine = data.tasks.filter(function (task) {
-    if (_emailArrayContains(task.assignees, rawEmail)) return true;
-    if (_emailArrayContains(task.assignees, normalizedEmail)) return true;
-    if (_normalizeEmail(task.assignee) === normalizedEmail) return true;
+    if (normalizedEmail) {
+      if (_emailArrayContains(task.assignees, rawEmail)) return true;
+      if (_emailArrayContains(task.assignees, normalizedEmail)) return true;
+      if (_normalizeEmail(task.assignee) === normalizedEmail) return true;
+    }
     return false;
   });
 
-  mine.forEach(function (task) {
-    if (task.status) statuses.add(task.status);
-  });
-
-  const filtered = mine.filter(function (task) {
-    if (!statusFilter) return true;
-    return _normalizeStatus(task.status) === statusFilter;
-  });
-
-  filtered.sort(function (a, b) {
+  mine.sort(function (a, b) {
     return _compareTasksForList(a, b, todayMs);
   });
 
+  Logger.log(
+    '[listMyTasks] totalTasks=' +
+      data.tasks.length +
+      ' matched=' +
+      mine.length +
+      ' rawEmail=' +
+      rawEmail
+  );
+  if (!mine.length && !normalizedEmail) {
+    Logger.log('[listMyTasks] WARN normalizedEmail empty; check web app access settings.');
+  }
+  if (!mine.length && data.tasks.length > 0 && normalizedEmail) {
+    Logger.log(
+      '[listMyTasks] WARN matched zero despite tasks. Sample IDs: ' +
+        JSON.stringify(
+          data.tasks.slice(0, 5).map(function (t) {
+            return t.id;
+          })
+        )
+    );
+  }
+
   return {
-    tasks: filtered,
+    tasks: mine,
     meta: {
-      statuses: Array.from(statuses).sort(),
-      currentEmail: rawEmail,
-      normalizedEmail: normalizedEmail,
       totalTasks: data.tasks.length,
-      mineCount: mine.length,
-      filteredCount: filtered.length,
+      matchedTasks: mine.length,
+      rawEmail: rawEmail,
+      normalizedEmail: normalizedEmail,
+      sampleTaskIds: mine.slice(0, 5).map(function (t) {
+        return t.id;
+      }),
+      note:
+        normalizedEmail && normalizedEmail.length
+          ? ''
+          : 'ログインユーザーのメールアドレスが取得できません。Webアプリの公開設定と組織ポリシーを確認してください。',
     },
   };
 }
@@ -931,6 +977,24 @@ function _loadTaskTable() {
     tasks: tasks,
     statuses: Array.from(statuses).sort(),
   };
+}
+
+function _findTaskRowById(rows, header, targetId) {
+  const normalized = _normalizeTaskId(targetId);
+  if (!normalized) return null;
+  const looseTarget = normalized.replace(/\s+/g, '');
+  for (let i = 1; i < rows.length; i++) {
+    const rawId = rows[i][header['TaskID']];
+    if (rawId == null) continue;
+    const candidate = _normalizeTaskId(rawId);
+    if (candidate === normalized) {
+      return { index: i, row: rows[i], rawId: rawId };
+    }
+    if (looseTarget && candidate.replace(/\s+/g, '') === looseTarget) {
+      return { index: i, row: rows[i], rawId: rawId };
+    }
+  }
+  return null;
 }
 
 function _buildTaskRecord(row, header) {
