@@ -434,7 +434,11 @@ function listActiveFolders() {
   const res = [];
   for (let i = 1; i < v.length; i++) {
     if (String(v[i][hdr['IsArchived']]) !== 'TRUE') {
-      res.push({ id: v[i][hdr['FolderID']], name: v[i][hdr['FolderName']] });
+      const rawId = String(v[i][hdr['FolderID']] || '').trim();
+      const rawName = String(v[i][hdr['FolderName']] || '').trim();
+      const effectiveId = rawId || rawName;
+      if (!effectiveId) continue;
+      res.push({ id: effectiveId, name: rawName || effectiveId });
     }
   }
   if (res.length === 0) {
@@ -572,9 +576,48 @@ function addNewTask(taskObject) {
   }
 }
 
+/**
+ * 生のタスクデータから最終的なタスクオブジェクトを構築するヘルパー関数。
+ * この関数は、シートからのデータとフォールバックからのデータの両方を処理し、
+ * canDeleteの決定、ステータスの正規化、デフォルト値の設定など、共通のロジックを集約します。
+ * @param {object} rawData - タスクの生データ。id, title, createdByなどのプロパティを持つ。
+ * @returns {object} - 整形された最終的なタスクオブジェクト。
+ */
+function _buildTaskObject(rawData) {
+  const current = _getCurrentEmail();
+  const normalizedCurrent = _normalizeEmail(current);
+  const createdBy = rawData.createdBy || '';
+  const canDelete = _normalizeEmail(createdBy) === normalizedCurrent || isManagerUser();
+  const assignees = Array.isArray(rawData.assignees) ? rawData.assignees : [];
+
+  return {
+    id: rawData.id,
+    title: rawData.title,
+    assignee: rawData.assignee || (assignees.length > 0 ? assignees[0] : ''),
+    dueDate: _formatJST(rawData.dueDate, 'yyyy-MM-dd'),
+    status: _normalizeStatus(rawData.status),
+    priority: rawData.priority || '中',
+    createdBy: createdBy,
+    canDelete: canDelete,
+    assignees: assignees,
+    attachments: [], // 元のコードと同様に常に空配列
+    repeatRule: rawData.repeatRule || '',
+    updatedAt: _formatJST(rawData.updatedAt, 'yyyy-MM-dd HH:mm:ss'),
+  };
+}
+
+/**
+ * 指定されたTaskIDに基づいてタスク情報を取得します。
+ * まずGoogleスプレッドシートを検索し、見つからない場合はフォールバックの関数(listMyTasks)を試します。
+ * @param {string} taskId - 検索するタスクのID。
+ * @returns {object|null} - 見つかったタスクオブジェクト。見つからない場合はnull。
+ */
 function getTaskById(taskId) {
   const normalizedId = _normalizeTaskId(taskId);
-  if (!normalizedId) return null;
+  if (!normalizedId) {
+    return null;
+  }
+
   const sh = _openSheet('T_Tasks');
   const header = _ensureColumns(sh, [
     'TaskID',
@@ -590,62 +633,51 @@ function getTaskById(taskId) {
     'RepeatRule',
   ]);
   const rows = sh.getDataRange().getValues();
-  const current = _getCurrentEmail();
-  const normalizedCurrent = _normalizeEmail(current);
-
   const located = _findTaskRowById(rows, header, normalizedId);
-  let row = located ? located.row : null;
 
-  if (!row) {
+  let rawTaskData = null;
+
+  if (located) {
+    // タスクがGoogleスプレッドシートで見つかった場合
+    const row = located.row;
+    const assigneesArr =
+      header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
+    const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
+
+    rawTaskData = {
+      id: normalizedId,
+      title: row[header['Title']],
+      assignee: assigneeSingle,
+      dueDate: row[header['DueDate']], // 日付オブジェクトをそのまま渡す
+      status: row[header['Status']],
+      priority: row[header['Priority']],
+      createdBy: row[header['CreatedBy']],
+      assignees: assigneesArr,
+      repeatRule: header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '',
+      updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] : null, // 日付オブジェクトをそのまま渡す
+    };
+  } else {
+    // スプレッドシートで見つからない場合、フォールバックを試す
     const fallback = listMyTasks();
     if (fallback && Array.isArray(fallback.tasks)) {
       const candidate = fallback.tasks.find(function (t) {
         return _normalizeTaskId(t.id) === normalizedId;
       });
+
       if (candidate) {
-        const createdByFallback = candidate.createdBy || '';
-        const canDeleteFallback =
-          _normalizeEmail(createdByFallback) === normalizedCurrent || isManagerUser();
-        return {
-          id: candidate.id,
-          title: candidate.title,
-          assignee: candidate.assignee,
-          dueDate: candidate.dueDate || '',
-          status: _normalizeStatus(candidate.status),
-          priority: candidate.priority || '中',
-          createdBy: createdByFallback,
-          canDelete: canDeleteFallback,
-          assignees: Array.isArray(candidate.assignees) ? candidate.assignees : [],
-          attachments: [],
-          repeatRule: candidate.repeatRule || '',
-          updatedAt: candidate.updatedAt || '',
-        };
+        // フォールバックでタスクが見つかった場合
+        rawTaskData = candidate;
       }
     }
-    return null;
   }
 
-  const createdBy = row[header['CreatedBy']];
-  const canDelete = _normalizeEmail(createdBy) === normalizedCurrent || isManagerUser();
-  const assigneesArr =
-    header['AssigneeEmails'] != null ? _csvToArray(row[header['AssigneeEmails']]) : [];
-  const assigneeSingle = assigneesArr.length ? assigneesArr[0] : row[header['AssigneeEmail']];
-  const repeatRuleValue = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
+  // いずれかの方法でタスクデータが見つかった場合、オブジェクトを構築して返す
+  if (rawTaskData) {
+    return _buildTaskObject(rawTaskData);
+  }
 
-  return {
-    id: normalizedId,
-    title: row[header['Title']],
-    assignee: assigneeSingle,
-    dueDate: _formatJST(row[header['DueDate']], 'yyyy-MM-dd'),
-    status: _normalizeStatus(row[header['Status']]),
-    priority: row[header['Priority']] || '中',
-    createdBy: createdBy,
-    canDelete: canDelete,
-    assignees: assigneesArr,
-    attachments: [],
-    repeatRule: repeatRuleValue,
-    updatedAt: header['UpdatedAt'] != null ? row[header['UpdatedAt']] || '' : '',
-  };
+  // どこにもタスクが見つからなかった場合
+  return null;
 }
 
 function updateTask(taskObject) {
@@ -833,6 +865,7 @@ function listMyTasks() {
   const data = _loadTaskTable();
   const todayMs = _startOfToday();
 
+  // ユーザーのメールアドレスに一致するタスクをフィルタリング
   const mine = data.tasks.filter(function (task) {
     if (normalizedEmail) {
       if (_emailArrayContains(task.assignees, rawEmail)) return true;
@@ -842,10 +875,12 @@ function listMyTasks() {
     return false;
   });
 
+  // タスクをソート
   mine.sort(function (a, b) {
     return _compareTasksForList(a, b, todayMs);
   });
 
+  // デバッグ用のログ出力
   Logger.log(
     '[listMyTasks] totalTasks=' +
       data.tasks.length +
@@ -854,22 +889,33 @@ function listMyTasks() {
       ' rawEmail=' +
       rawEmail
   );
-  if (!mine.length && !normalizedEmail) {
-    Logger.log('[listMyTasks] WARN normalizedEmail empty; check web app access settings.');
-  }
-  if (!mine.length && data.tasks.length > 0 && normalizedEmail) {
-    Logger.log(
-      '[listMyTasks] WARN matched zero despite tasks. Sample IDs: ' +
-        JSON.stringify(
-          data.tasks.slice(0, 5).map(function (t) {
-            return t.id;
-          })
-        )
-    );
-  }
 
+  // google.script.runはDateオブジェクトを正しくシリアライズできないことがあるため、
+  // フロントエンドに返す前に、日付をISO 8601形式の文字列に変換します。
+  const cleanTasks = mine.map(function (task) {
+    const cleanTask = { ...task };
+
+    // 日付を含む可能性のあるプロパティを確認し、Dateオブジェクトであれば文字列に変換します。
+    if (cleanTask.deadline && typeof cleanTask.deadline.toISOString === 'function') {
+      cleanTask.deadline = cleanTask.deadline.toISOString();
+    }
+    if (cleanTask.createdAt && typeof cleanTask.createdAt.toISOString === 'function') {
+      cleanTask.createdAt = cleanTask.createdAt.toISOString();
+    }
+    if (cleanTask.updatedAt && typeof cleanTask.updatedAt.toISOString === 'function') {
+      cleanTask.updatedAt = cleanTask.updatedAt.toISOString();
+    }
+    // ★★★ 今回特定された原因への修正 ★★★
+    if (cleanTask.createdAtRaw && typeof cleanTask.createdAtRaw.toISOString === 'function') {
+      cleanTask.createdAtRaw = cleanTask.createdAtRaw.toISOString();
+    }
+
+    return cleanTask;
+  });
+
+  // 最終的なデータをフロントエンドに返す
   return {
-    tasks: mine,
+    tasks: cleanTasks,
     meta: {
       totalTasks: data.tasks.length,
       matchedTasks: mine.length,
@@ -932,8 +978,25 @@ function listCreatedTasks(filter) {
     });
   }
 
+  const cleanTasks = filtered.map(function (task) {
+    const cleanTask = { ...task };
+    if (cleanTask.dueDate && typeof cleanTask.dueDate.toISOString === 'function') {
+      cleanTask.dueDate = cleanTask.dueDate.toISOString();
+    }
+    if (cleanTask.createdAt && typeof cleanTask.createdAt.toISOString === 'function') {
+      cleanTask.createdAt = cleanTask.createdAt.toISOString();
+    }
+    if (cleanTask.updatedAt && typeof cleanTask.updatedAt.toISOString === 'function') {
+      cleanTask.updatedAt = cleanTask.updatedAt.toISOString();
+    }
+    if (cleanTask.createdAtRaw && typeof cleanTask.createdAtRaw.toISOString === 'function') {
+      cleanTask.createdAtRaw = cleanTask.createdAtRaw.toISOString();
+    }
+    return cleanTask;
+  });
+
   return {
-    tasks: filtered,
+    tasks: cleanTasks,
     meta: {
       statuses: Array.from(statuses).sort(),
       sort: sortMode,
@@ -1087,8 +1150,25 @@ function listAllTasks(filter) {
     return _compareTasksForList(a, b, todayMs);
   });
 
+  const cleanTasks = filtered.map(function (task) {
+    const cleanTask = { ...task };
+    if (cleanTask.dueDate && typeof cleanTask.dueDate.toISOString === 'function') {
+      cleanTask.dueDate = cleanTask.dueDate.toISOString();
+    }
+    if (cleanTask.createdAt && typeof cleanTask.createdAt.toISOString === 'function') {
+      cleanTask.createdAt = cleanTask.createdAt.toISOString();
+    }
+    if (cleanTask.updatedAt && typeof cleanTask.updatedAt.toISOString === 'function') {
+      cleanTask.updatedAt = cleanTask.updatedAt.toISOString();
+    }
+    if (cleanTask.createdAtRaw && typeof cleanTask.createdAtRaw.toISOString === 'function') {
+      cleanTask.createdAtRaw = cleanTask.createdAtRaw.toISOString();
+    }
+    return cleanTask;
+  });
+
   return {
-    tasks: filtered,
+    tasks: cleanTasks,
     meta: {
       statuses: data.statuses,
       totalTasks: data.tasks.length,
@@ -1104,6 +1184,10 @@ function getMessages(opt) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const memoSh = ss.getSheetByName('T_Memos');
   const readSh = ss.getSheetByName('T_MemoReads');
+
+  const requestedFolderRaw = opt && typeof opt.folderId !== 'undefined' ? opt.folderId : '';
+  const requestedFolder = String(requestedFolderRaw || '').trim();
+  const unreadOnlyFlag = !!(opt && opt.unreadOnly);
 
   _ensureColumns(memoSh, [
     'MemoID',
@@ -1156,17 +1240,23 @@ function getMessages(opt) {
     return String(a.id || '').localeCompare(String(b.id || ''));
   });
 
-  if (opt && opt.folderId) {
-    const fid = String(opt.folderId);
+  const initialCount = list.length;
+  if (requestedFolder) {
+    const before = list.length;
+    const fid = requestedFolder.toLowerCase();
     list = list.filter(function (x) {
-      return String(x.folderId || '') === fid;
+      const candidate = String(x.folderId || '').trim().toLowerCase();
+      return candidate === fid;
     });
   }
-  if (opt && opt.unreadOnly) {
+
+  if (unreadOnlyFlag) {
+    const beforeUnread = list.length;
     list = list.filter(function (x) {
       return !x.isRead;
     });
   }
+
   return list;
 }
 

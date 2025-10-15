@@ -19,6 +19,8 @@
     })();
   </script>
 
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+
   <style>
     :root{
       color-scheme: light;
@@ -39,8 +41,8 @@
       --footer-h:56px;
       --fade:220ms;
       --body-bg:
-        radial-gradient(1100px 600px at 100% -10%, rgba(81,124,178,.12), transparent 60%),
-        radial-gradient(900px 400px at -10% 0%, rgba(81,124,178,.10), transparent 55%),
+        linear-gradient(180deg, rgba(81,124,178,.32) 0%, rgba(81,124,178,.12) 46%, rgba(255,255,255,0) 85%),
+        linear-gradient(130deg, rgba(94,122,184,.22) 0%, rgba(255,255,255,0) 68%),
         var(--surface);
       --task-card-bg:linear-gradient(0deg, rgba(81,124,178,.10), rgba(81,124,178,.10)), var(--card);
       --msg-card-unread-bg:linear-gradient(0deg, rgba(255,245,225,.95), rgba(255,245,225,.95)), var(--card);
@@ -75,6 +77,8 @@
       --alert-info-bg:rgba(81,124,178,.12);
       --alert-info-border:rgba(81,124,178,.25);
       --alert-info-text:var(--text-900);
+      --app-font:'Zen Kaku Gothic New', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family:var(--app-font);
     }
     :root[data-theme="dark"]{
       color-scheme: dark;
@@ -93,9 +97,9 @@
       --fab-shadow:0 18px 36px rgba(241,111,162,.45);
       --dropdown-shadow:0 24px 46px rgba(2,8,20,.75);
       --body-bg:
-        radial-gradient(1200px 700px at 100% -10%, rgba(122,162,255,.20), transparent 60%),
-        radial-gradient(900px 500px at -10% 0%, rgba(79,114,255,.18), transparent 55%),
-        linear-gradient(160deg, #050912 0%, #0b1730 45%, #051126 100%);
+        linear-gradient(180deg, rgba(95,125,255,.42) 0%, rgba(36,53,112,.28) 55%, rgba(5,12,30,.72) 100%),
+        linear-gradient(135deg, rgba(74,106,255,.32) 0%, rgba(5,12,30,0) 72%),
+        #050912;
       --task-card-bg:linear-gradient(0deg, rgba(122,162,255,.18), rgba(122,162,255,.12)), var(--card);
       --msg-card-unread-bg:linear-gradient(0deg, rgba(255,196,119,.22), rgba(255,196,119,.12)), var(--card);
       --badge-bg:#f87171;
@@ -134,7 +138,11 @@
     html,body{ height:100%; }
     body{
       overflow-x:hidden;
-      background:var(--body-bg);
+      background-color:var(--surface);
+      background-image:var(--body-bg);
+      background-repeat:no-repeat;
+      background-attachment:fixed;
+      background-size:cover;
       color:var(--text-900);
     }
 
@@ -143,14 +151,64 @@
       background:var(--primary);
       color:var(--on-primary);
       border-bottom:1px solid rgba(255,255,255,.18);
-      min-height:44px;
+      min-height:38px;
     }
-    header .container-xl{ padding-top:2px; padding-bottom:2px; }
-    header .navbar-brand{
-      color:var(--on-primary) !important;
-      font-weight:800;
-      margin:0;
-      letter-spacing:.02em;
+    header .container-xl{ padding-top:0; padding-bottom:0; }
+    .navbar-brand.app-brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      position:relative;
+      text-decoration:none;
+      padding:4px 0;
+      color:var(--on-primary);
+    }
+    .navbar-brand.app-brand .brand-mark{
+      position:relative;
+      width:40px;
+      height:40px;
+      border-radius:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:linear-gradient(135deg, rgba(90,125,255,.85), rgba(90,125,255,.45));
+      box-shadow:0 18px 30px rgba(90,125,255,.32);
+      overflow:hidden;
+    }
+    .navbar-brand.app-brand .brand-ring{
+      position:absolute;
+      width:100%;
+      height:100%;
+      border-radius:inherit;
+      border:2px solid rgba(255,255,255,.45);
+      inset:0;
+      opacity:.7;
+    }
+    .navbar-brand.app-brand .brand-glow{
+      position:absolute;
+      width:140%;
+      height:140%;
+      border-radius:inherit;
+      background:radial-gradient(circle, rgba(255,255,255,.45) 0%, rgba(255,255,255,0) 65%);
+      filter:blur(6px);
+    }
+    .navbar-brand.app-brand .brand-icon{
+      position:relative;
+      font-size:24px;
+      color:rgba(245,248,255,.92);
+      text-shadow:0 10px 18px rgba(15,23,42,.28);
+    }
+    .navbar-brand.app-brand .brand-title{ line-height:1; }
+    .navbar-brand.app-brand .brand-text-main{
+      font-weight:700;
+      font-size:1.25rem;
+      letter-spacing:.07em;
+      text-transform:uppercase;
+    }
+    @media (max-width: 768px){
+      .navbar-brand.app-brand{ gap:10px; }
+      .navbar-brand.app-brand .brand-mark{ width:36px; height:36px; border-radius:12px; }
+      .navbar-brand.app-brand .brand-text-main{ font-size:1.15rem; }
     }
 
     /* PC topbar */
@@ -211,6 +269,18 @@
       overflow-x:auto;
       padding-bottom:4px;
     }
+    html, body{
+      font-family:var(--app-font);
+    }
+    *, *::before, *::after{
+      font-family:inherit;
+    }
+    button, .btn, .form-control, .form-select, .form-label, input, select, textarea{
+      font-family:var(--app-font);
+    }
+    h1, h2, h3, h4, h5, h6{
+      font-family:var(--app-font);
+    }
     .nav-tabs .nav-link{
       border:0;
       border-radius:999px;
@@ -235,10 +305,179 @@
       box-shadow:0 12px 24px rgba(2,8,20,.45);
     }
 
+    /* Task board */
+    .task-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      flex-wrap:wrap;
+    }
+    .task-title-wrap{
+      display:flex;
+      align-items:center;
+      gap:.75rem;
+    }
+    .task-title-wrap .task-title-icon{
+      width:36px;
+      height:36px;
+      border-radius:12px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background:var(--primary);
+      color:var(--on-primary);
+      font-size:22px;
+      box-shadow:0 10px 18px rgba(81,124,178,.25);
+    }
+    :root[data-theme="dark"] .task-title-wrap .task-title-icon{
+      box-shadow:0 16px 28px rgba(15,23,42,.45);
+    }
+    .task-header h3{
+      margin:0;
+    }
+    .view-title{
+      margin:0;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      font-weight:700;
+      font-size:1.65rem;
+    }
+    .task-tabs{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:1.5rem;
+    }
+    .task-tab-btn{
+      border:0;
+      border-radius:999px;
+      background:rgba(81,124,178,.12);
+      color:var(--text-700);
+      padding:.55rem 1.3rem;
+      font-weight:600;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      transition:all var(--fade) ease;
+      display:inline-flex;
+      align-items:center;
+      gap:.35rem;
+    }
+    .task-tab-btn .material-icons-outlined{
+      font-size:18px;
+    }
+    .task-tab-btn:hover,
+    .task-tab-btn:focus{
+      background:var(--tab-hover-bg);
+      color:var(--text-900);
+      outline:none;
+    }
+    .task-tab-btn.active{
+      background:var(--tab-active-bg);
+      color:var(--tab-active-text);
+      box-shadow:0 14px 26px rgba(15,23,42,.14);
+    }
+    :root[data-theme="dark"] .task-tab-btn{
+      background:rgba(122,162,255,.16);
+    }
+    :root[data-theme="dark"] .task-tab-btn.active{
+      box-shadow:0 18px 32px rgba(2,8,20,.55);
+    }
+    .task-panels{ margin-top:1.8rem; }
+    .task-panel{ display:none; }
+    .task-panel.active{ display:block; }
+    .task-controls{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .task-search{
+      display:flex;
+      align-items:center;
+      gap:.5rem;
+      background:var(--input-bg);
+      border:1px solid var(--input-border);
+      border-radius:999px;
+      padding:0 .75rem;
+      min-height:46px;
+      box-shadow:var(--card-shadow);
+    }
+    .task-search .material-icons-outlined{
+      color:var(--muted);
+      font-size:22px;
+    }
+    .task-search input{
+      border:0;
+      background:transparent;
+      color:var(--text-900);
+      width:100%;
+      padding:.35rem .25rem;
+      min-width:0;
+    }
+    .task-search input::placeholder{ color:var(--muted); }
+    .task-search input:focus{ outline:none; }
+    .task-filter-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+    }
+    .task-filter-select{
+      background:var(--card);
+      border:1px solid var(--card-border);
+      border-radius:14px;
+      padding:.55rem 1rem;
+      min-width:220px;
+      appearance:none;
+      -webkit-appearance:none;
+      -moz-appearance:none;
+      color:var(--text-900);
+      box-shadow:var(--card-shadow);
+      transition:border-color var(--fade) ease, box-shadow var(--fade) ease;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%),
+        linear-gradient(to right, rgba(148,163,184,.28), rgba(148,163,184,.28));
+      background-position:
+        calc(100% - 22px) 52%,
+        calc(100% - 14px) 52%,
+        calc(100% - 42px) 50%;
+      background-size:8px 8px, 8px 8px, 1px 28px;
+      background-repeat:no-repeat;
+      padding-right:3rem;
+    }
+    .task-filter-select:focus{
+      outline:none;
+      border-color:var(--primary);
+      box-shadow:0 0 0 3px var(--focus-ring);
+    }
+    :root[data-theme="dark"] .task-filter-select{
+      background:var(--input-bg);
+      color:var(--text-700);
+    }
+    .task-empty{
+      border:1px dashed var(--divider);
+      border-radius:14px;
+      padding:24px;
+      text-align:center;
+      color:var(--muted);
+    }
+    .task-list{ min-height:80px; }
+
+    .theme-status{
+      display:inline-flex;
+      align-items:center;
+      gap:.35rem;
+      color:var(--primary-700);
+      font-weight:600;
+    }
+    :root[data-theme="dark"] .theme-status{
+      color:var(--badge-counter-fg);
+    }
+
     /* Layout / cards */
     .page-body{ padding-bottom:120px; }
     .container-xl{
-      max-width:1080px;
+      max-width:1200px;
       width:100%;
       margin-left:auto;
       margin-right:auto;
@@ -618,11 +857,20 @@
 
 <header class="navbar navbar-expand-md d-print-none">
   <div class="container-xl">
-    <a href="#" class="navbar-brand" data-view="home" title="<?!= userInfo.email ?>">ShiftFlow</a>
+    <a href="#" class="navbar-brand app-brand" data-view="home" title="<?!= userInfo.email ?>">
+      <span class="brand-mark">
+        <span class="brand-ring"></span>
+        <span class="brand-glow"></span>
+        <span class="brand-icon material-icons-outlined">sync_alt</span>
+      </span>
+      <span class="brand-title">
+        <span class="brand-text-main">ShiftFlow</span>
+      </span>
+    </a>
     <div class="navbar-nav ms-auto flex-row align-items-center gap-2 order-md-last">
       <!-- ログアウトボタンはGASの組み込み認証では不要なため削除 -->
-      <button type="button" class="btn btn-sm btn-outline-light" id="btn-admin-menu">
-        <span class="material-icons-outlined align-middle me-1">admin_panel_settings</span>管理者メニュー（準備中）
+      <button type="button" class="btn btn-sm btn-outline-light btn-icon-only" id="btn-admin-menu" title="Admin menu (coming soon)">
+        <span class="material-icons-outlined align-middle">admin_panel_settings</span>
       </button>
       <span class="nav-link d-flex lh-1 text-reset p-0">
         <img src="<?!= userInfo.imageUrl ?>" class="avatar avatar-sm" alt="User">
@@ -638,15 +886,15 @@
 <nav class="navbar navbar-expand-md topbar d-none d-md-block">
   <div class="container-xl">
     <ul class="navbar-nav">
-      <li class="nav-item"><a class="nav-link active" href="#" data-view="home" title="ホーム"><span class="material-icons-outlined">home</span></a></li>
-      <li class="nav-item"><a class="nav-link" href="#" data-view="tasks" title="タスク"><span class="material-icons-outlined">send</span></a></li>
+      <li class="nav-item"><a class="nav-link active" href="#" data-view="home" title="Home"><span class="material-icons-outlined">home</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-view="tasks" title="Tasks"><span class="material-icons-outlined">send</span></a></li>
       <li class="nav-item position-relative">
-        <a class="nav-link" href="#" data-view="messages" title="メッセージ">
+        <a class="nav-link" href="#" data-view="messages" title="Messages">
           <span class="material-icons-outlined">mail</span>
           <span class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none" id="badge-unread-top">0</span>
         </a>
       </li>
-      <li class="nav-item"><a class="nav-link" href="#" data-view="settings" title="設定"><span class="material-icons-outlined">settings</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-view="settings" title="Settings"><span class="material-icons-outlined">settings</span></a></li>
     </ul>
   </div>
 </nav>
@@ -659,40 +907,106 @@
     <div class="views-track" id="viewsTrack">
       <section class="view-panel fade-container show" id="view-home">
         <div class="d-flex justify-content-between align-items-center mt-3">
-          <div class="section-head"><span class="material-icons">event</span><h3 class="m-0">今日のタスク</h3></div>
-          <a href="#" class="link-soft" data-view="tasks">すべて表示</a>
+          <div class="section-head"><span class="material-icons">event</span><h3 class="m-0">Today's Task</h3></div>
+          <a href="#" class="link-soft" data-view="tasks">View all</a>
         </div>
         <div id="home-today-tasks" class="mt-2"></div>
 
         <div class="d-flex justify-content-between align-items-center mt-4">
-          <div class="section-head"><span class="material-icons">mark_email_unread</span><h3 class="m-0">未読メッセージ</h3></div>
-          <a href="#" class="link-soft" data-view="messages">すべて表示</a>
+          <div class="section-head"><span class="material-icons">mark_email_unread</span><h3 class="m-0">New Message</h3></div>
+          <a href="#" class="link-soft" data-view="messages">View all</a>
         </div>
         <div id="home-unread" class="mt-2"></div>
       </section>
 
       <section class="view-panel fade-container is-hidden" id="view-tasks">
-        <h3 class="mt-3"><span class="material-icons align-middle me-1">send</span>マイタスク</h3>
-        <p class="text-muted small mb-2">担当しているタスクをすべて表示します。</p>
-        <div class="d-flex justify-content-end mt-3">
-          <button class="btn btn-outline-primary" id="btn-my-reload" type="button">再読込</button>
+        <div class="task-header mt-3">
+          <div class="task-title-wrap">
+            <span class="material-icons-outlined task-title-icon">send</span>
+            <h3 class="view-title">TASKS</h3>
+          </div>
+          <button class="btn btn-outline-primary d-flex align-items-center gap-1" id="task-reload" type="button">
+            <span class="material-icons align-middle">refresh</span>RELOAD
+          </button>
         </div>
-        <div id="list-my" class="mt-3"></div>
+
+        <div class="task-tabs" id="taskTabs">
+          <button class="task-tab-btn active" data-task-tab="my" type="button">MY TASK</button>
+          <button class="task-tab-btn" data-task-tab="from" type="button">FROM ME</button>
+          <? if (isManager) { ?>
+          <button class="task-tab-btn" data-task-tab="all" type="button"><span class="material-icons-outlined">admin_panel_settings</span>ALL TASKS</button>
+          <? } ?>
+        </div>
+
+        <div class="task-panels">
+          <div class="task-panel active" data-task-panel="my">
+            <div class="task-controls">
+              <div class="task-search">
+                <span class="material-icons-outlined">search</span>
+                <input type="search" id="task-search-my" placeholder="Search tasks" aria-label="Search my tasks">
+              </div>
+            </div>
+            <div class="task-list mt-3" id="task-list-my"></div>
+          </div>
+
+          <div class="task-panel" data-task-panel="from">
+            <div class="task-controls">
+              <div class="task-search">
+                <span class="material-icons-outlined">search</span>
+                <input type="search" id="task-search-from" placeholder="Search tasks" aria-label="Search tasks I created">
+              </div>
+              <div class="task-filter-row">
+                <select class="task-filter-select" id="task-filter-from-assignee">
+                  <option value="">Filter by assignee</option>
+                  <? for (var i = 0; i < users.length; i++) { ?>
+                    <option value="<?!= users[i].email ?>"><?!= users[i].name || users[i].email ?></option>
+                  <? } ?>
+                </select>
+              </div>
+            </div>
+            <div class="task-list mt-3" id="task-list-from"></div>
+          </div>
+
+          <? if (isManager) { ?>
+          <div class="task-panel" data-task-panel="all">
+            <div class="task-controls">
+              <div class="task-search">
+                <span class="material-icons-outlined">search</span>
+                <input type="search" id="task-search-all" placeholder="Search tasks" aria-label="Search all tasks">
+              </div>
+              <div class="task-filter-row">
+                <select class="task-filter-select" id="task-filter-all-assignee">
+                  <option value="">Filter by assignee</option>
+                  <? for (var i = 0; i < users.length; i++) { ?>
+                    <option value="<?!= users[i].email ?>"><?!= users[i].name || users[i].email ?></option>
+                  <? } ?>
+                </select>
+              </div>
+            </div>
+            <div class="task-list mt-3" id="task-list-all"></div>
+          </div>
+          <? } ?>
+        </div>
       </section>
 
       <section class="view-panel fade-container is-hidden" id="view-messages">
-        <h3 class="mt-3"><span class="material-icons align-middle me-1">mail</span>メッセージ</h3>
+        <div class="task-header mt-3">
+          <div class="task-title-wrap">
+            <span class="material-icons-outlined task-title-icon">mail</span>
+            <h3 class="view-title">MESSAGES</h3>
+          </div>
+        </div>
         <div class="subhead-bar mt-2">
           <div class="input-group">
             <span class="input-group-text material-icons-outlined">search</span>
-            <input type="text" class="form-control" id="msg-search-box" placeholder="件名・本文で検索">
+            <input type="text" class="form-control" id="msg-search-box" placeholder="Search title or body">
           </div>
         </div>
         <div class="row g-2 align-items-end mt-2">
           <div class="col-auto">
-            <label class="form-label">フォルダ</label>
+            <label class="form-label">Folder</label>
             <select id="flt-msg-folder" class="form-select">
-              <option value="">すべて</option>
+              <option value="">All</option>
               <? var __folders = (typeof folders !== 'undefined' && folders) ? folders : []; for (var i=0;i<__folders.length;i++){ ?>
                 <option value="<?!= __folders[i].id ?>"><?!= __folders[i].name ?></option>
               <? } ?>
@@ -702,13 +1016,13 @@
             <label class="form-label d-block">&nbsp;</label>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="flt-msg-unread">
-              <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
+              <label class="form-check-label" for="flt-msg-unread">Unread only</label>
             </div>
           </div>
           <div class="col-auto">
             <label class="form-label d-block">&nbsp;</label>
-            <button class="btn btn-outline-success" id="btn-msg-markall" type="button" aria-label="表示中の未読を一括既読">
-              <span class="material-icons align-middle me-1">done_all</span>一括既読
+            <button class="btn btn-outline-success" id="btn-msg-markall" type="button" aria-label="Mark all unread as read">
+              <span class="material-icons align-middle me-1">done_all</span>Mark All Read
             </button>
           </div>
         </div>
@@ -727,7 +1041,7 @@
               <option value="dark">ダーク</option>
               <option value="system">システムに合わせる</option>
             </select>
-            <div class="form-text" id="setting-theme-display">ライトテーマ（自動適用中）</div>
+            <div class="theme-status" id="setting-theme-display">ライトテーマ（自動適用中）</div>
           </div>
           <button class="btn btn-primary" type="button" id="btn-settings-save">
             <span class="label">保存</span>
@@ -750,20 +1064,20 @@
     <span class="material-icons">add</span>
   </button>
   <ul class="dropdown-menu" aria-labelledby="fabButton">
-    <li><button class="dropdown-item" type="button" id="btn-open-new-task"><span class="material-icons-outlined">send</span> タスク</button></li>
-    <li><button class="dropdown-item" type="button" id="btn-open-new-msg"><span class="material-icons-outlined">mail</span> メッセージ</button></li>
+    <li><button class="dropdown-item" type="button" id="btn-open-new-task"><span class="material-icons-outlined">send</span> Task</button></li>
+    <li><button class="dropdown-item" type="button" id="btn-open-new-msg"><span class="material-icons-outlined">mail</span> Message</button></li>
   </ul>
 </div>
 
 <nav class="navbar navbar-expand footer-nav d-md-none">
   <div class="container-fluid">
     <ul class="navbar-nav w-100 justify-content-around">
-      <li class="nav-item"><a class="nav-link text-center active" href="#" data-view="home"><span class="material-icons-outlined">home</span><span class="label">ホーム</span></a></li>
-      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="tasks"><span class="material-icons-outlined">send</span><span class="label">タスク</span></a></li>
+      <li class="nav-item"><a class="nav-link text-center active" href="#" data-view="home"><span class="material-icons-outlined">home</span><span class="label">Home</span></a></li>
+      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="tasks"><span class="material-icons-outlined">send</span><span class="label">Tasks</span></a></li>
       <li class="nav-item position-relative">
-        <a class="nav-link text-center" href="#" data-view="messages"><span class="material-icons-outlined">mail</span><span class="label">メッセージ</span><span class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none" id="badge-unread-bottom">0</span></a>
+        <a class="nav-link text-center" href="#" data-view="messages"><span class="material-icons-outlined">mail</span><span class="label">Messages</span><span class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none" id="badge-unread-bottom">0</span></a>
       </li>
-      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="settings"><span class="material-icons-outlined">settings</span><span class="label">設定</span></a></li>
+      <li class="nav-item"><a class="nav-link text-center" href="#" data-view="settings"><span class="material-icons-outlined">settings</span><span class="label">Settings</span></a></li>
     </ul>
   </div>
 </nav>
@@ -992,7 +1306,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
 
 <script type="application/json" id="__BOOT__">
-<?!= JSON.stringify({ users: users, currentEmail: userInfo.email, theme: userInfo.theme, myTasks: initialTasks }) ?>
+<?!= JSON.stringify({ users: users, currentEmail: userInfo.email, theme: userInfo.theme, isManager: isManager, myTasks: initialTasks }) ?>
 </script>
 
 <script>
@@ -1004,10 +1318,11 @@
   const INITIAL_MY_TASK_PAYLOAD = (__BOOT__.myTasks && typeof __BOOT__.myTasks === 'object')
     ? __BOOT__.myTasks
     : { tasks: [], meta: {} };
-  let INITIAL_MY_TASKS_RENDERED = false;
+  const IS_MANAGER = !!__BOOT__.isManager;
   let AUTH_NOTICE_SHOWN = false;
   let MANAGER_NOTICE_SHOWN = false;
   let AUTH_HELP_REQUESTED = false;
+  let TASKS_BOOTSTRAPPED = false;
   var _rszTimer = null;
 
   // ===== テーマ適用 =====
@@ -1256,7 +1571,11 @@
   function navigateTo(v){
     CURRENT_VIEW=v; setActiveNav(v); showPanel(v); trackTo(v); scrollToTopNow();
     if(v==='home') loadHome();
-    if(v==='tasks'){ loadMyTasks(); }
+    if(v==='tasks'){
+      ensureTaskBootstrap();
+      activateTaskTab(ACTIVE_TASK_TAB || 'my', false);
+      reloadActiveTaskTab();
+    }
     if(v==='messages') loadMessages();
     if(v==='settings') loadSettings();
   }
@@ -1345,13 +1664,26 @@
   }
 
   // ===== Tasks =====
+  const TASK_STATE = {
+    my:   { rows: [], meta: {}, loaded: false, loading: false },
+    from: { rows: [], meta: {}, loaded: false, loading: false },
+    all:  { rows: [], meta: {}, loaded: false, loading: false, restricted: !IS_MANAGER }
+  };
+  const TASK_FILTERS = {
+    my:   { search: '' },
+    from: { search: '', assignee: '' },
+    all:  { search: '', assignee: '' }
+  };
+  let ACTIVE_TASK_TAB = 'my';
+
   function displayAssignees(r){
-    const assigneeEmails = r.assignees || (r.assignee ? [r.assignee] : []);
-    if (Array.isArray(assigneeEmails) && assigneeEmails.length) {
-      return assigneeEmails.map(email => getNameByEmail(email)).join(', ');
-    }
-    return '';
+    var assigneeEmails = Array.isArray(r.assignees) && r.assignees.length
+      ? r.assignees
+      : (r.assignee ? [r.assignee] : []);
+    if (!assigneeEmails.length) return '';
+    return assigneeEmails.map(function(email){ return getNameByEmail(email); }).join(', ');
   }
+
   function rowTask(r, showAssignee){
     var priority = r.priority || '中';
     var priorityCls = priorityClassName(priority);
@@ -1367,6 +1699,7 @@
       dueStart.setHours(0,0,0,0);
       isOverdue = !isCompleted && dueStart.getTime() < today.getTime();
     }
+
     var cardClass = 'card mb-2 text-decoration-none link-surface';
     if (isCompleted) cardClass += ' task-card-completed';
     var text = '<a href="#" class="'+cardClass+'" onclick="event.preventDefault(); openTaskDetail(\''+r.id+'\')">'+
@@ -1397,67 +1730,253 @@
           '</div></a>';
     return text;
   }
-function onLoadMyTasksSuccess(result){
-    var tgt = 'list-my';
-    INITIAL_MY_TASKS_RENDERED = true;
-    try{
-      console.log('[loadMyTasks] raw result', result);
-      var payload = extractTaskPayload(result, 'listMyTasks');
-      console.log('[loadMyTasks] payload', payload);
-      var rows = normalizeArray(payload.rows);
-      console.log('[loadMyTasks] rows length', rows.length, rows);
-      var hasItems = rows.length > 0;
-      byId(tgt).innerHTML = hasItems
-        ? rows.map(function(r){ return rowTask(r,true); }).join('')
-        : '<div class="card"><div class="card-body text-muted">表示できるタスクはありません。</div></div>';
-      console.log('[loadMyTasks] rendered', hasItems ? 'rendered ' + rows.length : 'empty');
-    }catch(err){
-      console.error('[loadMyTasks] render error', err);
-      byId(tgt).innerHTML = '<div class="card"><div class="card-body text-danger">タスクの表示中にエラーが発生しました。</div></div>';
+
+  function getTaskContainerId(scope){
+    if(scope === 'from') return 'task-list-from';
+    if(scope === 'all') return 'task-list-all';
+    return 'task-list-my';
+  }
+
+  function setTaskContent(scope, html){
+    var el = byId(getTaskContainerId(scope));
+    if(el){ el.innerHTML = html; }
+  }
+
+  function setTaskLoading(scope, loading){
+    var state = TASK_STATE[scope];
+    if(!state) return;
+    state.loading = !!loading;
+    if(loading){
+      setTaskContent(scope, skel(6));
     }
   }
-  function onLoadMyTasksFailure(error){
-    console.error('[loadMyTasks] failure', error);
-    notify('マイタスク取得失敗: ' + (error && error.message ? error.message : error), false);
+
+  function setTaskError(scope, message){
+    setTaskContent(scope, '<div class="task-empty text-danger">'+esc(message || 'タスクの表示中にエラーが発生しました。')+'</div>');
   }
-function loadMyTasks(){
-    var tgt='list-my';
-    var hasInitial = !INITIAL_MY_TASKS_RENDERED &&
-      INITIAL_MY_TASK_PAYLOAD &&
-      Array.isArray(INITIAL_MY_TASK_PAYLOAD.tasks) &&
-      INITIAL_MY_TASK_PAYLOAD.tasks.length > 0;
-    if(hasInitial){
-      console.log('[loadMyTasks] render initial payload');
-      onLoadMyTasksSuccess(INITIAL_MY_TASK_PAYLOAD);
-    }else{
-      byId(tgt).innerHTML=skel(6);
+
+  function filterTaskRows(scope){
+    var state = TASK_STATE[scope];
+    if(!state) return [];
+    var rows = normalizeArray(state.rows).slice();
+    var filters = TASK_FILTERS[scope] || {};
+    var assigneeFilter = (filters.assignee || '').trim().toLowerCase();
+    if(assigneeFilter){
+      rows = rows.filter(function(row){
+        var list = normalizeArray(row.assignees && row.assignees.length ? row.assignees : (row.assignee ? [row.assignee] : []));
+        if(!list.length) return false;
+        return list.some(function(email){ return String(email || '').trim().toLowerCase() === assigneeFilter; });
+      });
     }
-    if(!HAS_ACTIVE_EMAIL){
-      byId(tgt).innerHTML = authRequiredCard();
+    var search = (filters.search || '').trim().toLowerCase();
+    if(search){
+      rows = rows.filter(function(row){
+        var haystack = [
+          row.title || '',
+          row.status || '',
+          row.priority || '',
+          displayAssignees(row),
+          row.createdBy || '',
+          formatDateLabel(row.dueDate) || ''
+        ].join(' ').toLowerCase();
+        return haystack.indexOf(search) >= 0;
+      });
+    }
+    return rows;
+  }
+
+  function renderTaskList(scope){
+    if(scope === 'all' && TASK_STATE.all.restricted){
+      setTaskContent(scope, '<div class="task-empty">管理者権限が必要です。</div>');
       return;
     }
-    if(!(globalThis.google && google.script && google.script.run)){
-      console.error('[loadMyTasks] google.script.run unavailable');
-      if(!hasInitial){
-        byId(tgt).innerHTML = '<div class="card"><div class="card-body text-danger">Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。</div></div>';
+    if(scope === 'my' && !HAS_ACTIVE_EMAIL){
+      setTaskContent(scope, authRequiredCard());
+      return;
+    }
+    if(TASK_STATE[scope].loading){
+      setTaskContent(scope, skel(6));
+      return;
+    }
+    var rows = filterTaskRows(scope);
+    if(!rows.length){
+      setTaskContent(scope, '<div class="task-empty">表示できるタスクはありません。</div>');
+      return;
+    }
+    setTaskContent(scope, rows.map(function(r){ return rowTask(r, true); }).join(''));
+  }
+
+  function ensureTaskBootstrap(){
+    if(TASKS_BOOTSTRAPPED) return;
+    TASKS_BOOTSTRAPPED = true;
+    var initialRows = normalizeArray(INITIAL_MY_TASK_PAYLOAD && INITIAL_MY_TASK_PAYLOAD.tasks);
+    TASK_STATE.my.rows = initialRows;
+    TASK_STATE.my.meta = (INITIAL_MY_TASK_PAYLOAD && INITIAL_MY_TASK_PAYLOAD.meta) || {};
+    TASK_STATE.my.loaded = initialRows.length > 0;
+    renderTaskList('my');
+  }
+
+  function loadMyTasks(){
+    var scope = 'my';
+    if(!HAS_ACTIVE_EMAIL){
+      renderTaskList(scope);
+      if(!AUTH_NOTICE_SHOWN){
+        notify('Google へのサインイン情報が取得できません。公開設定をご確認ください。', false);
+        AUTH_NOTICE_SHOWN = true;
       }
       return;
     }
-    try{
-      google.script.run
-        .withSuccessHandler(onLoadMyTasksSuccess)
-        .withFailureHandler(onLoadMyTasksFailure)
-        .listMyTasks();
-    }catch(err){
-      console.error('[loadMyTasks] invoke error', err);
-      notify('マイタスク呼び出しに失敗しました。', false);
+    if(!(globalThis.google && google.script && google.script.run)){
+      setTaskError(scope, 'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。');
+      return;
     }
+    setTaskLoading(scope, true);
+    google.script.run
+      .withSuccessHandler(function(result){
+        var payload = extractTaskPayload(result, 'listMyTasks');
+        TASK_STATE.my.rows = payload.rows;
+        TASK_STATE.my.meta = payload.meta || {};
+        TASK_STATE.my.loaded = true;
+        setTaskLoading(scope, false);
+        renderTaskList(scope);
+      })
+      .withFailureHandler(function(error){
+        setTaskLoading(scope, false);
+        setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
+        notify('マイタスク取得失敗: ' + (error && error.message ? error.message : error), false);
+      })
+      .listMyTasks();
+  }
+
+  function loadCreatedTasks(){
+    var scope = 'from';
+    if(!(globalThis.google && google.script && google.script.run)){
+      setTaskError(scope, 'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。');
+      return;
+    }
+    setTaskLoading(scope, true);
+    google.script.run
+      .withSuccessHandler(function(result){
+        var payload = extractTaskPayload(result, 'listCreatedTasks');
+        TASK_STATE.from.rows = payload.rows;
+        TASK_STATE.from.meta = payload.meta || {};
+        TASK_STATE.from.loaded = true;
+        setTaskLoading(scope, false);
+        renderTaskList(scope);
+      })
+      .withFailureHandler(function(error){
+        setTaskLoading(scope, false);
+        setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+        notify('作成したタスクの取得に失敗しました: ' + (error && error.message ? error.message : error), false);
+      })
+      .listCreatedTasks(null);
+  }
+
+  function loadAllTasks(){
+    var scope = 'all';
+    if(!IS_MANAGER){
+      TASK_STATE.all.restricted = true;
+      renderTaskList(scope);
+      return;
+    }
+    if(!(globalThis.google && google.script && google.script.run)){
+      setTaskError(scope, 'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。');
+      return;
+    }
+    setTaskLoading(scope, true);
+    google.script.run
+      .withSuccessHandler(function(result){
+        var payload = extractTaskPayload(result, 'listAllTasks');
+        if(payload.meta && payload.meta.managerOnly && !payload.meta.isManager){
+          TASK_STATE.all.restricted = true;
+          setTaskLoading(scope, false);
+          renderTaskList(scope);
+          if(!MANAGER_NOTICE_SHOWN){
+            notify('全体のタスク閲覧には管理者権限が必要です。', false);
+            MANAGER_NOTICE_SHOWN = true;
+          }
+          return;
+        }
+        TASK_STATE.all.rows = payload.rows;
+        TASK_STATE.all.meta = payload.meta || {};
+        TASK_STATE.all.loaded = true;
+        TASK_STATE.all.restricted = false;
+        setTaskLoading(scope, false);
+        renderTaskList(scope);
+      })
+      .withFailureHandler(function(error){
+        setTaskLoading(scope, false);
+        setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+        notify('全体タスクの取得に失敗しました: ' + (error && error.message ? error.message : error), false);
+      })
+      .listAllTasks(null);
+  }
+
+  function activateTaskTab(tab, shouldLoad){
+    if(tab === 'all' && !IS_MANAGER){
+      TASK_STATE.all.restricted = true;
+      renderTaskList('all');
+      return;
+    }
+    if(!tab) tab = 'my';
+    ACTIVE_TASK_TAB = tab;
+    $$('#taskTabs .task-tab-btn').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-task-tab') === tab);
+    });
+    $$('.task-panels .task-panel').forEach(function(panel){
+      panel.classList.toggle('active', panel.getAttribute('data-task-panel') === tab);
+    });
+    if(shouldLoad){
+      if(tab === 'my'){ loadMyTasks(); return; }
+      if(tab === 'from'){ loadCreatedTasks(); return; }
+      if(tab === 'all'){ loadAllTasks(); return; }
+    }
+    renderTaskList(tab);
+  }
+
+  function reloadActiveTaskTab(){
+    if((ACTIVE_TASK_TAB || 'my') === 'from'){ loadCreatedTasks(); return; }
+    if((ACTIVE_TASK_TAB || 'my') === 'all'){ loadAllTasks(); return; }
+    loadMyTasks();
+  }
+
+  function bindTaskControls(){
+    $$('#taskTabs .task-tab-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tab = btn.getAttribute('data-task-tab');
+        if(!tab) return;
+        var state = TASK_STATE[tab] || {};
+        var shouldLoad = tab !== ACTIVE_TASK_TAB || !state.loaded;
+        activateTaskTab(tab, shouldLoad);
+      });
+    });
+    on('task-search-my','input', function(){
+      TASK_FILTERS.my.search = (this.value || '').trim();
+      renderTaskList('my');
+    });
+    on('task-search-from','input', function(){
+      TASK_FILTERS.from.search = (this.value || '').trim();
+      renderTaskList('from');
+    });
+    on('task-search-all','input', function(){
+      TASK_FILTERS.all.search = (this.value || '').trim();
+      renderTaskList('all');
+    });
+    on('task-filter-from-assignee','change', function(){
+      TASK_FILTERS.from.assignee = this.value || '';
+      renderTaskList('from');
+    });
+    on('task-filter-all-assignee','change', function(){
+      TASK_FILTERS.all.assignee = this.value || '';
+      renderTaskList('all');
+    });
+    on('task-reload','click', reloadActiveTaskTab);
   }
 
   // ===== Messages =====
   function rowMsg(m){
     var cls = m.isRead ? 'card mb-2 msg-card' : 'card mb-2 msg-card unread';
-    var lab = m.isRead ? '未読にする' : '既読にする';
+    var lab = m.isRead ? 'Mark as unread' : 'Mark as read';
     var style = m.isRead ? 'btn-outline-primary' : 'btn-primary';
     var priority = m.priority || '中';
     var priorityPill = '<span class="priority-pill '+priorityClassName(priority)+'">'+esc(priority)+'</span>';
@@ -1481,12 +2000,23 @@ function loadMyTasks(){
     '</div>';
   }
   function filterMessages(list){
-    var folderId = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+    var folderEl = byId('flt-msg-folder');
+    var folderId = folderEl ? (folderEl.value || '') : '';
+    folderId = String(folderId).trim();
+    if(!folderId || folderId.toLowerCase() === 'all'){
+      folderId = '';
+    }
     var unreadOnly = byId('flt-msg-unread') ? !!byId('flt-msg-unread').checked : false;
     var kw = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
     var rows = normalizeArray(list).slice();
     if(unreadOnly) rows = rows.filter(function(x){ return !x.isRead; });
-    if(folderId) rows = rows.filter(function(x){ return String(x.folderId || '') === String(folderId); });
+    if(folderId){
+      var normalized = folderId.toLowerCase();
+      rows = rows.filter(function(x){
+        var candidate = String(x && x.folderId != null ? x.folderId : '').trim();
+        return candidate.toLowerCase() === normalized;
+      });
+    }
     if(kw){
       rows = rows.filter(function(x){
         return (String(x.title||'').indexOf(kw) >= 0) || (String(x.body||'').indexOf(kw) >= 0);
@@ -1509,19 +2039,22 @@ function loadMyTasks(){
       return;
     }
     setMsgLoading(true);
+    var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+    if(folderOpt != null) folderOpt = String(folderOpt).trim();
+    if(!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
     google.script.run
       .withSuccessHandler(function(list){
         var rows = filterMessages(list);
         byId('msg-list').innerHTML = rows.length
           ? rows.map(function(m){ return rowMsg(m); }).join('')
-          : '<div class="card"><div class="card-body text-muted">メッセージはありません。</div></div>';
+          : '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
         setMsgLoading(false);
       })
       .withFailureHandler(function(e){
-        notify('メッセージ取得失敗: '+e.message,false);
+        notify('Failed to load messages: '+e.message,false);
         setMsgLoading(false);
       })
-      .getMessages({ folderId: (byId('flt-msg-folder')||{}).value || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
+      .getMessages({ folderId: folderOpt || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
   }
   function toggleRead(btn, memoId, shouldRead){
     btn.disabled=true;
@@ -1530,7 +2063,7 @@ function loadMyTasks(){
     if(sp) sp.classList.remove('d-none');
     google.script.run
       .withSuccessHandler(function(){ loadMessages(); loadHome(); })
-      .withFailureHandler(function(e){ notify('既読処理に失敗: '+e.message,false); btn.disabled=false; })
+      .withFailureHandler(function(e){ notify('Failed to update read status: '+e.message,false); btn.disabled=false; })
       .toggleMemoRead(memoId, shouldRead);
   }
   on('btn-msg-markall','click', function(){
@@ -1538,33 +2071,36 @@ function loadMyTasks(){
     if(!btn) return;
     btn.disabled = true;
     var originalHTML = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>処理中...';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Processing...';
+    var folderRef = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+    if(folderRef != null) folderRef = String(folderRef).trim();
+    if(!folderRef || folderRef.toLowerCase() === 'all') folderRef = '';
     google.script.run
       .withSuccessHandler(function(list){
         var rows = filterMessages(list).filter(function(x){ return !x.isRead; });
         var ids = rows.map(function(x){ return x.id; });
         if(ids.length === 0){
-          notify('一括既読の対象（未読）がありません。', true);
+          notify('No unread messages to mark as read.', true);
           btn.disabled = false; btn.innerHTML = originalHTML;
           return;
         }
         google.script.run
           .withSuccessHandler(function(res){
-            notify(res && res.message ? res.message : '未読を一括で既読にしました', res && res.success !== false);
+            notify(res && res.message ? res.message : 'Marked unread messages as read.', res && res.success !== false);
             btn.disabled = false; btn.innerHTML = originalHTML;
             loadMessages(); loadHome();
           })
           .withFailureHandler(function(e){
-            notify('一括既読に失敗: '+e.message, false);
+            notify('Failed to mark messages as read: '+e.message, false);
             btn.disabled = false; btn.innerHTML = originalHTML;
           })
           .markMemosReadBulk(ids);
       })
       .withFailureHandler(function(e){
-        notify('メッセージ再取得に失敗: '+e.message,false);
+        notify('Failed to refresh messages: '+e.message,false);
         btn.disabled = false; btn.innerHTML = originalHTML;
       })
-      .getMessages({ folderId: (byId('flt-msg-folder')||{}).value || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
+      .getMessages({ folderId: folderRef || undefined, unreadOnly: !!(byId('flt-msg-unread')||{}).checked });
   });
 
   // ===== Detail / Modal =====
@@ -1890,6 +2426,8 @@ function loadMyTasks(){
         }
         loadHome();
         loadMyTasks();
+        if (TASK_STATE.from.loaded) loadCreatedTasks();
+        if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
       }).withFailureHandler(function(e){
         setButtonLoading(btn, false);
         notify('タスクの作成に失敗しました: ' + e.message, false);
@@ -1954,7 +2492,8 @@ function loadMyTasks(){
     on('btn-open-new-task','click', function(e){ e.preventDefault(); byId('taskFromMsgHint').classList.add('d-none'); new bootstrap.Modal(byId('newTaskModal')).show(); });
     on('btn-open-new-msg','click',  function(e){ e.preventDefault(); new bootstrap.Modal(byId('newMessageModal')).show(); });
 
-    on('btn-my-reload','click', loadMyTasks);
+    bindTaskControls();
+    ensureTaskBootstrap();
 
     on('flt-msg-folder','change', loadMessages);
     on('flt-msg-unread','change', loadMessages);
