@@ -1,5 +1,51 @@
 // ====== 基本設定 ======
 const SPREADSHEET_ID = '1bL7cdFqtFd7eKAj0ZOUrmQ2kbPtGvDt6EMXt6fi5i_M';
+const PROFILE_IMAGE_FOLDER_ID =
+  PropertiesService.getScriptProperties().getProperty('PROFILE_IMAGE_FOLDER_ID') || '';
+const MESSAGE_ATTACHMENT_FOLDER_ID =
+  PropertiesService.getScriptProperties().getProperty('MESSAGE_ATTACHMENT_FOLDER_ID') || '';
+const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
+const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_MESSAGE_ATTACHMENT_BYTES = 4 * 1024 * 1024; // 4MB
+const HIDDEN_TEST_ACCOUNT = 'hide.for.appscript@gmail.com';
+const CLEANUP_MONTH_THRESHOLD = 6;
+const USER_SHEET_COLUMNS = [
+  'UserID',
+  'Email',
+  'DisplayName',
+  'ProfileImage',
+  'Role',
+  'IsActive',
+  'Theme',
+];
+const MEMO_SHEET_COLUMNS = [
+  'MemoID',
+  'CreatedAt',
+  'CreatedBy',
+  'Title',
+  'Body',
+  'Priority',
+  'FolderID',
+  'Attachments',
+  'UpdatedAt',
+  'AttachmentIDs',
+];
+const TASK_SHEET_COLUMNS = [
+  'TaskID',
+  'Title',
+  'AssigneeEmail',
+  'DueDate',
+  'Status',
+  'CreatedBy',
+  'CreatedAt',
+  'Priority',
+  'AssigneeEmails',
+  'RepeatRule',
+  'UpdatedAt',
+  'ParentTaskID',
+  'Attachments',
+  'AttachmentIDs',
+];
 
 // ====== 認証設定（削除） ======
 // GCPクライアントIDは不要になったため削除します。
@@ -53,6 +99,13 @@ function _coerceDateValue(value) {
   return dateObj.getTime();
 }
 
+function testFolderAccess() {
+  const folderId = '1D1nUL4-wtbrXErVyf3ERyyZ6PhuJtAdX';
+  const folder = DriveApp.getFolderById(folderId);
+  Logger.log(folder.getName());
+  folder.createFile('test.txt', 'hello');
+}
+
 function _startOfToday() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -69,6 +122,14 @@ function _isManagerRole(role) {
     normalized === 'admin' ||
     normalized === 'administrator' ||
     normalized === 'manager'
+  );
+}
+
+function _isAdminRole(role) {
+  return (
+    String(role || '')
+      .trim()
+      .toLowerCase() === 'admin'
   );
 }
 
@@ -191,6 +252,153 @@ function _arrayToCsv(arr) {
   return arr.filter(Boolean).join(',');
 }
 
+function _ensureFolder(folderId, label) {
+  const id = String(folderId || '').trim();
+  if (!id) throw new Error(label + '用のフォルダIDが設定されていません。');
+  try {
+    return DriveApp.getFolderById(id);
+  } catch (e) {
+    throw new Error(label + '用のフォルダにアクセスできません: ' + e);
+  }
+}
+
+function _sanitizeDriveFileName(name) {
+  return String(name || '').replace(/[\\/:*?"<>|]/g, '_');
+}
+
+function _profileImageFileName(email) {
+  const normalized = _sanitizeDriveFileName(String(email || '').trim() || 'user');
+  return normalized + '.ProfileImage';
+}
+
+function _extractImageBlob(dataUri, maxBytes) {
+  if (!dataUri) return null;
+  const trimmed = String(dataUri).trim();
+  const match = trimmed.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match) throw new Error('画像データ形式が不正です。');
+  const mimeType = match[1];
+  const base64 = match[2].replace(/\s/g, '');
+  const bytes = Utilities.base64Decode(base64);
+  if (maxBytes && bytes.length > maxBytes) {
+    throw new Error('画像サイズが大きすぎます (最大 ' + maxBytes + ' バイト)。');
+  }
+  return Utilities.newBlob(bytes, mimeType);
+}
+
+function _shareForDomain(file) {
+  // 共有設定はフォルダ側で管理するためここでは変更しない
+  try {
+    file.getSharingAccess();
+  } catch (e) {
+    _audit('drive', file.getId(), 'share_access_fail', { error: String(e) });
+  }
+}
+
+function _clearExistingFiles(folder, name) {
+  const existing = folder.getFilesByName(name);
+  while (existing.hasNext()) {
+    try {
+      existing.next().setTrashed(true);
+    } catch (e) {
+      _audit('drive', folder.getId(), 'cleanup_fail', { name: name, error: String(e) });
+    }
+  }
+}
+
+function _driveViewUrl(fileId) {
+  const id = String(fileId || '').trim();
+  if (!id) return '';
+  return 'https://drive.google.com/uc?id=' + encodeURIComponent(id) + '&export=download';
+}
+
+function _driveDownloadUrl(fileId) {
+  const id = String(fileId || '').trim();
+  if (!id) return '';
+  return 'https://drive.google.com/uc?id=' + encodeURIComponent(id) + '&export=download';
+}
+
+function _deleteDriveFileById(fileId) {
+  try {
+    if (!fileId) return;
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (err) {
+    _audit('drive', fileId, 'delete_fail', { error: String(err) });
+  }
+}
+
+function _guessImageExtension(mimeType, originalName) {
+  const map = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'image/heic': '.heic',
+    'image/heif': '.heif',
+    'image/bmp': '.bmp',
+  };
+  if (mimeType && map[mimeType]) return map[mimeType];
+  const nameMatch = String(originalName || '').match(/\.[a-zA-Z0-9]+$/);
+  if (nameMatch && nameMatch[0]) return nameMatch[0];
+  return '.png';
+}
+
+function _storeProfileImage(dataUri, email) {
+  const blob = _extractImageBlob(dataUri, MAX_PROFILE_IMAGE_BYTES);
+  if (!blob) throw new Error('画像データが不正です。');
+  const fileName = _profileImageFileName(email);
+  blob.setName(fileName);
+  const folder = _ensureFolder(PROFILE_IMAGE_FOLDER_ID, 'プロフィール画像');
+  _clearExistingFiles(folder, fileName);
+  const file = folder.createFile(blob);
+  _shareForDomain(file);
+  file.setName(fileName);
+  return {
+    fileId: file.getId(),
+    url: _driveViewUrl(file.getId()),
+    name: fileName,
+  };
+}
+
+function _storeMessageAttachment(attachment, ownerEmail) {
+  if (!attachment || !attachment.dataUri) return null;
+  const blob = _extractImageBlob(attachment.dataUri, MAX_MESSAGE_ATTACHMENT_BYTES);
+  if (!blob) return null;
+  const mimeType = blob.getContentType();
+  if (!/^image\//i.test(mimeType || '')) {
+    throw new Error('画像ファイルのみアップロードできます。');
+  }
+  const baseName = _sanitizeDriveFileName(
+    (attachment.name || '').replace(/\.[^.]+$/, '') || 'attachment'
+  );
+  const extension = _guessImageExtension(mimeType, attachment.name);
+  const shortId = Utilities.getUuid().slice(0, 8);
+  const fileName = baseName + '_' + shortId + extension;
+  blob.setName(fileName);
+  const folder = _ensureFolder(MESSAGE_ATTACHMENT_FOLDER_ID, 'メッセージ添付ファイル');
+  const file = folder.createFile(blob);
+  _shareForDomain(file);
+  file.setName(fileName);
+  return {
+    fileId: file.getId(),
+    fileName: fileName,
+    owner: ownerEmail,
+  };
+}
+
+function _extractDriveFileId(value) {
+  if (!value) return '';
+  const str = String(value).trim();
+  if (!str) return '';
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(str) && str.indexOf('http') !== 0) return str;
+  const byPath = str.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (byPath && byPath[1]) return byPath[1];
+  const byQuery = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (byQuery && byQuery[1]) return byQuery[1];
+  return '';
+}
+
 /** 添付IDの正規化 */
 function _parseAttachmentIds(csv) {
   return _csvToArray(csv)
@@ -252,15 +460,7 @@ function _ensureUserRecord_() {
   if (!normalizedEmail) return; // 何らかの理由でemailが取れない場合は中断
 
   const sh = _openSheet('M_Users');
-  const hdr = _ensureColumns(sh, [
-    'UserID',
-    'Email',
-    'DisplayName',
-    'ProfileImage',
-    'Role',
-    'IsActive',
-    'Theme',
-  ]);
+  const hdr = _ensureColumns(sh, USER_SHEET_COLUMNS);
   const v = sh.getDataRange().getValues();
 
   // ユーザーが既に登録されているかチェック
@@ -276,7 +476,7 @@ function _ensureUserRecord_() {
   newRow[hdr['UserID']] = id;
   newRow[hdr['Email']] = email;
   newRow[hdr['DisplayName']] = email; // 初期表示名はメールアドレス
-  newRow[hdr['ProfileImage']] = 'https://placehold.jp/150x150.png';
+  newRow[hdr['ProfileImage']] = PROFILE_PLACEHOLDER_URL;
   newRow[hdr['Role']] = 'member';
   newRow[hdr['IsActive']] = 'TRUE';
   newRow[hdr['Theme']] = 'light';
@@ -290,6 +490,52 @@ function _ensureUserRecord_() {
 }
 
 // ====== ユーザー情報 ======
+function _resolveProfileImageInfo(profileValue, email) {
+  const raw = String(profileValue || '').trim();
+  if (!raw || raw === PROFILE_PLACEHOLDER_URL) {
+    return {
+      imageUrl: PROFILE_PLACEHOLDER_URL,
+      imageName: '',
+      fileId: '',
+    };
+  }
+  const fileId = _extractDriveFileId(raw);
+  if (fileId) {
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const blob = file.getBlob();
+      const contentType = blob.getContentType() || 'image/png';
+      const bytes = blob.getBytes();
+      const base64Data = Utilities.base64Encode(bytes || []);
+      const dataUri = 'data:' + contentType + ';base64,' + base64Data;
+      return {
+        imageUrl: dataUri,
+        imageName: _profileImageFileName(email),
+        fileId: fileId,
+      };
+    } catch (err) {
+      _audit('profile', fileId, 'image_fetch_fail', { error: String(err) });
+      return {
+        imageUrl: PROFILE_PLACEHOLDER_URL,
+        imageName: _profileImageFileName(email),
+        fileId: fileId,
+      };
+    }
+  }
+  if (raw.indexOf('http') === 0 || raw.indexOf('data:') === 0) {
+    return {
+      imageUrl: raw,
+      imageName: '',
+      fileId: '',
+    };
+  }
+  return {
+    imageUrl: PROFILE_PLACEHOLDER_URL,
+    imageName: '',
+    fileId: '',
+  };
+}
+
 function getLoggedInUserInfo() {
   const rawEmail = _getCurrentEmail();
   const email = String(rawEmail || '').trim();
@@ -297,7 +543,7 @@ function getLoggedInUserInfo() {
   if (!normalizedEmail) {
     return {
       name: 'ゲスト',
-      imageUrl: 'https://placehold.jp/150x150.png',
+      imageUrl: PROFILE_PLACEHOLDER_URL,
       role: '一般',
       email: email,
       theme: 'light',
@@ -307,15 +553,18 @@ function getLoggedInUserInfo() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'user_info_' + normalizedEmail;
   const cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (cached) {
+    return JSON.parse(cached);
+  }
 
   const userSheet = _openSheet('M_Users');
-  const header = _getHeaderMap(userSheet);
+  const header = _ensureColumns(userSheet, USER_SHEET_COLUMNS);
   const THEME_COL = header['Theme'];
   const data = userSheet.getDataRange().getValues();
   let info = {
     name: 'ゲスト',
-    imageUrl: 'https://placehold.jp/150x150.png',
+    imageUrl: PROFILE_PLACEHOLDER_URL,
+    imageName: '',
     role: '一般',
     email: email,
     theme: 'light',
@@ -323,30 +572,11 @@ function getLoggedInUserInfo() {
 
   for (let i = 1; i < data.length; i++) {
     if (_normalizeEmail(data[i][header['Email']]) === normalizedEmail) {
-      let imageUrl = data[i][header['ProfileImage']] || 'https://placehold.jp/150x150.png';
-      if (String(imageUrl).indexOf('drive.google.com') >= 0) {
-        try {
-          let fileId = '';
-          if (imageUrl.indexOf('/d/') >= 0) {
-            fileId = imageUrl.split('/d/')[1].split('/')[0];
-          } else if (imageUrl.indexOf('id=') >= 0) {
-            fileId = imageUrl.split('id=')[1].split('&')[0];
-          }
-          if (fileId) {
-            const file = DriveApp.getFileById(fileId);
-            const blob = file.getBlob();
-            const base64Data = Utilities.encodeBase64WebSafe(blob.getBytes());
-            const ct = blob.getContentType();
-            imageUrl = 'data:' + ct + ';base64,' + base64Data;
-          }
-        } catch (e) {
-          Logger.log('画像のBase64変換失敗: ' + e);
-          imageUrl = 'https://placehold.jp/150x150.png';
-        }
-      }
+      const profileMeta = _resolveProfileImageInfo(data[i][header['ProfileImage']], email);
       info = {
         name: data[i][header['DisplayName']] || 'ユーザー',
-        imageUrl: imageUrl,
+        imageUrl: profileMeta.imageUrl,
+        imageName: profileMeta.imageName,
         role: data[i][header['Role']] || '一般',
         email: email,
         theme: THEME_COL != null && THEME_COL >= 0 ? data[i][THEME_COL] || 'light' : 'light',
@@ -354,7 +584,16 @@ function getLoggedInUserInfo() {
       break;
     }
   }
-  cache.put(cacheKey, JSON.stringify(info), 3600);
+  try {
+    const payload = JSON.stringify(info);
+    if (payload.length <= 90 * 1024) {
+      cache.put(cacheKey, payload, 3600);
+    } else {
+      // Skip caching when payload is too large
+    }
+  } catch (e) {
+    // Cache write failures are non-fatal
+  }
   return info;
 }
 
@@ -375,7 +614,7 @@ function getAuthStatus() {
     status.hasSpreadsheetAccess = true;
     const userSheet = ss.getSheetByName('M_Users');
     if (userSheet && normalized) {
-      const header = _getHeaderMap(userSheet);
+      const header = _ensureColumns(userSheet, USER_SHEET_COLUMNS);
       const values = userSheet.getDataRange().getValues();
       for (let i = 1; i < values.length; i++) {
         if (_normalizeEmail(values[i][header['Email']]) === normalized) {
@@ -406,7 +645,7 @@ function isManagerUser() {
 
 function listActiveUsers() {
   const sh = _openSheet('M_Users');
-  const header = _getHeaderMap(sh);
+  const header = _ensureColumns(sh, USER_SHEET_COLUMNS);
   const values = sh.getDataRange().getValues();
   const res = [];
 
@@ -452,6 +691,60 @@ function listActiveFolders() {
   return res;
 }
 
+function cleanUpArchiveData() {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - CLEANUP_MONTH_THRESHOLD);
+  const cutoffMs = cutoff.getTime();
+
+  // ===== タスク削除 =====
+  try {
+    const sh = _openSheet('T_Tasks');
+    const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
+    const values = sh.getDataRange().getValues();
+    const rowsToDelete = [];
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      const status = _normalizeStatus(row[header['Status']]);
+      if (status !== '完了') continue;
+      const completedAt = _coerceDateValue(row[header['UpdatedAt']] || row[header['CreatedAt']]);
+      if (completedAt != null && completedAt <= cutoffMs) {
+        rowsToDelete.push(i + 1);
+        const attachmentIds =
+          header['AttachmentIDs'] != null ? _parseAttachmentIds(row[header['AttachmentIDs']]) : [];
+        attachmentIds.forEach(_deleteDriveFileById);
+      }
+    }
+    for (let i = rowsToDelete.length - 1; i >= 0; i--) {
+      sh.deleteRow(rowsToDelete[i]);
+    }
+  } catch (taskErr) {
+    _audit('cleanup', '', 'task_cleanup_fail', { error: String(taskErr) });
+  }
+
+  // ===== メッセージ削除 =====
+  try {
+    const sh = _openSheet('T_Memos');
+    const header = _ensureColumns(sh, MEMO_SHEET_COLUMNS);
+    const values = sh.getDataRange().getValues();
+    const rowsToDelete = [];
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      const createdAt = _coerceDateValue(row[header['CreatedAt']]);
+      if (createdAt != null && createdAt <= cutoffMs) {
+        rowsToDelete.push(i + 1);
+        const attachmentIds =
+          header['AttachmentIDs'] != null ? _parseAttachmentIds(row[header['AttachmentIDs']]) : [];
+        attachmentIds.forEach(_deleteDriveFileById);
+      }
+    }
+    for (let i = rowsToDelete.length - 1; i >= 0; i--) {
+      sh.deleteRow(rowsToDelete[i]);
+    }
+  } catch (memoErr) {
+    _audit('cleanup', '', 'memo_cleanup_fail', { error: String(memoErr) });
+  }
+}
+
 // ====== doGet ======
 /**
  * 【修正】doGetが呼ばれた時点で、ユーザーがM_Usersに存在するか確認・自動登録します。
@@ -460,9 +753,23 @@ function doGet(e) {
   _ensureUserRecord_(); // ★ ここで初回ログインユーザーを自動登録
 
   const tpl = HtmlService.createTemplateFromFile('index');
-  tpl.userInfo = getLoggedInUserInfo();
-  tpl.isManager = isManagerUser();
-  tpl.users = listActiveUsers();
+  const userInfo = getLoggedInUserInfo();
+  const activeUsers = listActiveUsers();
+  const isManager = _isManagerRole(userInfo.role);
+  const isAdmin = _isAdminRole(userInfo.role);
+  const filteredUsers = activeUsers.filter(function (user) {
+    if (isAdmin) return true;
+    if (isManager) return _normalizeEmail(user.email) !== _normalizeEmail(HIDDEN_TEST_ACCOUNT);
+    const normalizedCurrent = _normalizeEmail(userInfo.email);
+    return (
+      _normalizeEmail(user.email) === normalizedCurrent ||
+      _normalizeEmail(user.email) !== _normalizeEmail(HIDDEN_TEST_ACCOUNT)
+    );
+  });
+
+  tpl.userInfo = userInfo;
+  tpl.isManager = isManager;
+  tpl.users = filteredUsers;
   tpl.folders = listActiveFolders();
   tpl.initialTasks = listMyTasks();
   const out = tpl
@@ -513,23 +820,7 @@ function getHomeContent() {
 function addNewTask(taskObject) {
   try {
     const sh = _openSheet('T_Tasks');
-    const header = _ensureColumns(sh, [
-      'TaskID',
-      'Title',
-      'AssigneeEmail',
-      'DueDate',
-      'Status',
-      'CreatedBy',
-      'CreatedAt',
-      'Priority',
-      'AssigneeEmails',
-      'RRULE',
-      'ParentTaskID',
-      'Attachments',
-      'UpdatedAt',
-      'RepeatRule',
-      'AttachmentIDs',
-    ]);
+    const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
 
     const newId = Utilities.getUuid();
     const now = new Date();
@@ -556,6 +847,9 @@ function addNewTask(taskObject) {
     const repeatRuleValue = taskObject.repeatRule || '';
     if (header['RepeatRule'] != null) row[header['RepeatRule']] = repeatRuleValue;
     if (header['UpdatedAt'] != null) row[header['UpdatedAt']] = '';
+    if (header['ParentTaskID'] != null) row[header['ParentTaskID']] = '';
+    if (header['Attachments'] != null) row[header['Attachments']] = '';
+    if (header['AttachmentIDs'] != null) row[header['AttachmentIDs']] = '';
 
     const lastCol = sh.getLastColumn();
     for (let c = 0; c < lastCol; c++) {
@@ -619,19 +913,7 @@ function getTaskById(taskId) {
   }
 
   const sh = _openSheet('T_Tasks');
-  const header = _ensureColumns(sh, [
-    'TaskID',
-    'Title',
-    'AssigneeEmail',
-    'DueDate',
-    'Status',
-    'CreatedBy',
-    'CreatedAt',
-    'Priority',
-    'AssigneeEmails',
-    'UpdatedAt',
-    'RepeatRule',
-  ]);
+  const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
   const rows = sh.getDataRange().getValues();
   const located = _findTaskRowById(rows, header, normalizedId);
 
@@ -684,19 +966,7 @@ function updateTask(taskObject) {
   try {
     const targetId = String(taskObject.id || '').trim();
     const sh = _openSheet('T_Tasks');
-    const header = _ensureColumns(sh, [
-      'TaskID',
-      'Title',
-      'AssigneeEmail',
-      'DueDate',
-      'Status',
-      'CreatedBy',
-      'CreatedAt',
-      'Priority',
-      'AssigneeEmails',
-      'UpdatedAt',
-      'RepeatRule',
-    ]);
+    const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
       if (String(v[i][header['TaskID']] || '').trim() === targetId) {
@@ -743,19 +1013,7 @@ function completeTask(taskId) {
   try {
     const targetId = String(taskId || '').trim();
     const sh = _openSheet('T_Tasks');
-    const header = _ensureColumns(sh, [
-      'TaskID',
-      'Title',
-      'AssigneeEmail',
-      'DueDate',
-      'Status',
-      'CreatedBy',
-      'CreatedAt',
-      'Priority',
-      'AssigneeEmails',
-      'UpdatedAt',
-      'RepeatRule',
-    ]);
+    const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
       if (String(v[i][header['TaskID']] || '').trim() === targetId) {
@@ -1010,23 +1268,7 @@ function listCreatedTasks(filter) {
 
 function _loadTaskTable() {
   const sh = _openSheet('T_Tasks');
-  const header = _ensureColumns(sh, [
-    'TaskID',
-    'Title',
-    'AssigneeEmail',
-    'DueDate',
-    'Status',
-    'CreatedBy',
-    'CreatedAt',
-    'Priority',
-    'AssigneeEmails',
-    'RRULE',
-    'ParentTaskID',
-    'Attachments',
-    'UpdatedAt',
-    'RepeatRule',
-    'AttachmentIDs',
-  ]);
+  const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
   const rows = sh.getDataRange().getValues();
   const statuses = new Set();
   const tasks = [];
@@ -1189,16 +1431,7 @@ function getMessages(opt) {
   const requestedFolder = String(requestedFolderRaw || '').trim();
   const unreadOnlyFlag = !!(opt && opt.unreadOnly);
 
-  _ensureColumns(memoSh, [
-    'MemoID',
-    'CreatedAt',
-    'CreatedBy',
-    'Title',
-    'Body',
-    'Priority',
-    'FolderID',
-    'AttachmentIDs',
-  ]);
+  _ensureColumns(memoSh, MEMO_SHEET_COLUMNS);
   _ensureColumns(readSh, ['MRID', 'MemoID', 'UserEmail', 'ReadAt']);
 
   const memos = memoSh.getDataRange().getValues();
@@ -1245,7 +1478,9 @@ function getMessages(opt) {
     const before = list.length;
     const fid = requestedFolder.toLowerCase();
     list = list.filter(function (x) {
-      const candidate = String(x.folderId || '').trim().toLowerCase();
+      const candidate = String(x.folderId || '')
+        .trim()
+        .toLowerCase();
       return candidate === fid;
     });
   }
@@ -1279,15 +1514,7 @@ function getMessageById(memoId) {
   ]);
   _ensureColumns(commentSh, ['CommentID', 'MemoID', 'CreatedAt', 'Author', 'Body']);
   _ensureColumns(readSh, ['MRID', 'MemoID', 'UserEmail', 'ReadAt']);
-  _ensureColumns(userSh, [
-    'UserID',
-    'Email',
-    'DisplayName',
-    'ProfileImage',
-    'Role',
-    'IsActive',
-    'Theme',
-  ]);
+  _ensureColumns(userSh, USER_SHEET_COLUMNS);
 
   const memos = memoSh.getDataRange().getValues();
   const comments = commentSh.getDataRange().getValues();
@@ -1442,16 +1669,7 @@ function addNewComment(commentData) {
 function addNewMessage(messageData) {
   try {
     const sh = _openSheet('T_Memos');
-    _ensureColumns(sh, [
-      'MemoID',
-      'CreatedAt',
-      'CreatedBy',
-      'Title',
-      'Body',
-      'Priority',
-      'FolderID',
-      'AttachmentIDs',
-    ]);
+    _ensureColumns(sh, MEMO_SHEET_COLUMNS);
     const id = Utilities.getUuid();
     const now = new Date();
     const email = _getCurrentEmail();
@@ -1464,8 +1682,27 @@ function addNewMessage(messageData) {
     row[hdr['Body']] = messageData.body;
     row[hdr['Priority']] = messageData.priority || '中';
     row[hdr['FolderID']] = messageData.folderId || '全体';
-    if (hdr['AttachmentIDs'] != null)
-      row[hdr['AttachmentIDs']] = _arrayToCsv(messageData.attachmentIds || []);
+    let attachmentIds = [];
+    if (Array.isArray(messageData.attachments) && messageData.attachments.length) {
+      attachmentIds = messageData.attachments.map(function (att) {
+        const stored = _storeMessageAttachment(att, email);
+        if (!stored || !stored.fileId) return '';
+        return stored.fileId;
+      });
+      attachmentIds = attachmentIds.filter(Boolean);
+    } else if (Array.isArray(messageData.attachmentIds)) {
+      attachmentIds = messageData.attachmentIds;
+    }
+    if (hdr['Attachments'] != null) {
+      const attachmentNames = (messageData.attachments || [])
+        .map(function (att) {
+          return att && att.name ? att.name : '';
+        })
+        .filter(Boolean);
+      row[hdr['Attachments']] = _arrayToCsv(attachmentNames);
+    }
+    if (hdr['UpdatedAt'] != null) row[hdr['UpdatedAt']] = now;
+    if (hdr['AttachmentIDs'] != null) row[hdr['AttachmentIDs']] = _arrayToCsv(attachmentIds);
 
     const lastCol = sh.getLastColumn();
     for (let c = 0; c < lastCol; c++) {
@@ -1493,16 +1730,7 @@ function addNewMessage(messageData) {
 function deleteMessageById(memoId) {
   try {
     const sh = _openSheet('T_Memos');
-    _ensureColumns(sh, [
-      'MemoID',
-      'CreatedAt',
-      'CreatedBy',
-      'Title',
-      'Body',
-      'Priority',
-      'FolderID',
-      'AttachmentIDs',
-    ]);
+    _ensureColumns(sh, MEMO_SHEET_COLUMNS);
     const hdr = _getHeaderMap(sh);
     const v = sh.getDataRange().getValues();
     const current = _getCurrentEmail();
@@ -1535,25 +1763,32 @@ function getUserSettings() {
 function saveUserSettings(payload) {
   try {
     const email = _getCurrentEmail();
+    const normalizedEmail = _normalizeEmail(email);
     const sh = _openSheet('M_Users');
-    const hdr = _ensureColumns(sh, [
-      'UserID',
-      'Email',
-      'DisplayName',
-      'ProfileImage',
-      'Role',
-      'IsActive',
-      'Theme',
-    ]);
+    const hdr = _ensureColumns(sh, USER_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
+    let resultMeta = null;
     for (let i = 1; i < v.length; i++) {
       if (v[i][hdr['Email']] === email) {
         if (payload.name != null) sh.getRange(i + 1, hdr['DisplayName'] + 1).setValue(payload.name);
-        if (payload.imageUrl != null)
-          sh.getRange(i + 1, hdr['ProfileImage'] + 1).setValue(payload.imageUrl);
+        if (payload.imageData) {
+          const stored = _storeProfileImage(payload.imageData, email);
+          sh.getRange(i + 1, hdr['ProfileImage'] + 1).setValue(stored.url);
+          resultMeta = { imageUrl: stored.url, imageName: stored.name };
+        } else if (payload.imageUrl != null) {
+          // 後方互換: URLが直接渡された場合はそのまま保存
+          const value = payload.imageUrl || PROFILE_PLACEHOLDER_URL;
+          sh.getRange(i + 1, hdr['ProfileImage'] + 1).setValue(value);
+          resultMeta = _resolveProfileImageInfo(value, email);
+        }
         if (payload.theme != null) sh.getRange(i + 1, hdr['Theme'] + 1).setValue(payload.theme);
-        CacheService.getScriptCache().remove('user_info_' + email);
-        return { success: true, message: '設定を保存しました。' };
+        CacheService.getScriptCache().remove('user_info_' + normalizedEmail);
+        const response = { success: true, message: '設定を保存しました。' };
+        if (resultMeta) {
+          response.imageUrl = resultMeta.imageUrl;
+          response.imageName = resultMeta.imageName;
+        }
+        return response;
       }
     }
     const logId = _audit('user', email, 'settings_user_not_found', {});
@@ -1574,15 +1809,7 @@ function updateUserRole(arg) {
     if (!isManagerUser())
       return { success: false, message: '権限がありません（adminまたは管理職のみ）。' };
     const sh = _openSheet('M_Users');
-    const hdr = _ensureColumns(sh, [
-      'UserID',
-      'Email',
-      'DisplayName',
-      'ProfileImage',
-      'Role',
-      'IsActive',
-      'Theme',
-    ]);
+    const hdr = _ensureColumns(sh, USER_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
       if (v[i][hdr['Email']] === arg.email) {
@@ -1637,10 +1864,11 @@ function getAuditLogs(limit, filter) {
   }
   return rows;
 }
+/*
+// ===== デバッグ支援用（必要時にコメントアウトを解除） =====
 function test_ListActiveUsers() {
   try {
     const activeUsers = listActiveUsers();
-
     Logger.log('--- テスト実行結果 ---');
     Logger.log('取得したアクティブユーザーの数: ' + activeUsers.length + ' 件');
     Logger.log('取得したデータの中身:');
@@ -1649,22 +1877,16 @@ function test_ListActiveUsers() {
     Logger.log('テスト中にエラーが発生しました: ' + e.toString());
   }
 }
-function myFunction() {}
-// ====== テスト用の関数 ======
+
 function testOpenSheet() {
   try {
-    // 実際に存在することがわかっているシート名に書き換えてください
     const sheetName = 'M_Users';
     Logger.log('テスト開始: ' + sheetName + 'シートを開きます...');
-
     const sh = _openSheet(sheetName);
-
     if (sh) {
       Logger.log('成功！シートを取得できました。シート名: ' + sh.getName());
-      const firstCell = sh.getRange('A1').getValue();
-      Logger.log('A1セルの値: ' + firstCell);
+      Logger.log('A1セルの値: ' + sh.getRange('A1').getValue());
     } else {
-      // このログは通常表示されないはず（_openSheet内でエラーがスローされるため）
       Logger.log('失敗。シートオブジェクトがnullです。');
     }
   } catch (e) {
@@ -1673,3 +1895,5 @@ function testOpenSheet() {
     Logger.log('スタックトレース: ' + e.stack);
   }
 }
+// function myFunction() {}
+*/
