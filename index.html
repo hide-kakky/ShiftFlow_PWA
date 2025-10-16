@@ -574,17 +574,6 @@
         min-height: 80px;
       }
 
-      .theme-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        color: var(--primary-700);
-        font-weight: 600;
-      }
-      :root[data-theme='dark'] .theme-status {
-        color: var(--badge-counter-fg);
-      }
-
       /* Layout / cards */
       .page-body {
         padding-bottom: 120px;
@@ -1079,6 +1068,151 @@
       .form-section .section-body {
         color: var(--text-900);
       }
+      .settings-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .settings-block-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+      .settings-block-header .settings-block-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(81, 124, 178, 0.12);
+        color: var(--primary);
+      }
+      :root[data-theme='dark'] .settings-block-header .settings-block-icon {
+        background: rgba(122, 162, 255, 0.18);
+        color: #dbe4ff;
+      }
+      .settings-block-header h5 {
+        font-weight: 700;
+        margin: 0;
+      }
+      .settings-block-header p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .settings-profile-body {
+        display: grid;
+        grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      @media (max-width: 576px) {
+        .settings-profile-body {
+          grid-template-columns: 1fr;
+        }
+      }
+      .settings-avatar-shell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .settings-avatar {
+        width: 96px;
+        height: 96px;
+        border-radius: 30px;
+        object-fit: cover;
+        box-shadow: 0 10px 32px rgba(15, 23, 42, 0.15);
+        border: 3px solid rgba(81, 124, 178, 0.2);
+        background: var(--card);
+      }
+      :root[data-theme='dark'] .settings-avatar {
+        box-shadow: 0 16px 40px rgba(2, 8, 20, 0.55);
+        border-color: rgba(122, 162, 255, 0.28);
+      }
+      .settings-avatar.is-pending {
+        box-shadow: 0 0 0 3px rgba(81, 124, 178, 0.35);
+      }
+      :root[data-theme='dark'] .settings-avatar.is-pending {
+        box-shadow: 0 0 0 3px rgba(122, 162, 255, 0.45);
+      }
+      .settings-image-meta {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .settings-image-meta.is-pending {
+        color: var(--primary-700);
+        font-weight: 600;
+      }
+      :root[data-theme='dark'] .settings-image-meta.is-pending {
+        color: #dbe4ff;
+      }
+      .settings-upload-note {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 6px;
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--text-900);
+        font-size: 0.85rem;
+      }
+      .settings-upload-note .material-icons,
+      .settings-upload-note .material-icons-outlined {
+        font-size: 18px;
+        margin-top: -2px;
+      }
+      :root[data-theme='dark'] .settings-upload-note {
+        background: rgba(122, 162, 255, 0.18);
+        color: #e8edff;
+      }
+      .settings-theme-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .theme-status {
+        margin-top: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(81, 124, 178, 0.12);
+        color: var(--primary-700);
+        font-weight: 600;
+        font-size: 0.85rem;
+      }
+      :root[data-theme='dark'] .theme-status {
+        background: rgba(122, 162, 255, 0.22);
+        color: #dbe4ff;
+      }
+      .settings-theme-guide {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .settings-theme-guide ul {
+        margin: 0;
+        padding-left: 1.15rem;
+      }
+      .settings-theme-guide li {
+        margin-bottom: 4px;
+      }
+      .settings-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .settings-admin-card {
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.08), transparent);
+      }
+      :root[data-theme='dark'] .settings-admin-card {
+        background: linear-gradient(135deg, rgba(95, 125, 255, 0.22), rgba(16, 26, 53, 0.6));
+      }
 
       .modal-content {
         background: var(--card);
@@ -1418,53 +1552,117 @@
 
           <section class="view-panel fade-container is-hidden" id="view-settings">
             <h3 class="mt-3"><span class="material-icons align-middle me-1">settings</span>設定</h3>
-            <form class="mt-2" id="form-settings">
-              <div class="mb-3">
-                <label class="form-label">表示名</label
-                ><input class="form-control" id="setting-name" />
-              </div>
-              <div class="mb-3">
-                <label class="form-label">プロフィール画像</label>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                  <button class="btn btn-outline-secondary" type="button" id="btn-setting-image">
-                    画像を選択
-                  </button>
-                  <span class="small text-muted" id="setting-image-name">未設定</span>
+            <p class="text-muted mb-3 small">
+              個人設定を整えて、チームでの表示や体験を自分好みにカスタマイズしましょう。
+            </p>
+            <form class="settings-layout" id="form-settings">
+              <div class="form-section settings-block">
+                <div class="settings-block-header">
+                  <div class="settings-block-icon">
+                    <span class="material-icons-outlined">badge</span>
+                  </div>
+                  <div>
+                    <h5>プロフィール</h5>
+                    <p>メンバーに表示される名前とプロフィール画像を管理します。</p>
+                  </div>
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  class="d-none"
-                  id="setting-image-file"
-                  aria-label="プロフィール画像を選択"
-                />
-                <div class="form-text">最大2MBの画像ファイルがアップロードされ、ドライブに保存されます。</div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">テーマ</label>
-                <select class="form-select" id="setting-theme">
-                  <option value="light">ライト</option>
-                  <option value="dark">ダーク</option>
-                  <option value="system">システムに合わせる</option>
-                </select>
-                <div class="theme-status" id="setting-theme-display">
-                  ライトテーマ（自動適用中）
+                <div class="settings-profile-body">
+                  <div class="settings-avatar-shell">
+                    <img
+                      class="settings-avatar js-user-avatar"
+                      id="setting-avatar-preview"
+                      src="<?!= userInfo.imageUrl || 'https://placehold.jp/150x150.png' ?>"
+                      data-avatar-url="<?!= userInfo.imageUrl || '' ?>"
+                      data-placeholder="https://placehold.jp/150x150.png"
+                      alt="プロフィール画像のプレビュー"
+                    />
+                    <button class="btn btn-outline-secondary w-100" type="button" id="btn-setting-image">
+                      <span class="material-icons-outlined align-middle me-1">image</span>画像を選択
+                    </button>
+                    <div class="settings-image-meta" id="setting-image-name">未設定</div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      class="d-none"
+                      id="setting-image-file"
+                      aria-label="プロフィール画像を選択"
+                    />
+                  </div>
+                  <div>
+                    <label class="form-label" for="setting-name">表示名</label>
+                    <input
+                      class="form-control"
+                      id="setting-name"
+                      placeholder="チームで表示される名前"
+                    />
+                    <div class="settings-upload-note">
+                      <span class="material-icons-outlined align-middle">info</span>
+                      <span>最大2MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button class="btn btn-primary" type="button" id="btn-settings-save">
-                <span class="label">保存</span>
-                <span
-                  class="spinner-border spinner-border-sm d-none"
-                  role="status"
-                  aria-hidden="true"
-                ></span>
-              </button>
+
+              <div class="form-section settings-block">
+                <div class="settings-block-header">
+                  <div class="settings-block-icon">
+                    <span class="material-icons-outlined">dark_mode</span>
+                  </div>
+                  <div>
+                    <h5>外観設定</h5>
+                    <p>アプリの配色テーマを切り替えて見やすさを調整します。</p>
+                  </div>
+                </div>
+                <div class="settings-theme-grid">
+                  <div>
+                    <label class="form-label" for="setting-theme">テーマ</label>
+                    <select class="form-select" id="setting-theme">
+                      <option value="light">ライト</option>
+                      <option value="dark">ダーク</option>
+                      <option value="system">システムに合わせる</option>
+                    </select>
+                    <div class="theme-status" id="setting-theme-display">
+                      <span class="material-icons-outlined align-middle">light_mode</span>ライトテーマを適用中
+                    </div>
+                  </div>
+                  <div class="settings-theme-guide">
+                    <p class="mb-2">選択したテーマはすぐに反映されます。</p>
+                    <ul class="mb-0">
+                      <li><strong>ライト:</strong> 明るく爽やかなトーンで日中の作業に最適。</li>
+                      <li><strong>ダーク:</strong> 暗い環境や長時間の閲覧で目を保護。</li>
+                      <li><strong>システム:</strong> ご利用端末のテーマ設定に自動追従します。</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-actions">
+                <button class="btn btn-primary" type="button" id="btn-settings-save">
+                  <span class="label">
+                    <span class="material-icons align-middle me-1">save</span>変更を保存
+                  </span>
+                  <span
+                    class="spinner-border spinner-border-sm d-none"
+                    role="status"
+                    aria-hidden="true"
+                  ></span>
+                </button>
+              </div>
             </form>
 
-            <hr class="my-4" />
-            <div class="alert alert-secondary" role="alert">
-              <span class="material-icons-outlined align-middle me-1">admin_panel_settings</span>
-              管理者メニュー（準備中）：この画面からのユーザー管理は近日対応予定です。
+            <div class="form-section settings-block settings-admin-card mt-2">
+              <div class="settings-block-header">
+                <div class="settings-block-icon">
+                  <span class="material-icons-outlined">admin_panel_settings</span>
+                </div>
+                <div>
+                  <h5>管理者メニュー</h5>
+                  <p>ユーザー管理機能を準備中です。今後この画面から各種管理が行えるようになります。</p>
+                </div>
+              </div>
+              <p class="mb-0 text-muted small">
+                管理機能をご希望の場合は管理者までお問い合わせください。リリースまでしばらくお待ちください。
+              </p>
             </div>
           </section>
         </div>
@@ -1823,9 +2021,26 @@
               </div>
               <div class="d-flex flex-wrap gap-2 mb-3">
                 <button class="btn btn-outline-primary" id="btnMsgToTask">
-                  <span class="material-icons align-middle me-1">send</span>この内容でタスク
+                  <span class="label">
+                    <span class="material-icons align-middle me-1">send</span>この内容でタスク
+                  </span>
+                  <span
+                    class="spinner-border spinner-border-sm d-none"
+                    role="status"
+                    aria-hidden="true"
+                  ></span>
                 </button>
-                <button class="btn btn-primary" id="btnMsgMarkRead">既読にする</button>
+                <button class="btn btn-primary" id="btnMsgMarkRead" data-read-state="unread">
+                  <span class="label">
+                    <span class="material-icons align-middle me-1 js-msg-read-icon">mark_email_read</span>
+                    <span class="label-text">既読にする</span>
+                  </span>
+                  <span
+                    class="spinner-border spinner-border-sm d-none"
+                    role="status"
+                    aria-hidden="true"
+                  ></span>
+                </button>
               </div>
               <h5 class="mt-4">コメント</h5>
               <div id="comments-list" class="mb-2"></div>
@@ -1944,6 +2159,28 @@
           default:
             return 'ライトテーマ';
         }
+      }
+      function getThemeStatusIcon(value) {
+        switch ((value || '').toLowerCase()) {
+          case 'dark':
+            return 'dark_mode';
+          case 'system':
+            return 'contrast';
+          default:
+            return 'light_mode';
+        }
+      }
+      function updateThemeStatus(value) {
+        var display = byId('setting-theme-display');
+        if (!display) return;
+        var icon = getThemeStatusIcon(value);
+        var label = describeThemeValue(value) + ' を適用中';
+        display.innerHTML =
+          '<span class="material-icons-outlined align-middle">' +
+          esc(icon) +
+          '</span><span>' +
+          esc(label) +
+          '</span>';
       }
 
       // ===== ヘルパ =====
@@ -2210,17 +2447,11 @@
         if (select) {
           select.value = themePreference;
         }
-        var display = byId('setting-theme-display');
-        if (display) {
-          display.textContent = describeThemeValue(themePreference) + ' を適用中';
-        }
+        updateThemeStatus(themePreference);
       })();
       on('setting-theme', 'change', function () {
         var value = this.value || 'light';
-        var display = byId('setting-theme-display');
-        if (display) {
-          display.textContent = describeThemeValue(value) + ' を適用中';
-        }
+        updateThemeStatus(value);
         applyThemePreference(value);
       });
 
@@ -2945,20 +3176,25 @@
             unreadOnly: !!(byId('flt-msg-unread') || {}).checked,
           });
       }
-      function toggleRead(btn, memoId, shouldRead) {
-        btn.disabled = true;
-        var lbl = btn.querySelector('.label'),
-          sp = btn.querySelector('.spinner-border');
-        if (lbl) lbl.classList.add('d-none');
-        if (sp) sp.classList.remove('d-none');
+      function toggleRead(btn, memoId, shouldRead, onComplete) {
+        setButtonLoading(btn, true);
         google.script.run
           .withSuccessHandler(function () {
+            setButtonLoading(btn, false);
+            if (typeof onComplete === 'function') onComplete(null, shouldRead);
             loadMessages();
             loadHome();
           })
           .withFailureHandler(function (e) {
+            setButtonLoading(btn, false);
             notify('Failed to update read status: ' + e.message, false);
-            btn.disabled = false;
+            if (typeof onComplete === 'function') {
+              var err =
+                e instanceof Error
+                  ? e
+                  : new Error(e && e.message ? e.message : String(e || 'Unknown error'));
+              onComplete(err);
+            }
           })
           .toggleMemoRead(memoId, shouldRead);
       }
@@ -3166,14 +3402,94 @@
           .deleteTaskById(CURRENT_TASK_ID);
       });
       var CURRENT_MEMO_ID = null;
+      var CURRENT_MEMO_IS_READ = false;
+      function updateMessageReadButton(isRead) {
+        var btn = byId('btnMsgMarkRead');
+        if (!btn) return;
+        var nextClass = isRead ? 'btn-outline-primary' : 'btn-primary';
+        btn.classList.remove('btn-primary', 'btn-outline-primary');
+        btn.classList.add(nextClass);
+        btn.setAttribute('data-read-state', isRead ? 'read' : 'unread');
+        var text = isRead ? '未読に戻す' : '既読にする';
+        btn.setAttribute('aria-label', text);
+        var iconEl = btn.querySelector('.js-msg-read-icon');
+        if (iconEl) iconEl.textContent = isRead ? 'mark_email_unread' : 'mark_email_read';
+        var textEl = btn.querySelector('.label-text');
+        if (textEl) textEl.textContent = text;
+      }
+      function renderMessageDetail(data) {
+        if (!data) return;
+        CURRENT_MEMO_IS_READ = false;
+        var titleEl = byId('msgDetailTitle');
+        if (titleEl) titleEl.textContent = data.title || '';
+        var bodySlot = byId('msgDetailBody');
+        if (bodySlot) {
+          var section = bodySlot.querySelector('.section-body');
+          if (section) {
+            section.innerHTML = esc(data.body || '').replace(/\n/g, '<br>');
+          }
+        }
+        var attachmentsWrap = byId('msgAttachments');
+        var attachList = byId('msgAttachList');
+        var att = Array.isArray(data.attachments) ? data.attachments : [];
+        if (att.length) {
+          if (attachList) attachList.innerHTML = renderAttachList(att);
+          if (attachmentsWrap) attachmentsWrap.classList.remove('d-none');
+        } else {
+          if (attachmentsWrap) attachmentsWrap.classList.add('d-none');
+          if (attachList) attachList.innerHTML = '';
+        }
+        var commentsHtml = '';
+        (data.comments || []).forEach(function (c) {
+          commentsHtml +=
+            '<div class="card mb-2"><div class="card-body"><p class="mb-0">' +
+            esc(c.body) +
+            '</p><small class="text-muted">' +
+            esc(c.author) +
+            ' - ' +
+            esc(c.createdAt) +
+            '</small></div></div>';
+        });
+        if (!data.comments || data.comments.length === 0) {
+          commentsHtml = '<p class="text-muted">コメントはまだありません。</p>';
+        }
+        var commentsEl = byId('comments-list');
+        if (commentsEl) commentsEl.innerHTML = commentsHtml;
+        var readEl = byId('msgReadUsers');
+        if (readEl) readEl.textContent = (data.readUsers || []).join(', ');
+        var unreadEl = byId('msgUnreadUsers');
+        if (unreadEl) unreadEl.textContent = (data.unreadUsers || []).join(', ');
+        var deleteBtn = byId('deleteMessageButton');
+        if (deleteBtn) deleteBtn.classList.toggle('d-none', !data.canDelete);
+        var currentDisplayName = getNameByEmail(CURRENT_USER_EMAIL);
+        if (currentDisplayName) {
+          CURRENT_MEMO_IS_READ = Array.isArray(data.readUsers)
+            ? data.readUsers.indexOf(currentDisplayName) !== -1
+            : false;
+        }
+        updateMessageReadButton(CURRENT_MEMO_IS_READ);
+      }
+      function refreshMessageDetail() {
+        if (!CURRENT_MEMO_ID) return;
+        google.script.run
+          .withSuccessHandler(function (data) {
+            if (!data) return;
+            renderMessageDetail(data);
+          })
+          .withFailureHandler(function (e) {
+            notify('メッセージの再読み込みに失敗: ' + e.message, false);
+          })
+          .getMessageById(CURRENT_MEMO_ID);
+      }
       function openMessageModal(memoId) {
         CURRENT_MEMO_ID = memoId;
+        CURRENT_MEMO_IS_READ = false;
         var modalEl = byId('messageDetailModal');
         if (!modalEl) {
           notify('メッセージ詳細モーダルが見つかりません', false);
           return;
         }
-        var m = new bootstrap.Modal(modalEl);
+        var m = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
         m.show();
         byId('msg-detail-loading').classList.remove('d-none');
         byId('msg-detail-content').classList.add('d-none');
@@ -3188,33 +3504,7 @@
                   notify('メッセージ取得失敗', false);
                   return;
                 }
-                byId('msgDetailTitle').textContent = data.title || '';
-                var bodySection = byId('msgDetailBody').querySelector('.section-body');
-                if (bodySection) {
-                  bodySection.innerHTML = esc(data.body || '').replace(/\n/g, '<br>');
-                }
-                var att = Array.isArray(data.attachments) ? data.attachments : [];
-                if (att.length) {
-                  byId('msgAttachList').innerHTML = renderAttachList(att);
-                  byId('msgAttachments').classList.remove('d-none');
-                }
-                var commentsHtml = '';
-                (data.comments || []).forEach(function (c) {
-                  commentsHtml +=
-                    '<div class="card mb-2"><div class="card-body"><p class="mb-0">' +
-                    esc(c.body) +
-                    '</p><small class="text-muted">' +
-                    esc(c.author) +
-                    ' - ' +
-                    esc(c.createdAt) +
-                    '</small></div></div>';
-                });
-                if (!data.comments || data.comments.length === 0)
-                  commentsHtml = '<p class="text-muted">コメントはまだありません。</p>';
-                byId('comments-list').innerHTML = commentsHtml;
-                byId('msgReadUsers').textContent = (data.readUsers || []).join(', ');
-                byId('msgUnreadUsers').textContent = (data.unreadUsers || []).join(', ');
-                if (data.canDelete) byId('deleteMessageButton').classList.remove('d-none');
+                renderMessageDetail(data);
                 byId('msg-detail-loading').classList.add('d-none');
                 byId('msg-detail-content').classList.remove('d-none');
                 loadHome();
@@ -3240,31 +3530,69 @@
           .addNewComment({ memoId: CURRENT_MEMO_ID, body: body });
       });
       on('btnMsgMarkRead', 'click', function () {
-        toggleRead(document.createElement('button'), CURRENT_MEMO_ID, true);
+        if (!CURRENT_MEMO_ID) return;
+        var btn = byId('btnMsgMarkRead');
+        if (!btn) return;
+        var shouldRead = !CURRENT_MEMO_IS_READ;
+        toggleRead(btn, CURRENT_MEMO_ID, shouldRead, function (err) {
+          if (err) return;
+          CURRENT_MEMO_IS_READ = shouldRead;
+          updateMessageReadButton(CURRENT_MEMO_IS_READ);
+          refreshMessageDetail();
+        });
       });
       on('btnMsgToTask', 'click', function () {
+        if (!CURRENT_MEMO_ID) return;
+        var btn = byId('btnMsgToTask');
+        if (!btn) return;
+        setButtonLoading(btn, true);
         google.script.run
           .withSuccessHandler(function (data) {
-            if (!data) return;
+            setButtonLoading(btn, false);
+            if (!data) {
+              notify('メッセージが取得できませんでした。', false);
+              return;
+            }
+            var detailModalEl = byId('messageDetailModal');
+            var detailModal =
+              detailModalEl && (bootstrap.Modal.getInstance(detailModalEl) || new bootstrap.Modal(detailModalEl));
+            if (detailModal) detailModal.hide();
             var hint = byId('taskFromMsgHint');
-            hint.classList.remove('d-none');
-            byId('backToMsgLink').textContent = data.title || '元メッセージ';
-            byId('backToMsgLink').onclick = function (e) {
-              e.preventDefault();
-              new bootstrap.Modal(byId('messageDetailModal')).show();
-            };
-            byId('taskTitle').value = '[From Message] ' + (data.title || '');
+            if (hint) hint.classList.remove('d-none');
+            var backLink = byId('backToMsgLink');
+            if (backLink) {
+              backLink.textContent = data.title || '元メッセージ';
+              backLink.onclick = function (e) {
+                e.preventDefault();
+                if (!detailModalEl) return;
+                var modal =
+                  bootstrap.Modal.getInstance(detailModalEl) || new bootstrap.Modal(detailModalEl);
+                modal.show();
+              };
+            }
+            var titleInput = byId('taskTitle');
+            if (titleInput) titleInput.value = '[From Message] ' + (data.title || '');
             var today = new Date();
             var y = today.getFullYear(),
               m = ('0' + (today.getMonth() + 1)).slice(-2),
               d = ('0' + today.getDate()).slice(-2);
-            byId('taskDueDate').value = y + '-' + m + '-' + d;
-            byId('taskPriority').value = data.priority || '中';
+            var dueInput = byId('taskDueDate');
+            if (dueInput) dueInput.value = y + '-' + m + '-' + d;
+            var priorityInput = byId('taskPriority');
+            if (priorityInput) priorityInput.value = data.priority || '中';
             resetAssigneeList();
-            new bootstrap.Modal(byId('newTaskModal')).show();
+            var taskModalEl = byId('newTaskModal');
+            if (!taskModalEl) return;
+            var taskModal =
+              bootstrap.Modal.getInstance(taskModalEl) || new bootstrap.Modal(taskModalEl);
+            taskModal.show();
             setTimeout(function () {
-              byId('taskTitle').focus();
+              if (titleInput) titleInput.focus();
             }, 120);
+          })
+          .withFailureHandler(function (e) {
+            setButtonLoading(btn, false);
+            notify('タスク作成用の情報取得に失敗しました: ' + e.message, false);
           })
           .getMessageById(CURRENT_MEMO_ID);
       });
@@ -3285,10 +3613,33 @@
           .deleteMessageById(CURRENT_MEMO_ID);
       });
 
-      function setProfileImageLabel(text) {
+      function setProfileImageLabel(text, pending) {
         var label = byId('setting-image-name');
         if (!label) return;
-        label.textContent = text && text.trim() ? text : '未設定';
+        var value = text && String(text).trim() ? String(text).trim() : '未設定';
+        if (pending && value !== '未設定') {
+          value += '（未保存）';
+        }
+        label.textContent = value;
+        label.classList.toggle('is-pending', !!pending);
+      }
+      function updateSettingsAvatarPreview(url, opts) {
+        var img = byId('setting-avatar-preview');
+        if (!img) return;
+        var pending = !!(opts && opts.pending);
+        var override = typeof url === 'string' ? url.trim() : '';
+        if (!override) {
+          var saved = String(img.getAttribute('data-avatar-url') || '').trim();
+          var fallback = img.getAttribute('data-placeholder') || PROFILE_PLACEHOLDER_URL;
+          img.src = saved || fallback;
+          img.classList.remove('is-pending');
+          return;
+        }
+        img.src = override;
+        img.classList.toggle('is-pending', pending);
+        if (!pending) {
+          img.setAttribute('data-avatar-url', override);
+        }
       }
 
       function renderPendingMessageAttachments() {
@@ -3342,7 +3693,9 @@
           readFileAsDataUrl(file)
             .then(function (data) {
               pendingProfileImage = { name: file.name, dataUri: data, size: file.size };
-              setProfileImageLabel(file.name);
+              setProfileImageLabel(file.name, true);
+              updateSettingsAvatarPreview(data, { pending: true });
+              input.value = '';
             })
             .catch(function () {
               notify('画像の読み込みに失敗しました。', false);
@@ -3445,19 +3798,18 @@
             var labelText = '';
             if (s.imageName) labelText = s.imageName;
             else if (s.imageUrl && s.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
-            setProfileImageLabel(labelText);
+            setProfileImageLabel(labelText, false);
+            updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
             applyUserAvatar(s.imageUrl || '');
             var themeVal = s.theme || 'light';
             var themeInput = byId('setting-theme');
             if (themeInput) {
               themeInput.value = themeVal;
-              themeInput.dispatchEvent(new Event('change'));
+              updateThemeStatus(themeVal);
+              applyThemePreference(themeVal);
             } else {
               applyThemePreference(themeVal);
-              var themeDisplay = byId('setting-theme-display');
-              if (themeDisplay) {
-                themeDisplay.textContent = describeThemeValue(themeVal) + ' を適用中';
-              }
+              updateThemeStatus(themeVal);
             }
           })
           .withFailureHandler(function (e) {
@@ -3484,16 +3836,16 @@
             if (lbl) lbl.classList.remove('d-none');
             if (sp) sp.classList.add('d-none');
             if (res && res.success) {
-              if (res.imageName) setProfileImageLabel(res.imageName);
-              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL)
-                setProfileImageLabel('設定済み');
+              var labelText = '';
+              if (res.imageName) labelText = res.imageName;
+              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
+              setProfileImageLabel(labelText, false);
+              updateSettingsAvatarPreview(res.imageUrl || '', { pending: false });
+              applyUserAvatar(res.imageUrl || '');
+              pendingProfileImage = null;
+              var fileInput = byId('setting-image-file');
+              if (fileInput) fileInput.value = '';
             }
-            if (res && res.success && res.imageUrl) {
-              applyUserAvatar(res.imageUrl);
-            }
-            pendingProfileImage = null;
-            var fileInput = byId('setting-image-file');
-            if (fileInput) fileInput.value = '';
           })
           .withFailureHandler(function (e) {
             notify('保存に失敗: ' + e.message, false);
