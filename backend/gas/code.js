@@ -47,17 +47,45 @@ const TASK_SHEET_COLUMNS = [
   'AttachmentIDs',
 ];
 
+/** Spreadsheetインスタンスのキャッシュ */
+let _cachedSpreadsheet = null;
+/** シートインスタンスのキャッシュ */
+const _sheetCache = {};
+
 // ====== 認証設定（削除） ======
 // GCPクライアントIDは不要になったため削除します。
 // const OAUTH_CLIENT_ID = '...';
 
 // ====== 共通ユーティリティ ======
+function _getSpreadsheet() {
+  if (!_cachedSpreadsheet) {
+    _cachedSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return _cachedSpreadsheet;
+}
+
 function _openSheet(name) {
-  Logger.log('openSheet: ' + name);
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (_sheetCache[name]) return _sheetCache[name];
+  const ss = _getSpreadsheet();
   const sh = ss.getSheetByName(name);
   if (!sh) throw new Error('シートが見つかりません: ' + name);
+  _sheetCache[name] = sh;
   return sh;
+}
+
+function _openCommentSheet() {
+  const candidates = ['T_Comments', 'T_Commemts'];
+  const ss = _getSpreadsheet();
+  for (let i = 0; i < candidates.length; i++) {
+    const sheetName = candidates[i];
+    if (_sheetCache[sheetName]) return _sheetCache[sheetName];
+    const sh = ss.getSheetByName(sheetName);
+    if (sh) {
+      _sheetCache[sheetName] = sh;
+      return sh;
+    }
+  }
+  throw new Error('コメントシートが見つかりません (T_Comments または T_Commemts)');
 }
 function _formatJST(d, fmt) {
   if (!d) return '';
@@ -174,8 +202,9 @@ function _getCurrentEmail() {
 
 /** 監査ログシートの列保証 */
 function _ensureAuditSheet() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = _getSpreadsheet();
   const sh = ss.getSheetByName('T_Audit') || ss.insertSheet('T_Audit');
+  _sheetCache['T_Audit'] = sh;
   _ensureColumns(sh, ['AuditID', 'Type', 'TargetID', 'Action', 'UserEmail', 'At', 'Meta']);
   return sh;
 }
@@ -204,11 +233,15 @@ function _audit(type, targetId, action, meta) {
 
 /** ヘッダー行を取得して {列名: index} を返す */
 function _getHeaderMap(sh) {
-  const values = sh.getDataRange().getValues();
-  if (values.length === 0) {
+  const lastColumn = sh.getLastColumn();
+  if (!lastColumn) {
     throw new Error('ヘッダー行が存在しません: ' + sh.getName());
   }
-  const header = values[0];
+  const header = sh.getRange(1, 1, 1, lastColumn).getValues()[0];
+  return _buildHeaderMapFromRow(header);
+}
+
+function _buildHeaderMapFromRow(header) {
   const map = {};
   for (let i = 0; i < header.length; i++) {
     const key = String(header[i] || '').trim();
@@ -217,14 +250,22 @@ function _getHeaderMap(sh) {
   return map;
 }
 
+function serveManifest() {
+  const content = HtmlService.createTemplateFromFile('manifest').getRawContent();
+  return ContentService.createTextOutput(content).setMimeType(ContentService.MimeType.JSON);
+}
+
 /** ヘッダーの存在を保証（なければ末尾に追加）し、最新のヘッダーマップを返す */
 function _ensureColumns(sh, colNames) {
-  let values = sh.getDataRange().getValues();
-  if (values.length === 0) {
-    sh.appendRow(colNames);
-    return _getHeaderMap(sh);
+  const lastRow = sh.getLastRow();
+  if (!lastRow) {
+    sh.getRange(1, 1, 1, colNames.length).setValues([colNames]);
+    return _buildHeaderMapFromRow(colNames);
   }
-  let header = values[0];
+  const lastColumn = sh.getLastColumn();
+  const width = Math.max(lastColumn, colNames.length);
+  const headerRange = sh.getRange(1, 1, 1, width);
+  const header = headerRange.getValues()[0];
   let changed = false;
   colNames.forEach((name) => {
     if (header.indexOf(name) === -1) {
@@ -235,7 +276,20 @@ function _ensureColumns(sh, colNames) {
   if (changed) {
     sh.getRange(1, 1, 1, header.length).setValues([header]);
   }
-  return _getHeaderMap(sh);
+  return _buildHeaderMapFromRow(header);
+}
+
+function _writeRow(sh, rowIndex, rowValues) {
+  const lastCol = sh.getLastColumn();
+  const payload = rowValues.slice();
+  if (payload.length < lastCol) {
+    for (let i = payload.length; i < lastCol; i++) {
+      payload.push('');
+    }
+  } else if (payload.length > lastCol) {
+    payload.length = lastCol;
+  }
+  sh.getRange(rowIndex, 1, 1, lastCol).setValues([payload]);
 }
 
 /** 文字列CSVを配列へ */
@@ -610,7 +664,7 @@ function getAuthStatus() {
     error: '',
   };
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const ss = _getSpreadsheet();
     status.hasSpreadsheetAccess = true;
     const userSheet = ss.getSheetByName('M_Users');
     if (userSheet && normalized) {
@@ -746,10 +800,11 @@ function cleanUpArchiveData() {
 }
 
 // ====== doGet ======
-/**
- * 【修正】doGetが呼ばれた時点で、ユーザーがM_Usersに存在するか確認・自動登録します。
- */
 function doGet(e) {
+  if (e && e.parameter && e.parameter.page === 'manifest') {
+    return serveManifest();
+  }
+
   _ensureUserRecord_(); // ★ ここで初回ログインユーザーを自動登録
 
   const tpl = HtmlService.createTemplateFromFile('index');
@@ -772,12 +827,16 @@ function doGet(e) {
   tpl.users = filteredUsers;
   tpl.folders = listActiveFolders();
   tpl.initialTasks = listMyTasks();
+
   const out = tpl
     .evaluate()
     .setTitle('ShiftFlow')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
   return out;
 }
+
+// 他の関数（_ensureUserRecord_, getLoggedInUserInfoなど）は変更不要
 
 // ====== ホーム（今日のタスク/メッセージ） ======
 function getHomeContent() {
@@ -968,31 +1027,30 @@ function updateTask(taskObject) {
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
+    const now = new Date();
     for (let i = 1; i < v.length; i++) {
       if (String(v[i][header['TaskID']] || '').trim() === targetId) {
-        if (taskObject.title != null)
-          sh.getRange(i + 1, header['Title'] + 1).setValue(taskObject.title);
-        if (taskObject.dueDate != null)
-          sh.getRange(i + 1, header['DueDate'] + 1).setValue(taskObject.dueDate);
-        if (taskObject.status != null)
-          sh.getRange(i + 1, header['Status'] + 1).setValue(taskObject.status);
+        const rowValues = v[i].slice();
+        if (taskObject.title != null) rowValues[header['Title']] = taskObject.title;
+        if (taskObject.dueDate != null) rowValues[header['DueDate']] = taskObject.dueDate;
+        if (taskObject.status != null) rowValues[header['Status']] = taskObject.status;
         if (taskObject.priority != null)
-          sh.getRange(i + 1, header['Priority'] + 1).setValue(taskObject.priority || '中');
+          rowValues[header['Priority']] = taskObject.priority || '中';
 
         if (Array.isArray(taskObject.assignees) && header['AssigneeEmails'] != null) {
           const csv = _arrayToCsv(taskObject.assignees);
-          sh.getRange(i + 1, header['AssigneeEmails'] + 1).setValue(csv);
-          sh.getRange(i + 1, header['AssigneeEmail'] + 1).setValue(
-            taskObject.assignees[0] || v[i][header['AssigneeEmail']]
-          );
+          rowValues[header['AssigneeEmails']] = csv;
+          rowValues[header['AssigneeEmail']] =
+            taskObject.assignees[0] || rowValues[header['AssigneeEmail']];
         }
         if (taskObject.repeatRule != null && header['RepeatRule'] != null) {
-          sh.getRange(i + 1, header['RepeatRule'] + 1).setValue(taskObject.repeatRule);
+          rowValues[header['RepeatRule']] = taskObject.repeatRule;
         }
         if (header['UpdatedAt'] != null) {
-          sh.getRange(i + 1, header['UpdatedAt'] + 1).setValue(new Date());
+          rowValues[header['UpdatedAt']] = now;
         }
 
+        _writeRow(sh, i + 1, rowValues);
         _audit('task', targetId, 'update', { payload: taskObject });
         return { success: true, message: 'タスクを更新しました。' };
       }
@@ -1015,12 +1073,15 @@ function completeTask(taskId) {
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
+    const now = new Date();
     for (let i = 1; i < v.length; i++) {
       if (String(v[i][header['TaskID']] || '').trim() === targetId) {
-        sh.getRange(i + 1, header['Status'] + 1).setValue('完了');
-        if (header['UpdatedAt'] != null)
-          sh.getRange(i + 1, header['UpdatedAt'] + 1).setValue(new Date());
         const row = v[i];
+        const rowValues = row.slice();
+        rowValues[header['Status']] = '完了';
+        if (header['UpdatedAt'] != null) rowValues[header['UpdatedAt']] = now;
+        _writeRow(sh, i + 1, rowValues);
+
         const repeatSource = header['RepeatRule'] != null ? row[header['RepeatRule']] || '' : '';
         const repeat = String(repeatSource || '').toUpperCase();
         _audit('task', targetId, 'complete', { repeatRule: repeat });
@@ -1423,9 +1484,8 @@ function listAllTasks(filter) {
 // ====== メッセージ ======
 function getMessages(opt) {
   const email = _getCurrentEmail();
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const memoSh = ss.getSheetByName('T_Memos');
-  const readSh = ss.getSheetByName('T_MemoReads');
+  const memoSh = _openSheet('T_Memos');
+  const readSh = _openSheet('T_MemoReads');
 
   const requestedFolderRaw = opt && typeof opt.folderId !== 'undefined' ? opt.folderId : '';
   const requestedFolder = String(requestedFolderRaw || '').trim();
@@ -1496,11 +1556,10 @@ function getMessages(opt) {
 }
 
 function getMessageById(memoId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const memoSh = ss.getSheetByName('T_Memos');
-  const commentSh = ss.getSheetByName('T_Comments');
-  const readSh = ss.getSheetByName('T_MemoReads');
-  const userSh = ss.getSheetByName('M_Users');
+  const memoSh = _openSheet('T_Memos');
+  const commentSh = _openCommentSheet();
+  const readSh = _openSheet('T_MemoReads');
+  const userSh = _openSheet('M_Users');
 
   _ensureColumns(memoSh, [
     'MemoID',
@@ -1512,7 +1571,15 @@ function getMessageById(memoId) {
     'FolderID',
     'AttachmentIDs',
   ]);
-  _ensureColumns(commentSh, ['CommentID', 'MemoID', 'CreatedAt', 'Author', 'Body']);
+  _ensureColumns(commentSh, [
+    'CommentID',
+    'MemoID',
+    'CreatedAt',
+    'AuthorEmail',
+    'Body',
+    'Mentions',
+    'Author',
+  ]);
   _ensureColumns(readSh, ['MRID', 'MemoID', 'UserEmail', 'ReadAt']);
   _ensureColumns(userSh, USER_SHEET_COLUMNS);
 
@@ -1525,6 +1592,19 @@ function getMessageById(memoId) {
   const cHdr = _getHeaderMap(commentSh);
   const rHdr = _getHeaderMap(readSh);
   const uHdr = _getHeaderMap(userSh);
+
+  const userDisplayMap = {};
+  for (let i = 1; i < users.length; i++) {
+    const email = users[i][uHdr['Email']];
+    const normalizedEmail = _normalizeEmail(email);
+    if (!normalizedEmail) continue;
+    const displayName = String(users[i][uHdr['DisplayName']] || '').trim();
+    if (displayName) {
+      userDisplayMap[normalizedEmail] = displayName;
+    } else if (!userDisplayMap[normalizedEmail] && email) {
+      userDisplayMap[normalizedEmail] = String(email || '').trim();
+    }
+  }
 
   const current = _getCurrentEmail();
 
@@ -1553,23 +1633,60 @@ function getMessageById(memoId) {
 
   for (let i = 1; i < comments.length; i++) {
     if (comments[i][cHdr['MemoID']] === memoId) {
+      const rawAuthorDisplay = comments[i][cHdr['Author']];
+      let authorEmail = comments[i][cHdr['AuthorEmail']] || '';
+      if (!authorEmail && rawAuthorDisplay && String(rawAuthorDisplay).indexOf('@') !== -1) {
+        authorEmail = rawAuthorDisplay;
+      }
+      const normalizedAuthor = _normalizeEmail(authorEmail);
+      let displayName = '';
+      if (normalizedAuthor && userDisplayMap[normalizedAuthor]) {
+        displayName = userDisplayMap[normalizedAuthor];
+      } else if (rawAuthorDisplay) {
+        displayName = String(rawAuthorDisplay || '').trim();
+      }
+      const createdValue = comments[i][cHdr['CreatedAt']];
+      let createdAtText = '';
+      if (createdValue) {
+        const createdAt =
+          createdValue instanceof Date ? createdValue : new Date(createdValue);
+        if (!isNaN(createdAt.getTime())) {
+          createdAtText = createdAt.toLocaleString('ja-JP');
+        }
+      }
       message.comments.push({
-        author: comments[i][cHdr['Author']],
+        author: displayName || authorEmail || String(rawAuthorDisplay || ''),
+        authorEmail: authorEmail || '',
+        authorName: displayName || '',
         body: String(comments[i][cHdr['Body']] || '').replace(/\n/g, '<br>'),
-        createdAt: new Date(comments[i][cHdr['CreatedAt']]).toLocaleString('ja-JP'),
+        createdAt: createdAtText,
       });
     }
   }
 
   const readUserEmails = new Set();
   for (let i = 1; i < reads.length; i++) {
-    if (reads[i][rHdr['MemoID']] === memoId) readUserEmails.add(reads[i][rHdr['UserEmail']]);
+    if (reads[i][rHdr['MemoID']] === memoId) {
+      const normalizedReadEmail = _normalizeEmail(reads[i][rHdr['UserEmail']]);
+      if (normalizedReadEmail) readUserEmails.add(normalizedReadEmail);
+    }
+  }
+  function buildUserLabel(email, displayName) {
+    const normalized = _normalizeEmail(email);
+    if (normalized && userDisplayMap[normalized]) return userDisplayMap[normalized];
+    const trimmedName = String(displayName || '').trim();
+    if (trimmedName) return trimmedName;
+    if (email) return String(email || '').trim();
+    return '';
   }
   for (let i = 1; i < users.length; i++) {
     const uemail = users[i][uHdr['Email']];
     const uname = users[i][uHdr['DisplayName']];
-    if (readUserEmails.has(uemail)) message.readUsers.push(uname);
-    else message.unreadUsers.push(uname);
+    const normalizedUserEmail = _normalizeEmail(uemail);
+    const label = buildUserLabel(uemail, uname);
+    if (!label) continue;
+    if (normalizedUserEmail && readUserEmails.has(normalizedUserEmail)) message.readUsers.push(label);
+    else message.unreadUsers.push(label);
   }
   return message;
 }
@@ -1651,12 +1768,40 @@ function markMemosReadBulk(memoIds) {
 // ====== コメント/メッセージ作成 ======
 function addNewComment(commentData) {
   try {
-    const sh = _openSheet('T_Comments');
-    _ensureColumns(sh, ['CommentID', 'MemoID', 'CreatedAt', 'Author', 'Body']);
+    const sh = _openCommentSheet();
+    const hdr = _ensureColumns(sh, [
+      'CommentID',
+      'MemoID',
+      'CreatedAt',
+      'AuthorEmail',
+      'Body',
+      'Mentions',
+      'Author',
+    ]);
     const id = Utilities.getUuid();
     const now = new Date();
     const email = _getCurrentEmail();
-    sh.appendRow([id, commentData.memoId, now, email, commentData.body]);
+    const userInfo = getLoggedInUserInfo();
+    const displayName = userInfo && userInfo.name ? userInfo.name : email;
+    const mentionsValue = Array.isArray(commentData.mentions)
+      ? commentData.mentions.join(',')
+      : '';
+    const rowWidth =
+      Math.max.apply(
+        null,
+        Object.keys(hdr).map(function (key) {
+          return hdr[key];
+        })
+      ) + 1;
+    const row = new Array(rowWidth).fill('');
+    row[hdr['CommentID']] = id;
+    row[hdr['MemoID']] = commentData.memoId;
+    row[hdr['CreatedAt']] = now;
+    row[hdr['AuthorEmail']] = email;
+    row[hdr['Body']] = commentData.body;
+    if (hdr['Mentions'] != null) row[hdr['Mentions']] = mentionsValue;
+    if (hdr['Author'] != null) row[hdr['Author']] = displayName;
+    sh.appendRow(row);
     _audit('memo', commentData.memoId, 'comment', { commentId: id });
     return { success: true, message: 'コメントを投稿しました。' };
   } catch (e) {
@@ -1770,18 +1915,31 @@ function saveUserSettings(payload) {
     let resultMeta = null;
     for (let i = 1; i < v.length; i++) {
       if (v[i][hdr['Email']] === email) {
-        if (payload.name != null) sh.getRange(i + 1, hdr['DisplayName'] + 1).setValue(payload.name);
+        let rowChanged = false;
+        const rowValues = v[i].slice();
+        if (payload.name != null) {
+          rowValues[hdr['DisplayName']] = payload.name;
+          rowChanged = true;
+        }
         if (payload.imageData) {
           const stored = _storeProfileImage(payload.imageData, email);
-          sh.getRange(i + 1, hdr['ProfileImage'] + 1).setValue(stored.url);
+          rowValues[hdr['ProfileImage']] = stored.url;
           resultMeta = { imageUrl: stored.url, imageName: stored.name };
+          rowChanged = true;
         } else if (payload.imageUrl != null) {
           // 後方互換: URLが直接渡された場合はそのまま保存
           const value = payload.imageUrl || PROFILE_PLACEHOLDER_URL;
-          sh.getRange(i + 1, hdr['ProfileImage'] + 1).setValue(value);
+          rowValues[hdr['ProfileImage']] = value;
           resultMeta = _resolveProfileImageInfo(value, email);
+          rowChanged = true;
         }
-        if (payload.theme != null) sh.getRange(i + 1, hdr['Theme'] + 1).setValue(payload.theme);
+        if (payload.theme != null) {
+          rowValues[hdr['Theme']] = payload.theme;
+          rowChanged = true;
+        }
+        if (rowChanged) {
+          _writeRow(sh, i + 1, rowValues);
+        }
         CacheService.getScriptCache().remove('user_info_' + normalizedEmail);
         const response = { success: true, message: '設定を保存しました。' };
         if (resultMeta) {
@@ -1813,7 +1971,9 @@ function updateUserRole(arg) {
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
       if (v[i][hdr['Email']] === arg.email) {
-        sh.getRange(i + 1, hdr['Role'] + 1).setValue(arg.role || '一般');
+        const rowValues = v[i].slice();
+        rowValues[hdr['Role']] = arg.role || '一般';
+        _writeRow(sh, i + 1, rowValues);
         CacheService.getScriptCache().remove('user_info_' + arg.email);
         _audit('admin', arg.email, 'role_update', { to: arg.role || '一般' });
         return { success: true, message: 'Roleを更新しました。' };

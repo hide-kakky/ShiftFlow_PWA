@@ -4,3 +4,4 @@
 node_modules/
 # Mac関連
 .DS_Store
+/frontend/public/.cache

@@ -3,6 +3,12 @@
   <head>
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#517cb2" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
     <link
       href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css"
@@ -17,6 +23,16 @@
       rel="stylesheet"
     />
     <!-- Google Sign-In スクリプトは不要なため削除 -->
+    <script>
+      window.addEventListener('load', function () {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/sw.js').catch(function (error) {
+            console.warn('Service worker registration failed:', error);
+          });
+        }
+      });
+    </script>
+    <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
 
     <script>
       (function(){
@@ -238,9 +254,18 @@
       }
       .navbar-brand.app-brand .brand-icon {
         position: relative;
+        width: 28px;
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .navbar-brand.app-brand .brand-icon .material-icons,
+      .navbar-brand.app-brand .brand-icon .material-icons-outlined {
         font-size: 24px;
-        color: rgba(245, 248, 255, 0.92);
-        text-shadow: 0 10px 18px rgba(15, 23, 42, 0.28);
+        line-height: 1;
+        color: #ffffff;
+        text-shadow: 0 14px 28px rgba(15, 23, 42, 0.32);
       }
       .navbar-brand.app-brand .brand-title {
         line-height: 1;
@@ -1316,7 +1341,9 @@
           <span class="brand-mark">
             <span class="brand-ring"></span>
             <span class="brand-glow"></span>
-            <span class="brand-icon material-icons-outlined">sync_alt</span>
+            <span class="brand-icon">
+              <span class="material-icons-outlined" aria-hidden="true">trending_up</span>
+            </span>
           </span>
           <span class="brand-title">
             <span class="brand-text-main">ShiftFlow</span>
@@ -3441,11 +3468,28 @@
         }
         var commentsHtml = '';
         (data.comments || []).forEach(function (c) {
+          var email = String(c.authorEmail || '').trim();
+          var name = String(c.authorName || '').trim();
+          if (!name && c.author) {
+            name = String(c.author || '').trim();
+          }
+          if (!name && email) {
+            var mapped = getNameByEmail(email);
+            name = mapped !== email ? mapped : '';
+          }
+          var authorLabel = name;
+          if (!authorLabel && c.author) {
+            authorLabel = String(c.author || '').trim();
+          }
+          if (!authorLabel) {
+            authorLabel = '投稿者不明';
+          }
+          var safeBody = esc(c.body || '').replace(/&lt;br&gt;/gi, '<br>').replace(/\n/g, '<br>');
           commentsHtml +=
             '<div class="card mb-2"><div class="card-body"><p class="mb-0">' +
-            esc(c.body) +
+            safeBody +
             '</p><small class="text-muted">' +
-            esc(c.author) +
+            esc(authorLabel) +
             ' - ' +
             esc(c.createdAt) +
             '</small></div></div>';
@@ -4109,9 +4153,44 @@
         bindMessageAttachmentUploader();
         attachSaveHandlers();
 
-        // 初回読み込み
-        navigateTo('home');
-      });
+      // 初回読み込み
+      navigateTo('home');
+    });
     </script>
+    <script>
+      (function () {
+        try {
+          var manifestUrl = new URL(window.location.href);
+          if (manifestUrl.pathname.indexOf('/userCodeAppPanel') !== -1) {
+            manifestUrl.pathname = manifestUrl.pathname.replace(/\/userCodeAppPanel$/, '/exec');
+            manifestUrl.search = '';
+            manifestUrl.searchParams.set('page', 'manifest');
+          } else {
+            manifestUrl.searchParams.set('page', 'manifest');
+          }
+          var linkEl = document.createElement('link');
+          linkEl.rel = 'manifest';
+          linkEl.href = manifestUrl.toString();
+          document.head.appendChild(linkEl);
+        } catch (err) {
+          console.warn('Failed to attach manifest link:', err);
+        }
+      })();
+    </script>
+    <!--
+      /api/ping への fetch テスト例（実装は後日追加）:
+      window.addEventListener('load', function () {
+        fetch('/api/ping')
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (data) {
+            console.log(data);
+          })
+          .catch(function (err) {
+            console.error(err);
+          });
+      });
+    -->
   </body>
 </html>
