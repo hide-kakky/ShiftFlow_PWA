@@ -51,6 +51,9 @@ const TASK_SHEET_COLUMNS = [
 let _cachedSpreadsheet = null;
 /** シートインスタンスのキャッシュ */
 const _sheetCache = {};
+/** Cloudflare 経由で渡されたユーザー情報（リクエストスコープ） */
+let __CURRENT_REQUEST_EMAIL = '';
+let __CURRENT_REQUEST_NAME = '';
 
 // ====== 認証設定（削除） ======
 // GCPクライアントIDは不要になったため削除します。
@@ -197,6 +200,9 @@ function _emailArrayContains(arr, target) {
  * GASの組み込み認証を使用するため、Session.getActiveUser().getEmail()のみで取得できます。
  */
 function _getCurrentEmail() {
+  if (__CURRENT_REQUEST_EMAIL) {
+    return __CURRENT_REQUEST_EMAIL;
+  }
   return String(Session.getActiveUser().getEmail() || '').trim();
 }
 
@@ -529,7 +535,8 @@ function _ensureUserRecord_() {
   const newRow = [];
   newRow[hdr['UserID']] = id;
   newRow[hdr['Email']] = email;
-  newRow[hdr['DisplayName']] = email; // 初期表示名はメールアドレス
+  const preferredName = __CURRENT_REQUEST_NAME ? __CURRENT_REQUEST_NAME : email;
+  newRow[hdr['DisplayName']] = preferredName;
   newRow[hdr['ProfileImage']] = PROFILE_PLACEHOLDER_URL;
   newRow[hdr['Role']] = 'member';
   newRow[hdr['IsActive']] = 'TRUE';
@@ -2137,6 +2144,12 @@ function doPost(e) {
       );
     }
   }
+  const emailParam =
+    e && e.parameter && e.parameter.__userEmail ? String(e.parameter.__userEmail || '').trim() : '';
+  const nameParam =
+    e && e.parameter && e.parameter.__userName ? String(e.parameter.__userName || '').trim() : '';
+  __CURRENT_REQUEST_EMAIL = emailParam;
+  __CURRENT_REQUEST_NAME = nameParam;
   const routeParam =
     (body && body.route) ||
     (body && body.method) ||
@@ -2167,6 +2180,9 @@ function doPost(e) {
   }
   const args = Array.isArray(body && body.args) ? body.args : [];
   try {
+    if (__CURRENT_REQUEST_EMAIL) {
+      _ensureUserRecord_();
+    }
     const result = handler.apply(null, args);
     return jsonResponse({
       ok: true,
@@ -2183,6 +2199,9 @@ function doPost(e) {
       },
       500
     );
+  } finally {
+    __CURRENT_REQUEST_EMAIL = '';
+    __CURRENT_REQUEST_NAME = '';
   }
 }
 

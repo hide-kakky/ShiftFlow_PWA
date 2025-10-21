@@ -34,6 +34,7 @@
       });
     </script>
     <script src="/config"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
 
     <script id="shiftflow-bootstrap" type="application/json">
@@ -1498,6 +1499,40 @@
       .text-truncate-container {
         min-width: 0;
       }
+      .auth-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 3000;
+      }
+      .auth-overlay.d-none {
+        display: none !important;
+      }
+      .auth-card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 32px;
+        width: min(90%, 420px);
+        box-shadow: 0 28px 72px rgba(15, 23, 42, 0.28);
+        text-align: center;
+      }
+      .auth-card h2 {
+        margin-top: 0;
+        font-size: 1.8rem;
+      }
+      .auth-card p {
+        line-height: 1.6;
+        margin-bottom: 1.25rem;
+      }
+      .auth-card .auth-error {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        color: #b91c1c;
+      }
     </style>
   </head>
   <body>
@@ -1508,6 +1543,14 @@
         />
       </symbol>
     </svg>
+    <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
+      <div class="auth-card">
+        <h2>ShiftFlow</h2>
+        <p>Google アカウントでサインインしてください。</p>
+        <div id="google-signin-btn"></div>
+        <div class="auth-error d-none" id="auth-error"></div>
+      </div>
+    </div>
 
     <div
       id="notification-area"
@@ -2358,6 +2401,12 @@
       const GAS_WEB_APP_URL =
         typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
       const HAS_GAS_WEB_APP_URL = GAS_WEB_APP_URL.length > 0;
+      const GOOGLE_CLIENT_ID =
+        typeof window.__GOOGLE_CLIENT_ID__ === 'string' ? window.__GOOGLE_CLIENT_ID__ : '';
+      window.__SHIFT_FLOW_AUTH_TOKEN__ = window.__SHIFT_FLOW_AUTH_TOKEN__ || '';
+      let AUTH_TOKEN_PAYLOAD = null;
+      let AUTH_READY = false;
+      let BOOTSTRAP_STARTED = false;
       const AUTH_NOTICE_MESSAGE =
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       let AUTH_NOTICE_SHOWN = false;
@@ -2571,6 +2620,9 @@
       }
 
       function hydrateBootstrap() {
+        if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
+          return Promise.reject({ authRequired: true, message: 'Auth token missing' });
+        }
         if (
           !(
             globalThis.google &&
@@ -2585,7 +2637,7 @@
           renderAssigneeList();
           return Promise.resolve();
         }
-        return new Promise(function (resolve) {
+        return new Promise(function (resolve, reject) {
           google.script.run
             .withSuccessHandler(function (payload) {
               if (payload && typeof payload === 'object') {
@@ -2612,7 +2664,11 @@
               populateAssigneeFilters();
               populateFolderSelects();
               renderAssigneeList();
-              resolve();
+              if (authError) {
+                reject(err || { authRequired: true });
+              } else {
+                resolve();
+              }
             })
             .getBootstrapData();
         });
@@ -2705,7 +2761,10 @@
             return;
           }
           if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
-            console.info('[ShiftFlow] auth required, prompting user to sign in.');
+            console.info('[ShiftFlow] auth required, prompting sign-in.');
+            clearAuthToken();
+            showAuthOverlay('再度サインインしてください。');
+            initGoogleSignIn();
             return;
           }
           console.error('[ShiftFlow] backend request failed', error);
@@ -2735,6 +2794,9 @@
               args: argsSnapshot,
             }),
           };
+          if (window.__SHIFT_FLOW_AUTH_TOKEN__) {
+            init.headers.Authorization = 'Bearer ' + window.__SHIFT_FLOW_AUTH_TOKEN__;
+          }
           fetch(url, init)
             .then(function (res) {
               var contentType = res.headers.get('content-type') || '';
@@ -3111,6 +3173,123 @@
           '<div id="auth-help-details" class="mt-3"></div>' +
           '</div></div>'
         );
+      }
+
+      function decodeJwtPayload(token) {
+        try {
+          const payloadPart = token.split('.')[1];
+          const decoded = atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/'));
+          return JSON.parse(decoded);
+        } catch (err) {
+          console.warn('Failed to decode JWT payload:', err);
+          return null;
+        }
+      }
+
+      function setAuthToken(token) {
+        window.__SHIFT_FLOW_AUTH_TOKEN__ = token || '';
+        AUTH_TOKEN_PAYLOAD = token ? decodeJwtPayload(token) : null;
+        AUTH_READY = !!token;
+      }
+
+      function clearAuthToken() {
+        setAuthToken('');
+        BOOTSTRAP_STARTED = false;
+      }
+
+      function showAuthOverlay(message) {
+        const overlay = byId('auth-overlay');
+        const errorEl = byId('auth-error');
+        if (overlay) {
+          overlay.classList.remove('d-none');
+          overlay.setAttribute('aria-hidden', 'false');
+        }
+        if (errorEl) {
+          if (message) {
+            errorEl.textContent = message;
+            errorEl.classList.remove('d-none');
+          } else {
+            errorEl.textContent = '';
+            errorEl.classList.add('d-none');
+          }
+        }
+      }
+
+      function hideAuthOverlay() {
+        const overlay = byId('auth-overlay');
+        if (overlay) {
+          overlay.classList.add('d-none');
+          overlay.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      function handleCredentialResponse(response) {
+        if (!response || !response.credential) {
+          showAuthOverlay('Google から認証トークンが取得できませんでした。もう一度お試しください。');
+          return;
+        }
+        setAuthToken(response.credential);
+        hideAuthOverlay();
+        bootstrapAfterAuth();
+      }
+
+      function initGoogleSignIn(retryCount) {
+        if (!GOOGLE_CLIENT_ID) {
+          console.error('GOOGLE_CLIENT_ID が未設定です。Cloudflare Pages の環境変数を確認してください。');
+          showAuthOverlay('Google クライアント ID が設定されていません。管理者に連絡してください。');
+          return;
+        }
+        if (!(window.google && google.accounts && google.accounts.id)) {
+          const attempts = typeof retryCount === 'number' ? retryCount : 0;
+          if (attempts > 50) {
+            showAuthOverlay('Google の認証スクリプトを読み込めませんでした。ページを再読み込みしてください。');
+            return;
+          }
+          setTimeout(function () {
+            initGoogleSignIn(attempts + 1);
+          }, 120);
+          return;
+        }
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          auto_select: false,
+        });
+        const btn = byId('google-signin-btn');
+        if (btn) {
+          btn.innerHTML = '';
+          google.accounts.id.renderButton(btn, {
+            theme: 'outline',
+            size: 'large',
+            width: 260,
+          });
+        }
+        google.accounts.id.prompt();
+      }
+
+      function bootstrapAfterAuth() {
+        if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
+          showAuthOverlay();
+          return;
+        }
+        if (BOOTSTRAP_STARTED) return;
+        BOOTSTRAP_STARTED = true;
+        hydrateBootstrap()
+          .then(function () {
+            ensureTaskBootstrap();
+            navigateTo('home');
+          })
+          .catch(function (err) {
+            BOOTSTRAP_STARTED = false;
+            if (isAuthError && isAuthError(err)) {
+              clearAuthToken();
+              showAuthOverlay('セッションが切れました。もう一度サインインしてください。');
+              initGoogleSignIn();
+              return;
+            }
+            console.error('Bootstrap load encountered an error:', err);
+            notify('初期データの取得に失敗しました: ' + (err && err.message ? err.message : '不明なエラー'), false);
+          });
       }
       function managerRequiredCard(info) {
         info = info || {};
@@ -4911,7 +5090,6 @@
         });
 
         bindTaskControls();
-        ensureTaskBootstrap();
 
         on('flt-msg-folder', 'change', loadMessages);
         on('flt-msg-unread', 'change', loadMessages);
@@ -4925,16 +5103,8 @@
         bindMessageAttachmentUploader();
         attachSaveHandlers();
 
-        var bootstrapPromise = hydrateBootstrap().then(
-          null,
-          function (err) {
-            console.error('Bootstrap load encountered an error:', err);
-          }
-        );
-        bootstrapPromise.then(function () {
-          ensureTaskBootstrap();
-          navigateTo('home');
-        });
+        showAuthOverlay();
+        initGoogleSignIn();
       });
     </script>
     <script>
