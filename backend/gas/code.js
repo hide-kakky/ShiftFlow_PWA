@@ -801,6 +801,21 @@ function cleanUpArchiveData() {
 
 // ====== doGet ======
 function doGet(e) {
+  if (e && e.parameter && e.parameter.route) {
+    const route = e.parameter.route;
+    if (route === 'ping') {
+      return jsonResponse({
+        ok: true,
+        route: 'ping',
+        ts: new Date().toISOString(),
+      });
+    }
+    return jsonResponse({
+      ok: true,
+      route: route || 'root',
+    });
+  }
+
   if (e && e.parameter && e.parameter.page === 'manifest') {
     return serveManifest();
   }
@@ -2071,20 +2086,6 @@ function jsonResponse(payload, statusCode) {
     payload: response.getContent(),
     status: statusCode || 200,
   };
-}
-
-function doGet(e) {
-  if (e && e.parameter && e.parameter.route === 'ping') {
-    return jsonResponse({
-      ok: true,
-      route: 'ping',
-      ts: new Date().toISOString(),
-    });
-  }
-  return jsonResponse({
-    ok: true,
-    route: 'root',
-  });
 }
 
 function doPost(e) {
