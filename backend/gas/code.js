@@ -2057,3 +2057,52 @@ function testOpenSheet() {
 }
 // function myFunction() {}
 */
+
+function jsonResponse(payload, statusCode) {
+  const response = ContentService.createTextOutput(JSON.stringify(payload));
+  response.setMimeType(ContentService.MimeType.JSON);
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+  return {
+    headers,
+    payload: response.getContent(),
+    status: statusCode || 200,
+  };
+}
+
+function doGet(e) {
+  if (e && e.parameter && e.parameter.route === 'ping') {
+    return jsonResponse({
+      ok: true,
+      route: 'ping',
+      ts: new Date().toISOString(),
+    });
+  }
+  return jsonResponse({
+    ok: true,
+    route: 'root',
+  });
+}
+
+function doPost(e) {
+  let body = {};
+  if (e && e.postData && e.postData.contents) {
+    try {
+      body = JSON.parse(e.postData.contents);
+    } catch (err) {
+      return jsonResponse({
+        ok: false,
+        error: 'Invalid JSON payload',
+      }, 400);
+    }
+  }
+  return jsonResponse({
+    ok: true,
+    received: body,
+  });
+}
+
+// TODO: CORS設定を本番オリジンで固定する
