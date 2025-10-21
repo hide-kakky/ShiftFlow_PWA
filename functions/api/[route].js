@@ -9,9 +9,7 @@ const CORS_HEADERS = {
 
 export async function onRequest(context) {
   const { request, params } = context;
-  const routeParam = params.route;
-  const routeSegments = Array.isArray(routeParam) ? routeParam : routeParam ? [routeParam] : [];
-  const route = routeSegments.join('/');
+  const route = params.route || '';
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -19,6 +17,7 @@ export async function onRequest(context) {
 
   const upstreamUrl = new URL(GAS_BASE);
   const originalUrl = new URL(request.url);
+
   originalUrl.searchParams.forEach((value, key) => {
     if (key !== 'route') {
       upstreamUrl.searchParams.append(key, value);
@@ -66,5 +65,8 @@ export async function onRequest(context) {
   }
 
   const bodyBuffer = await upstreamResponse.arrayBuffer();
-  return new Response(bodyBuffer, { status: upstreamResponse.status, headers: responseHeaders });
+  return new Response(bodyBuffer, {
+    status: upstreamResponse.status,
+    headers: responseHeaders,
+  });
 }

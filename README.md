@@ -17,7 +17,7 @@
 5. `_redirects` の GAS URL を実環境の URL に差し替えるときは、`frontend/public/_redirects` の `https://script.google.com/macros/s/AKfycbx.../exec` 部分を、Apps Script デプロイ画面で取得した **Web アプリ URL** に置き換えてから再デプロイしてください（外部リダイレクトは `302` など 3xx を用いる点に注意。Functions プロキシ利用時は自動で同一オリジン化されます）。
 
 ## API プロキシ (Cloudflare Functions)
-- Cloudflare Pages の Functions で `/api/*` を `functions/api/[...route].js` が受け取り、Apps Script Web App へプロキシします。
+- Cloudflare Pages の Functions で `/api/*` を `functions/api/[route].js` が受け取り、Apps Script Web App へプロキシします。
 - ルートパラメータは `route` クエリに渡されるため、GAS 側では `e.parameter.route` でハンドリングできます。
 - 追加のクエリ・POST ボディもそのまま転送され、レスポンスには CORS ヘッダーが付与されます。
 
