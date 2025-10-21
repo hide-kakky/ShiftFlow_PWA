@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
     <link
@@ -2701,6 +2702,10 @@
         function deliverFailure(handler, error, userObject) {
           if (typeof handler === 'function') {
             deliver(handler, error, userObject);
+            return;
+          }
+          if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
+            console.info('[ShiftFlow] auth required, prompting user to sign in.');
             return;
           }
           console.error('[ShiftFlow] backend request failed', error);
