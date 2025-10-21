@@ -90,6 +90,24 @@
 
     <script>
       (function () {
+        var themeMeta = {
+          light: { color: '#517cb2', statusBar: 'default' },
+          dark: { color: '#050912', statusBar: 'black-translucent' },
+        };
+        window.__SHIFT_FLOW_THEME_META__ = themeMeta;
+        window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
+          var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
+          var config = themeMeta[resolvedTheme] || themeMeta.light;
+          var metaTheme = document.querySelector('meta[name="theme-color"]');
+          if (metaTheme && config.color) {
+            metaTheme.setAttribute('content', config.color);
+          }
+          var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+          if (appleStatus && config.statusBar) {
+            appleStatus.setAttribute('content', config.statusBar);
+          }
+        };
+
         var bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
         var pref =
           (bootstrap.userInfo && bootstrap.userInfo.theme) ||
@@ -99,6 +117,7 @@
         var resolved = pref === 'system' && media ? (media.matches ? 'dark' : 'light') : pref;
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.dataset.themePref = pref;
+        window.__SHIFT_FLOW_SYNC_THEME_META__(resolved);
       })();
     </script>
 
@@ -175,6 +194,10 @@
         --alert-info-text: var(--text-900);
         --app-font: 'Zen Kaku Gothic New', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
           sans-serif;
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
         font-family: var(--app-font);
       }
       :root[data-theme='dark'] {
@@ -255,6 +278,7 @@
         background-attachment: fixed;
         background-size: cover;
         color: var(--text-900);
+        padding-top: var(--safe-top);
       }
 
       /* TODO: スタイルを /css/style.css へ分離 */
@@ -264,7 +288,7 @@
         gap: 20px;
         max-width: 480px;
         margin: 16px auto;
-        padding: 20px 16px calc(20px + var(--footer-h));
+        padding: 20px 16px calc(20px + var(--footer-h) + var(--safe-bottom));
         border-radius: 20px;
         background: rgba(255, 255, 255, 0.82);
         box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
@@ -529,11 +553,19 @@
         position: fixed;
         bottom: 0;
         width: 100%;
-        height: var(--footer-h);
+        height: calc(var(--footer-h) + var(--safe-bottom));
+        padding-bottom: var(--safe-bottom);
+        padding-left: var(--safe-left);
+        padding-right: var(--safe-right);
         background: var(--footer-bg);
         z-index: 1020;
         border-top: 1px solid var(--divider);
         box-shadow: var(--footer-shadow);
+      }
+      .footer-nav .container-fluid {
+        padding-left: 0;
+        padding-right: 0;
+        height: 100%;
       }
       .footer-nav .nav-link {
         color: var(--on-primary);
@@ -789,7 +821,7 @@
 
       /* Layout / cards */
       .page-body {
-        padding-bottom: 120px;
+        padding-bottom: calc(120px + var(--safe-bottom));
       }
       .container-xl {
         max-width: 1200px;
@@ -968,7 +1000,7 @@
       .fab.dropup-center {
         position: fixed;
         left: 50%;
-        bottom: calc(var(--footer-h) - 28px);
+        bottom: calc(var(--footer-h) + var(--safe-bottom) - 28px);
         transform: translateX(-50%);
         z-index: 1030;
       }
@@ -2421,6 +2453,33 @@
         );
       }
 
+      var syncThemeMeta =
+        typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function'
+          ? window.__SHIFT_FLOW_SYNC_THEME_META__
+          : function (theme) {
+              var palette =
+                window.__SHIFT_FLOW_THEME_META__ ||
+                {
+                  light: { color: '#517cb2', statusBar: 'default' },
+                  dark: { color: '#050912', statusBar: 'black-translucent' },
+                };
+              var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
+              var config = palette[resolvedTheme] || palette.light;
+              var metaTheme = document.querySelector('meta[name="theme-color"]');
+              if (metaTheme && config.color) {
+                metaTheme.setAttribute('content', config.color);
+              }
+              var appleStatus = document.querySelector(
+                'meta[name="apple-mobile-web-app-status-bar-style"]'
+              );
+              if (appleStatus && config.statusBar) {
+                appleStatus.setAttribute('content', config.statusBar);
+              }
+            };
+      if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ !== 'function') {
+        window.__SHIFT_FLOW_SYNC_THEME_META__ = syncThemeMeta;
+      }
+
       // ===== テーマ適用 =====
       const THEME_MEDIA = window.matchMedia
         ? window.matchMedia('(prefers-color-scheme: dark)')
@@ -2943,6 +3002,7 @@
       }
       function applyResolvedTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
+        syncThemeMeta(theme);
       }
       function applyThemePreference(pref) {
         themePreference = pref || 'light';
