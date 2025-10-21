@@ -34,9 +34,64 @@
     </script>
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
 
+    <script id="shiftflow-bootstrap" type="application/json">
+      {
+        "userInfo": {
+          "name": "ゲストユーザー",
+          "email": "guest@example.com",
+          "imageUrl": "/icons/icon-192.png",
+          "theme": "light"
+        },
+        "users": [],
+        "folders": [],
+        "myTasks": {
+          "tasks": [],
+          "meta": {}
+        },
+        "isManager": false
+      }
+    </script>
     <script>
-      (function(){
-        var pref = <?!= JSON.stringify(userInfo.theme || 'light') ?>;
+      (function () {
+        var defaults = {
+          userInfo: {
+            name: 'ゲストユーザー',
+            email: 'guest@example.com',
+            imageUrl: '/icons/icon-192.png',
+            theme: 'light',
+          },
+          users: [],
+          folders: [],
+          myTasks: { tasks: [], meta: {} },
+          isManager: false,
+        };
+        var el = document.getElementById('shiftflow-bootstrap');
+        var parsed = {};
+        if (el) {
+          try {
+            parsed = JSON.parse(el.textContent || el.innerText || '{}') || {};
+          } catch (err) {
+            console.warn('Failed to parse bootstrap payload:', err);
+          }
+        }
+        var merged = Object.assign({}, defaults, parsed);
+        merged.userInfo = Object.assign({}, defaults.userInfo, parsed.userInfo || {});
+        window.__SHIFT_FLOW_BOOTSTRAP__ = merged;
+        window.userInfo = merged.userInfo;
+        window.users = Array.isArray(merged.users) ? merged.users : [];
+        window.folders = Array.isArray(merged.folders) ? merged.folders : [];
+        window.initialTasks = merged.myTasks || defaults.myTasks;
+        window.isManager = !!merged.isManager;
+      })();
+    </script>
+
+    <script>
+      (function () {
+        var bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
+        var pref =
+          (bootstrap.userInfo && bootstrap.userInfo.theme) ||
+          bootstrap.theme ||
+          'light';
         var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
         var resolved = pref === 'system' && media ? (media.matches ? 'dark' : 'light') : pref;
         document.documentElement.setAttribute('data-theme', resolved);
@@ -1516,7 +1571,13 @@
 
     <header class="navbar navbar-expand-md d-print-none">
       <div class="container-xl">
-        <a href="#" class="navbar-brand app-brand" data-view="home" title="<?!= userInfo.email ?>">
+        <a
+          href="#"
+          class="navbar-brand app-brand"
+          data-view="home"
+          title=""
+          data-bind-user-email
+        >
           <span class="brand-mark">
             <span class="brand-ring"></span>
             <span class="brand-glow"></span>
@@ -1540,13 +1601,14 @@
           </button>
           <span class="nav-link d-flex lh-1 text-reset p-0 align-items-center gap-2">
             <img
-              src="<?!= userInfo.imageUrl ?>"
+              src="/icons/icon-192.png"
               class="avatar avatar-sm js-user-avatar"
-              data-avatar-url="<?!= userInfo.imageUrl ?>"
+              data-avatar-url="/icons/icon-192.png"
+              data-bind-user-avatar
               alt="User"
             />
             <span class="d-none d-xl-block ps-2">
-              <strong><?!= userInfo.name ?></strong>
+              <strong data-bind-user-name>ゲストユーザー</strong>
               <small class="d-block" style="opacity: 0.9">ログイン中</small>
             </span>
           </span>
@@ -1777,9 +1839,10 @@
                     <img
                       class="settings-avatar js-user-avatar"
                       id="setting-avatar-preview"
-                      src="<?!= userInfo.imageUrl || 'https://placehold.jp/150x150.png' ?>"
-                      data-avatar-url="<?!= userInfo.imageUrl || '' ?>"
+                      src="/icons/icon-192.png"
+                      data-avatar-url="/icons/icon-192.png"
                       data-placeholder="https://placehold.jp/150x150.png"
+                      data-bind-user-avatar
                       alt="プロフィール画像のプレビュー"
                     />
                     <button class="btn btn-outline-secondary w-100" type="button" id="btn-setting-image">
@@ -2278,13 +2341,23 @@
       defer
     ></script>
 
-    <script type="application/json" id="__BOOT__">
-      <?!= JSON.stringify({ users: users, currentEmail: userInfo.email, theme: userInfo.theme, imageUrl: userInfo.imageUrl, isManager: isManager, myTasks: initialTasks }) ?>
-    </script>
-
     <script>
       // ===== サーバー埋め込みデータ =====
-      const __BOOT__ = JSON.parse(document.getElementById('__BOOT__').innerHTML || '{}');
+      const __BOOT__ = (function () {
+        const bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
+        const user = bootstrap.userInfo || {};
+        return {
+          users: Array.isArray(bootstrap.users) ? bootstrap.users : [],
+          currentEmail: typeof user.email === 'string' ? user.email : '',
+          theme: user.theme || bootstrap.theme || 'light',
+          imageUrl: typeof user.imageUrl === 'string' ? user.imageUrl : '',
+          isManager: !!bootstrap.isManager,
+          myTasks:
+            bootstrap.myTasks && typeof bootstrap.myTasks === 'object'
+              ? bootstrap.myTasks
+              : { tasks: [], meta: {} },
+        };
+      })();
       const ACTIVE_USERS = Array.isArray(__BOOT__.users) ? __BOOT__.users : [];
       const CURRENT_USER_EMAIL = String(__BOOT__.currentEmail || '');
       const HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
@@ -2315,6 +2388,33 @@
       let pendingProfileImage = null;
       let pendingMessageAttachments = [];
       if (__BOOT__.theme) themePreference = __BOOT__.theme || themePreference;
+
+      (function applyBootstrapBindings() {
+        const bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
+        const user = bootstrap.userInfo || {};
+        const email = user.email || '';
+        const name = user.name || 'ゲストユーザー';
+        const avatar = user.imageUrl || '/icons/icon-192.png';
+        document
+          .querySelectorAll('[data-bind-user-email]')
+          .forEach(function (el) {
+            el.setAttribute('title', email);
+            if (el.tagName === 'A' && el.textContent.trim() === '') {
+              el.textContent = email;
+            }
+          });
+        document
+          .querySelectorAll('[data-bind-user-name]')
+          .forEach(function (el) {
+            el.textContent = name;
+          });
+        document
+          .querySelectorAll('[data-bind-user-avatar]')
+          .forEach(function (el) {
+            el.setAttribute('src', avatar);
+            el.setAttribute('data-avatar-url', avatar);
+          });
+      })();
 
       function resolveThemePreference(pref) {
         if (pref === 'system') {
