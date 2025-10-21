@@ -38,7 +38,7 @@
       {
         "userInfo": {
           "name": "ゲストユーザー",
-          "email": "guest@example.com",
+          "email": "",
           "imageUrl": "/icons/icon-192.png",
           "theme": "light"
         },
@@ -56,7 +56,7 @@
         var defaults = {
           userInfo: {
             name: 'ゲストユーザー',
-            email: 'guest@example.com',
+            email: '',
             imageUrl: '/icons/icon-192.png',
             theme: 'light',
           },
@@ -2396,14 +2396,18 @@
       (function applyBootstrapBindings() {
         const bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
         const user = bootstrap.userInfo || {};
-        const email = user.email || '';
+        const email = typeof user.email === 'string' ? user.email : '';
         const name = user.name || 'ゲストユーザー';
         const avatar = user.imageUrl || '/icons/icon-192.png';
         document
           .querySelectorAll('[data-bind-user-email]')
           .forEach(function (el) {
-            el.setAttribute('title', email);
-            if (el.tagName === 'A' && el.textContent.trim() === '') {
+            if (email) {
+              el.setAttribute('title', email);
+            } else {
+              el.removeAttribute('title');
+            }
+            if (email && el.tagName === 'A' && el.textContent.trim() === '') {
               el.textContent = email;
             }
           });
@@ -2418,6 +2422,59 @@
             el.setAttribute('src', avatar);
             el.setAttribute('data-avatar-url', avatar);
           });
+      })();
+
+      (function ensureGoogleScriptRun() {
+        const stubMessage = { message: 'Backend (google.script.run) is unavailable in static build.' };
+        if (!globalThis.google) globalThis.google = {};
+        if (!globalThis.google.script) globalThis.google.script = {};
+        if (globalThis.google.script.run) return;
+
+        const chainState = {
+          success: null,
+          failure: null,
+        };
+        const proxy = {};
+        proxy.withSuccessHandler = function (fn) {
+          chainState.success = typeof fn === 'function' ? fn : null;
+          return proxy;
+        };
+        proxy.withFailureHandler = function (fn) {
+          chainState.failure = typeof fn === 'function' ? fn : null;
+          return proxy;
+        };
+        proxy.withUserObject = function () {
+          return proxy;
+        };
+
+        globalThis.google.script.run = new Proxy(proxy, {
+          get(target, prop) {
+            if (prop in target) {
+              return target[prop];
+            }
+            return function () {
+              console.warn('google.script.run.' + String(prop) + ' is not available outside Apps Script.');
+              if (typeof chainState.failure === 'function') {
+                try {
+                  chainState.failure(stubMessage);
+                } catch (err) {
+                  console.warn('Failure handler threw error in stub:', err);
+                }
+              }
+              return proxy;
+            };
+          },
+          apply() {
+            if (typeof chainState.failure === 'function') {
+              try {
+                chainState.failure(stubMessage);
+              } catch (err) {
+                console.warn('Failure handler threw error in stub:', err);
+              }
+            }
+            return proxy;
+          },
+        });
       })();
 
       function resolveThemePreference(pref) {
@@ -4458,7 +4515,13 @@
               if (!res.ok) {
                 throw new Error('HTTP ' + res.status);
               }
-              return res.json();
+              var contentType = res.headers.get('content-type') || '';
+              if (contentType.indexOf('application/json') !== -1) {
+                return res.json();
+              }
+              return res.text().then(function (text) {
+                throw new Error('JSONではない応答: ' + text.slice(0, 120) + '...');
+              });
             })
             .then(function (data) {
               var formatted = JSON.stringify(data, null, 2);
