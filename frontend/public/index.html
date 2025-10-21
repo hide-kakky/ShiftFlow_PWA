@@ -92,7 +92,7 @@
       (function () {
         var themeMeta = {
           light: { color: '#517cb2', statusBar: 'default' },
-          dark: { color: '#050912', statusBar: 'black-translucent' },
+          dark: { color: '#24316e', statusBar: 'black' },
         };
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
@@ -144,6 +144,8 @@
         --fab-shadow: 0 14px 28px rgba(232, 93, 106, 0.35);
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
         --footer-h: 56px;
+        --footer-extra: 12px;
+        --header-h: 64px;
         --fade: 220ms;
         --body-bg: linear-gradient(
             180deg,
@@ -278,7 +280,6 @@
         background-attachment: fixed;
         background-size: cover;
         color: var(--text-900);
-        padding-top: var(--safe-top);
       }
 
       /* TODO: スタイルを /css/style.css へ分離 */
@@ -288,7 +289,7 @@
         gap: 20px;
         max-width: 480px;
         margin: 16px auto;
-        padding: 20px 16px calc(20px + var(--footer-h) + var(--safe-bottom));
+        padding: 20px 16px calc(20px + var(--footer-h) + var(--footer-extra) + var(--safe-bottom));
         border-radius: 20px;
         background: rgba(255, 255, 255, 0.82);
         box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
@@ -364,7 +365,7 @@
       }
       .pwa-footer {
         margin-top: auto;
-        min-height: var(--footer-h);
+        min-height: calc(var(--footer-h) + var(--footer-extra));
         display: flex;
         align-items: center;
         justify-content: center;
@@ -413,10 +414,13 @@
 
       /* Header */
       header.navbar {
+        position: relative;
         background: var(--primary);
         color: var(--on-primary);
         border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-        min-height: 38px;
+        min-height: var(--header-h);
+        padding-top: 8px;
+        padding-bottom: 8px;
       }
       header .container-xl {
         padding-top: 0;
@@ -500,6 +504,22 @@
         .navbar-brand.app-brand .brand-text-main {
           font-size: 1.15rem;
         }
+        header.navbar {
+          position: sticky;
+          top: 0;
+          z-index: 1080;
+          padding-top: calc(8px + var(--safe-top));
+          backdrop-filter: blur(12px);
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+        }
+        header.navbar::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: var(--primary);
+          opacity: 0.96;
+          z-index: -1;
+        }
       }
 
       /* PC topbar */
@@ -544,6 +564,11 @@
       :root[data-theme='dark'] .topbar {
         background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(36, 45, 110, 0.95));
       }
+      @media (max-width: 768px) {
+        :root[data-theme='dark'] header.navbar::before {
+          background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(36, 45, 110, 0.95));
+        }
+      }
       :root[data-theme='dark'] .footer-nav {
         background: linear-gradient(135deg, rgba(10, 18, 40, 0.92), rgba(5, 12, 30, 0.95));
       }
@@ -553,8 +578,8 @@
         position: fixed;
         bottom: 0;
         width: 100%;
-        height: calc(var(--footer-h) + var(--safe-bottom));
-        padding-bottom: var(--safe-bottom);
+        height: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom));
+        padding-bottom: calc(var(--safe-bottom) + var(--footer-extra));
         padding-left: var(--safe-left);
         padding-right: var(--safe-right);
         background: var(--footer-bg);
@@ -821,7 +846,8 @@
 
       /* Layout / cards */
       .page-body {
-        padding-bottom: calc(120px + var(--safe-bottom));
+        padding-top: 24px;
+        padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 32px);
       }
       .container-xl {
         max-width: 1200px;
@@ -995,12 +1021,58 @@
         visibility: hidden;
         pointer-events: none;
       }
+      .pull-to-refresh {
+        position: fixed;
+        top: calc(var(--safe-top) + 12px + var(--header-h));
+        left: 50%;
+        transform: translate(-50%, -120%);
+        transition: transform 0.2s ease, opacity 0.2s ease;
+        padding: 8px 16px;
+        border-radius: 999px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        pointer-events: none;
+        z-index: 2050;
+        opacity: 0;
+        color: var(--text-900);
+      }
+      .pull-to-refresh.show {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+      .pull-to-refresh.ready .pull-to-refresh__icon {
+        transform: rotate(180deg);
+      }
+      .pull-to-refresh.refreshing {
+        transition-duration: 0.12s;
+      }
+      .pull-to-refresh__icon {
+        font-size: 20px;
+        transition: transform 0.2s ease;
+      }
+      .pull-to-refresh__spinner {
+        width: 16px;
+        height: 16px;
+      }
+      .pull-to-refresh__text {
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+      @media (min-width: 768px) {
+        .pull-to-refresh {
+          display: none;
+        }
+      }
 
       /* FAB */
       .fab.dropup-center {
         position: fixed;
         left: 50%;
-        bottom: calc(var(--footer-h) + var(--safe-bottom) - 28px);
+        bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) - 28px);
         transform: translateX(-50%);
         z-index: 1030;
       }
@@ -1643,6 +1715,18 @@
         max-width: 520px;
       "
     ></div>
+
+    <div class="pull-to-refresh" id="pullToRefresh" role="status" aria-hidden="true">
+      <span class="material-icons pull-to-refresh__icon" id="pullToRefreshIcon" aria-hidden="true"
+        >expand_more</span
+      >
+      <div
+        class="spinner-border spinner-border-sm text-primary d-none pull-to-refresh__spinner"
+        id="pullToRefreshSpinner"
+        role="presentation"
+      ></div>
+      <span class="pull-to-refresh__text" id="pullToRefreshText">下に引っ張って更新</span>
+    </div>
 
     <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true">
       <div class="bootstrap-loading__card" role="status" aria-live="polite">
@@ -3660,6 +3744,26 @@
         if (v === 'settings') loadSettings();
       }
 
+      function refreshCurrentView() {
+        if (CURRENT_VIEW === 'home') {
+          return Promise.resolve(loadHome());
+        }
+        if (CURRENT_VIEW === 'tasks') {
+          ensureTaskBootstrap();
+          return Promise.all([
+            Promise.resolve(reloadActiveTaskTab()),
+            Promise.resolve(loadHome()),
+          ]).then(function () {});
+        }
+        if (CURRENT_VIEW === 'messages') {
+          return Promise.all([Promise.resolve(loadMessages()), Promise.resolve(loadHome())]).then(function () {});
+        }
+        if (CURRENT_VIEW === 'settings') {
+          return Promise.resolve(loadSettings());
+        }
+        return Promise.resolve(loadHome());
+      }
+
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
         var x0 = null,
@@ -3713,6 +3817,174 @@
         }, 120);
       });
 
+      function initPullToRefresh() {
+        var hasTouch = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+        if (!hasTouch) return;
+        if (window.matchMedia) {
+          var coarse = window.matchMedia('(pointer: coarse)');
+          if (coarse && coarse.matches === false && (navigator.maxTouchPoints || 0) === 0) return;
+        }
+        var ptrEl = byId('pullToRefresh');
+        if (!ptrEl) return;
+        var iconEl = byId('pullToRefreshIcon');
+        var spinnerEl = byId('pullToRefreshSpinner');
+        var textEl = byId('pullToRefreshText');
+        var threshold = 85;
+        var pulling = false;
+        var ready = false;
+        var refreshing = false;
+        var startY = 0;
+        var startedAt = 0;
+        var scrollEl = document.scrollingElement || document.documentElement;
+
+        function atTop() {
+          var top =
+            scrollEl && typeof scrollEl.scrollTop === 'number'
+              ? scrollEl.scrollTop
+              : window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+          return top <= 0;
+        }
+        function setReady(flag) {
+          ready = !!flag;
+          ptrEl.classList.toggle('ready', ready);
+          if (!refreshing && textEl) {
+            textEl.textContent = ready ? '指を離すと更新' : '下に引っ張って更新';
+          }
+        }
+        function show() {
+          if (!ptrEl.classList.contains('show')) {
+            ptrEl.classList.add('show');
+          }
+          ptrEl.setAttribute('aria-hidden', 'false');
+        }
+        function setRefreshing(flag) {
+          refreshing = !!flag;
+          ptrEl.classList.toggle('refreshing', refreshing);
+          if (refreshing) {
+            ptrEl.setAttribute('aria-busy', 'true');
+          } else {
+            ptrEl.setAttribute('aria-busy', 'false');
+          }
+          if (iconEl) {
+            iconEl.classList.toggle('d-none', refreshing);
+          }
+          if (spinnerEl) {
+            spinnerEl.classList.toggle('d-none', !refreshing);
+          }
+          if (textEl) {
+            textEl.textContent = refreshing ? '更新中…' : ready ? '指を離すと更新' : '下に引っ張って更新';
+          }
+        }
+        function hide() {
+          ptrEl.classList.remove('show', 'refreshing');
+          ptrEl.removeAttribute('aria-busy');
+          ptrEl.setAttribute('aria-hidden', 'true');
+          setReady(false);
+          if (iconEl) {
+            iconEl.classList.remove('d-none');
+          }
+          if (spinnerEl) {
+            spinnerEl.classList.add('d-none');
+          }
+          if (textEl) {
+            textEl.textContent = '下に引っ張って更新';
+          }
+        }
+        function resetPull() {
+          pulling = false;
+          startY = 0;
+          setReady(false);
+        }
+        function triggerRefresh() {
+          if (refreshing) return;
+          setRefreshing(true);
+          show();
+          startedAt = Date.now();
+          var result;
+          try {
+            result = refreshCurrentView();
+          } catch (err) {
+            result = Promise.reject(err);
+          }
+          Promise.resolve(result)
+            .catch(function (err) {
+              console.warn('Pull-to-refresh update failed:', err);
+            })
+            .then(function () {
+              var elapsed = Date.now() - startedAt;
+              var delay = elapsed < 500 ? 500 - elapsed : 0;
+              setTimeout(function () {
+                setRefreshing(false);
+                hide();
+              }, delay);
+            });
+        }
+
+        hide();
+
+        window.addEventListener(
+          'touchstart',
+          function (e) {
+            if (refreshing) return;
+            if (document.body.classList.contains('modal-open')) return;
+            if (!atTop()) return;
+            if (e.touches && e.touches.length > 1) return;
+            var touch = e.touches ? e.touches[0] : e;
+            startY = touch.clientY;
+            pulling = true;
+            setReady(false);
+          },
+          { passive: true }
+        );
+        window.addEventListener(
+          'touchmove',
+          function (e) {
+            if (!pulling) return;
+            if (e.touches && e.touches.length > 1) return;
+            if (!atTop()) {
+              resetPull();
+              hide();
+              return;
+            }
+            var touch = e.touches ? e.touches[0] : e;
+            var diff = touch.clientY - startY;
+            if (diff <= 0) {
+              setReady(false);
+              return;
+            }
+            show();
+            setReady(diff >= threshold);
+          },
+          { passive: true }
+        );
+        window.addEventListener(
+          'touchend',
+          function () {
+            if (!pulling) return;
+            if (refreshing) {
+              resetPull();
+              return;
+            }
+            if (ready) {
+              triggerRefresh();
+            } else {
+              hide();
+            }
+            resetPull();
+          },
+          { passive: true }
+        );
+        window.addEventListener(
+          'touchcancel',
+          function () {
+            if (refreshing) return;
+            hide();
+            resetPull();
+          },
+          { passive: true }
+        );
+      }
+
       function skel(n) {
         var h = '';
         for (var i = 0; i < (n || 4); i++) {
@@ -3731,75 +4003,79 @@
             notify(AUTH_NOTICE_MESSAGE, false);
             AUTH_NOTICE_SHOWN = true;
           }
-          return;
+          return Promise.resolve(false);
         }
         byId('home-today-tasks').innerHTML = skel(3);
         byId('home-unread').innerHTML = skel(3);
-        google.script.run
-          .withSuccessHandler(function (d) {
-            var tasks = normalizeArray(d && d.tasks);
-            var tHTML = tasks.length
-              ? tasks
-                  .map(function (t) {
-                    return (
-                      '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\'' +
-                      t.id +
-                      '\')">' +
-                      '<div class="card-body d-flex justify-content-between">' +
-                      '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>' +
-                      esc(t.title) +
-                      '</strong>' +
-                      '<span class="text-muted">' +
-                      esc(t.dueDate) +
-                      '</span>' +
-                      '</div>' +
-                      '</a>'
-                    );
-                  })
-                  .join('')
-              : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
-            byId('home-today-tasks').innerHTML = tHTML;
+        return new Promise(function (resolve) {
+          google.script.run
+            .withSuccessHandler(function (d) {
+              var tasks = normalizeArray(d && d.tasks);
+              var tHTML = tasks.length
+                ? tasks
+                    .map(function (t) {
+                      return (
+                        '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\'' +
+                        t.id +
+                        '\')">' +
+                        '<div class="card-body d-flex justify-content-between">' +
+                        '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>' +
+                        esc(t.title) +
+                        '</strong>' +
+                        '<span class="text-muted">' +
+                        esc(t.dueDate) +
+                        '</span>' +
+                        '</div>' +
+                        '</a>'
+                      );
+                    })
+                    .join('')
+                : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+              byId('home-today-tasks').innerHTML = tHTML;
 
-            var unread = normalizeArray(d && d.messages).filter(function (x) {
-              return !x.isRead;
-            });
-            [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function (b) {
-              if (!b) return;
-              b.textContent = unread.length;
-              b.classList.toggle('d-none', unread.length === 0);
-            });
+              var unread = normalizeArray(d && d.messages).filter(function (x) {
+                return !x.isRead;
+              });
+              [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function (b) {
+                if (!b) return;
+                b.textContent = unread.length;
+                b.classList.toggle('d-none', unread.length === 0);
+              });
 
-            var mHTML = unread.length
-              ? unread
-                  .map(function (m) {
-                    return (
-                      '<div class="card mb-2 msg-card unread"><div class="card-body">' +
-                      '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\'' +
-                      m.id +
-                      '\')">' +
-                      '<div class="d-flex align-items-center">' +
-                      '<span class="msg-icon material-icons">priority_high</span>' +
-                      '<div class="msg-lines flex-grow-1">' +
-                      '<div class="fw-bold">' +
-                      esc(m.title) +
-                      '</div>' +
-                      '<div class="marquee line1"><span class="track">' +
-                      esc(m.preview || m.body || '') +
-                      '</span></div>' +
-                      '</div>' +
-                      '</div>' +
-                      '</a>' +
-                      '</div></div>'
-                    );
-                  })
-                  .join('')
-              : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
-            byId('home-unread').innerHTML = mHTML;
-          })
-          .withFailureHandler(function (e) {
-            notify('ホーム読み込み失敗: ' + e.message, false);
-          })
-          .getHomeContent();
+              var mHTML = unread.length
+                ? unread
+                    .map(function (m) {
+                      return (
+                        '<div class="card mb-2 msg-card unread"><div class="card-body">' +
+                        '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\'' +
+                        m.id +
+                        '\')">' +
+                        '<div class="d-flex align-items-center">' +
+                        '<span class="msg-icon material-icons">priority_high</span>' +
+                        '<div class="msg-lines flex-grow-1">' +
+                        '<div class="fw-bold">' +
+                        esc(m.title) +
+                        '</div>' +
+                        '<div class="marquee line1"><span class="track">' +
+                        esc(m.preview || m.body || '') +
+                        '</span></div>' +
+                        '</div>' +
+                        '</div>' +
+                        '</a>' +
+                        '</div></div>'
+                      );
+                    })
+                    .join('')
+                : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
+              byId('home-unread').innerHTML = mHTML;
+              resolve(true);
+            })
+            .withFailureHandler(function (e) {
+              notify('ホーム読み込み失敗: ' + e.message, false);
+              resolve(false);
+            })
+            .getHomeContent();
+        });
       }
 
       // ===== Tasks =====
@@ -4011,117 +4287,136 @@
 
       function loadMyTasks() {
         var scope = 'my';
-        if (!HAS_ACTIVE_EMAIL) {
-          renderTaskList(scope);
-          if (!AUTH_NOTICE_SHOWN) {
-            notify(AUTH_NOTICE_MESSAGE, false);
-            AUTH_NOTICE_SHOWN = true;
-          }
-          return;
-        }
-        if (!(globalThis.google && google.script && google.script.run)) {
-          setTaskError(
-            scope,
-            'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-          );
-          return;
-        }
-        setTaskLoading(scope, true);
-        google.script.run
-          .withSuccessHandler(function (result) {
-            var payload = extractTaskPayload(result);
-            TASK_STATE.my.rows = payload.rows;
-            TASK_STATE.my.meta = {};
-            TASK_STATE.my.loaded = true;
-            setTaskLoading(scope, false);
+        return new Promise(function (resolve) {
+          if (!HAS_ACTIVE_EMAIL) {
             renderTaskList(scope);
-          })
-          .withFailureHandler(function (error) {
-            setTaskLoading(scope, false);
-            setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
-            notify(
-              'マイタスク取得失敗: ' + (error && error.message ? error.message : error),
-              false
+            if (!AUTH_NOTICE_SHOWN) {
+              notify(AUTH_NOTICE_MESSAGE, false);
+              AUTH_NOTICE_SHOWN = true;
+            }
+            resolve(false);
+            return;
+          }
+          if (!(globalThis.google && google.script && google.script.run)) {
+            setTaskError(
+              scope,
+              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
             );
-          })
-          .listMyTasks();
+            resolve(false);
+            return;
+          }
+          setTaskLoading(scope, true);
+          google.script.run
+            .withSuccessHandler(function (result) {
+              var payload = extractTaskPayload(result);
+              TASK_STATE.my.rows = payload.rows;
+              TASK_STATE.my.meta = {};
+              TASK_STATE.my.loaded = true;
+              setTaskLoading(scope, false);
+              renderTaskList(scope);
+              resolve(true);
+            })
+            .withFailureHandler(function (error) {
+              setTaskLoading(scope, false);
+              setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
+              notify(
+                'マイタスク取得失敗: ' + (error && error.message ? error.message : error),
+                false
+              );
+              resolve(false);
+            })
+            .listMyTasks();
+        });
       }
 
       function loadCreatedTasks() {
         var scope = 'from';
-        if (!(globalThis.google && google.script && google.script.run)) {
-          setTaskError(
-            scope,
-            'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-          );
-          return;
-        }
-        setTaskLoading(scope, true);
-        google.script.run
-          .withSuccessHandler(function (result) {
-            var payload = extractTaskPayload(result);
-            TASK_STATE.from.rows = payload.rows;
-            TASK_STATE.from.meta = {};
-            TASK_STATE.from.loaded = true;
-            setTaskLoading(scope, false);
-            renderTaskList(scope);
-          })
-          .withFailureHandler(function (error) {
-            setTaskLoading(scope, false);
-            setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-            notify(
-              '作成したタスクの取得に失敗しました: ' +
-                (error && error.message ? error.message : error),
-              false
+        return new Promise(function (resolve) {
+          if (!(globalThis.google && google.script && google.script.run)) {
+            setTaskError(
+              scope,
+              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
             );
-          })
-          .listCreatedTasks(null);
+            resolve(false);
+            return;
+          }
+          setTaskLoading(scope, true);
+          google.script.run
+            .withSuccessHandler(function (result) {
+              var payload = extractTaskPayload(result);
+              TASK_STATE.from.rows = payload.rows;
+              TASK_STATE.from.meta = {};
+              TASK_STATE.from.loaded = true;
+              setTaskLoading(scope, false);
+              renderTaskList(scope);
+              resolve(true);
+            })
+            .withFailureHandler(function (error) {
+              setTaskLoading(scope, false);
+              setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+              notify(
+                '作成したタスクの取得に失敗しました: ' +
+                  (error && error.message ? error.message : error),
+                false
+              );
+              resolve(false);
+            })
+            .listCreatedTasks(null);
+        });
       }
 
       function loadAllTasks() {
         var scope = 'all';
-        if (!IS_MANAGER) {
-          TASK_STATE.all.restricted = true;
-          renderTaskList(scope);
-          return;
-        }
-        if (!(globalThis.google && google.script && google.script.run)) {
-          setTaskError(
-            scope,
-            'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-          );
-          return;
-        }
-        setTaskLoading(scope, true);
-        google.script.run
-          .withSuccessHandler(function (result) {
-            var payload = extractTaskPayload(result);
-            if (payload.meta && payload.meta.managerOnly && !payload.meta.isManager) {
-              TASK_STATE.all.restricted = true;
+        return new Promise(function (resolve) {
+          if (!IS_MANAGER) {
+            TASK_STATE.all.restricted = true;
+            renderTaskList(scope);
+            resolve(false);
+            return;
+          }
+          if (!(globalThis.google && google.script && google.script.run)) {
+            setTaskError(
+              scope,
+              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+            );
+            resolve(false);
+            return;
+          }
+          setTaskLoading(scope, true);
+          google.script.run
+            .withSuccessHandler(function (result) {
+              var payload = extractTaskPayload(result);
+              if (payload.meta && payload.meta.managerOnly && !payload.meta.isManager) {
+                TASK_STATE.all.restricted = true;
+                setTaskLoading(scope, false);
+                renderTaskList(scope);
+                if (!MANAGER_NOTICE_SHOWN) {
+                  notify('全体のタスク閲覧には管理者権限が必要です。', false);
+                  MANAGER_NOTICE_SHOWN = true;
+                }
+                resolve(false);
+                return;
+              }
+              TASK_STATE.all.rows = payload.rows;
+              TASK_STATE.all.meta = {};
+              TASK_STATE.all.loaded = true;
+              TASK_STATE.all.restricted = false;
               setTaskLoading(scope, false);
               renderTaskList(scope);
-              if (!MANAGER_NOTICE_SHOWN) {
-                notify('全体のタスク閲覧には管理者権限が必要です。', false);
-                MANAGER_NOTICE_SHOWN = true;
-              }
-              return;
-            }
-            TASK_STATE.all.rows = payload.rows;
-            TASK_STATE.all.meta = {};
-            TASK_STATE.all.loaded = true;
-            TASK_STATE.all.restricted = false;
-            setTaskLoading(scope, false);
-            renderTaskList(scope);
-          })
-          .withFailureHandler(function (error) {
-            setTaskLoading(scope, false);
-            setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-            notify(
-              '全体タスクの取得に失敗しました: ' + (error && error.message ? error.message : error),
-              false
-            );
-          })
-          .listAllTasks(null);
+              resolve(true);
+            })
+            .withFailureHandler(function (error) {
+              setTaskLoading(scope, false);
+              setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+              notify(
+                '全体タスクの取得に失敗しました: ' +
+                  (error && error.message ? error.message : error),
+                false
+              );
+              resolve(false);
+            })
+            .listAllTasks(null);
+        });
       }
 
       function activateTaskTab(tab, shouldLoad) {
@@ -4156,15 +4451,14 @@
       }
 
       function reloadActiveTaskTab() {
-        if ((ACTIVE_TASK_TAB || 'my') === 'from') {
-          loadCreatedTasks();
-          return;
+        var active = ACTIVE_TASK_TAB || 'my';
+        if (active === 'from') {
+          return loadCreatedTasks();
         }
-        if ((ACTIVE_TASK_TAB || 'my') === 'all') {
-          loadAllTasks();
-          return;
+        if (active === 'all') {
+          return loadAllTasks();
         }
-        loadMyTasks();
+        return loadMyTasks();
       }
 
       function bindTaskControls() {
@@ -4291,38 +4585,43 @@
         if (btnAll) btnAll.disabled = !!loading;
       }
       function loadMessages() {
-        if (!HAS_ACTIVE_EMAIL) {
-          byId('msg-list').innerHTML = authRequiredCard();
-          if (!AUTH_NOTICE_SHOWN) {
-            notify(AUTH_NOTICE_MESSAGE, false);
-            AUTH_NOTICE_SHOWN = true;
+        return new Promise(function (resolve) {
+          if (!HAS_ACTIVE_EMAIL) {
+            byId('msg-list').innerHTML = authRequiredCard();
+            if (!AUTH_NOTICE_SHOWN) {
+              notify(AUTH_NOTICE_MESSAGE, false);
+              AUTH_NOTICE_SHOWN = true;
+            }
+            resolve(false);
+            return;
           }
-          return;
-        }
-        setMsgLoading(true);
-        var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
-        if (folderOpt != null) folderOpt = String(folderOpt).trim();
-        if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
-        google.script.run
-          .withSuccessHandler(function (list) {
-            var rows = filterMessages(list);
-            byId('msg-list').innerHTML = rows.length
-              ? rows
-                  .map(function (m) {
-                    return rowMsg(m);
-                  })
-                  .join('')
-              : '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
-            setMsgLoading(false);
-          })
-          .withFailureHandler(function (e) {
-            notify('Failed to load messages: ' + e.message, false);
-            setMsgLoading(false);
-          })
-          .getMessages({
-            folderId: folderOpt || undefined,
-            unreadOnly: !!(byId('flt-msg-unread') || {}).checked,
-          });
+          setMsgLoading(true);
+          var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+          if (folderOpt != null) folderOpt = String(folderOpt).trim();
+          if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
+          google.script.run
+            .withSuccessHandler(function (list) {
+              var rows = filterMessages(list);
+              byId('msg-list').innerHTML = rows.length
+                ? rows
+                    .map(function (m) {
+                      return rowMsg(m);
+                    })
+                    .join('')
+                : '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
+              setMsgLoading(false);
+              resolve(true);
+            })
+            .withFailureHandler(function (e) {
+              notify('Failed to load messages: ' + e.message, false);
+              setMsgLoading(false);
+              resolve(false);
+            })
+            .getMessages({
+              folderId: folderOpt || undefined,
+              unreadOnly: !!(byId('flt-msg-unread') || {}).checked,
+            });
+        });
       }
       function toggleRead(btn, memoId, shouldRead, onComplete) {
         setButtonLoading(btn, true);
@@ -4949,38 +5248,46 @@
 
       // ===== 設定 =====
       function loadSettings() {
-        if (!HAS_ACTIVE_EMAIL) {
-          notify(AUTH_NOTICE_MESSAGE, false);
-          return;
-        }
-        google.script.run
-          .withSuccessHandler(function (s) {
-            if (!s) return;
-            byId('setting-name').value = s.name || '';
-            pendingProfileImage = null;
-            var fileInput = byId('setting-image-file');
-            if (fileInput) fileInput.value = '';
-            var labelText = '';
-            if (s.imageName) labelText = s.imageName;
-            else if (s.imageUrl && s.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
-            setProfileImageLabel(labelText, false);
-            updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
-            applyUserAvatar(s.imageUrl || '');
-            var themeVal = s.theme || 'light';
-            var themeInput = byId('setting-theme');
-            if (themeInput) {
-              themeInput.value = themeVal;
-              updateThemeStatus(themeVal);
-              applyThemePreference(themeVal);
-            } else {
-              applyThemePreference(themeVal);
-              updateThemeStatus(themeVal);
-            }
-          })
-          .withFailureHandler(function (e) {
-            notify('設定読み込み失敗: ' + e.message, false);
-          })
-          .getUserSettings();
+        return new Promise(function (resolve) {
+          if (!HAS_ACTIVE_EMAIL) {
+            notify(AUTH_NOTICE_MESSAGE, false);
+            resolve(false);
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(function (s) {
+              if (!s) {
+                resolve(false);
+                return;
+              }
+              byId('setting-name').value = s.name || '';
+              pendingProfileImage = null;
+              var fileInput = byId('setting-image-file');
+              if (fileInput) fileInput.value = '';
+              var labelText = '';
+              if (s.imageName) labelText = s.imageName;
+              else if (s.imageUrl && s.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
+              setProfileImageLabel(labelText, false);
+              updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
+              applyUserAvatar(s.imageUrl || '');
+              var themeVal = s.theme || 'light';
+              var themeInput = byId('setting-theme');
+              if (themeInput) {
+                themeInput.value = themeVal;
+                updateThemeStatus(themeVal);
+                applyThemePreference(themeVal);
+              } else {
+                applyThemePreference(themeVal);
+                updateThemeStatus(themeVal);
+              }
+              resolve(true);
+            })
+            .withFailureHandler(function (e) {
+              notify('設定読み込み失敗: ' + e.message, false);
+              resolve(false);
+            })
+            .getUserSettings();
+        });
       }
       on('btn-settings-save', 'click', function () {
         var btn = byId('btn-settings-save');
@@ -5277,6 +5584,7 @@
         bindMessageAttachmentUploader();
         attachSaveHandlers();
 
+        initPullToRefresh();
         showAuthOverlay();
         initGoogleSignIn();
       });
