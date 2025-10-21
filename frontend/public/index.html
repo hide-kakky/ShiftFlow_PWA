@@ -2589,6 +2589,10 @@
       function requestAuthHelp() {
         if (AUTH_HELP_REQUESTED) return;
         AUTH_HELP_REQUESTED = true;
+        if (!(globalThis.google && google.script && google.script.run && google.script.run.getAuthStatus)) {
+          renderAuthHelpDetails(null, true);
+          return;
+        }
         google.script.run
           .withSuccessHandler(renderAuthHelpDetails)
           .withFailureHandler(function (err) {
@@ -2602,9 +2606,14 @@
           })
           .getAuthStatus();
       }
-      function renderAuthHelpDetails(info) {
+      function renderAuthHelpDetails(info, isStub) {
         var box = byId('auth-help-details');
         if (!box) return;
+        if (isStub) {
+          box.innerHTML =
+            '<div class="alert alert-info small mb-0">Cloudflare Pages では Apps Script の診断機能は利用できません。バックエンド接続を有効化すると詳細が表示されます。</div>';
+          return;
+        }
         if (!info) {
           box.innerHTML =
             '<div class="alert alert-danger small mb-0">診断データが取得できませんでした。</div>';
