@@ -145,7 +145,7 @@
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
         --footer-h: 56px;
         --footer-extra: 12px;
-        --header-h: 64px;
+        --header-h: 56px;
         --fade: 220ms;
         --body-bg: linear-gradient(
             180deg,
@@ -420,8 +420,8 @@
         color: var(--on-primary);
         border-bottom: 1px solid rgba(255, 255, 255, 0.18);
         min-height: var(--header-h);
-        padding-top: 8px;
-        padding-bottom: 8px;
+        padding-top: 4px;
+        padding-bottom: 6px;
       }
       header .container-xl {
         padding-top: 0;
@@ -509,7 +509,7 @@
           position: sticky;
           top: 0;
           z-index: 1080;
-          padding-top: calc(8px + var(--safe-top));
+          padding-top: calc(4px + var(--safe-top));
           backdrop-filter: blur(12px);
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
         }
@@ -847,8 +847,15 @@
 
       /* Layout / cards */
       .page-body {
-        padding-top: 24px;
-        padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 32px);
+        padding-top: 20px;
+        padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 12px);
+        min-height: calc(100vh - var(--header-h) - var(--footer-h));
+      }
+      @media (max-width: 768px) {
+        .page-body {
+          padding-top: calc(var(--header-h) + var(--safe-top) + 6px);
+          min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
+        }
       }
       .container-xl {
         max-width: 1200px;
@@ -1021,13 +1028,19 @@
       .view-panel.is-hidden {
         visibility: hidden;
         pointer-events: none;
+        height: 0 !important;
+        overflow: hidden !important;
+      }
+      .view-panel.show {
+        height: auto !important;
+        overflow: visible !important;
       }
       .pull-to-refresh {
         position: fixed;
-        top: calc(var(--safe-top) + 12px + var(--header-h));
+        top: calc(var(--safe-top) + var(--header-h) - 24px);
         left: 50%;
-        transform: translate(-50%, -120%);
-        transition: transform 0.2s ease, opacity 0.2s ease;
+        transform: translate(-50%, 0);
+        transition: opacity 0.2s ease;
         padding: 8px 16px;
         border-radius: 999px;
         background: var(--card);
@@ -1039,29 +1052,35 @@
         pointer-events: none;
         z-index: 2050;
         opacity: 0;
+        visibility: hidden;
         color: var(--text-900);
       }
       .pull-to-refresh.show {
-        transform: translate(-50%, 0);
         opacity: 1;
+        visibility: visible;
       }
       .pull-to-refresh.ready .pull-to-refresh__icon {
         transform: rotate(180deg);
       }
-      .pull-to-refresh.refreshing {
-        transition-duration: 0.12s;
+      .pull-to-refresh.refreshing .pull-to-refresh__icon {
+        transform: none;
+        animation: ptr-spin 0.8s linear infinite;
       }
       .pull-to-refresh__icon {
         font-size: 20px;
         transition: transform 0.2s ease;
       }
-      .pull-to-refresh__spinner {
-        width: 16px;
-        height: 16px;
-      }
       .pull-to-refresh__text {
         font-size: 0.9rem;
         font-weight: 600;
+      }
+      @keyframes ptr-spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
       }
       @media (min-width: 768px) {
         .pull-to-refresh {
@@ -1648,8 +1667,7 @@
         pointer-events: none;
         transition: opacity 0.2s ease;
       }
-      body.auth-screen::before {
-        content: '';
+      .auth-backdrop {
         position: fixed;
         inset: 0;
         background: var(--body-bg);
@@ -1659,21 +1677,22 @@
         background-attachment: fixed;
         z-index: 1500;
         pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease;
       }
-      :root[data-theme='dark'] body.auth-screen::before {
+      :root[data-theme='dark'] .auth-backdrop {
         background: var(--body-bg);
         background-color: var(--surface);
-        background-repeat: no-repeat;
-        background-size: cover;
-        background-attachment: fixed;
       }
-      body.auth-screen header.navbar,
-      body.auth-screen nav.topbar,
-      body.auth-screen main.page-body,
-      body.auth-screen .footer-nav,
-      body.auth-screen .fab,
-      body.auth-screen #notification-area,
-      body.auth-screen .pull-to-refresh {
+      body.auth-screen .auth-backdrop {
+        opacity: 1;
+        visibility: visible;
+      }
+      body.auth-screen {
+        overflow: hidden;
+      }
+      body.auth-screen [data-app-shell] {
         opacity: 0;
         pointer-events: none !important;
         visibility: hidden;
@@ -1720,7 +1739,7 @@
       }
     </style>
   </head>
-      <body class="auth-screen">
+  <body class="auth-screen">
     <svg width="0" height="0" style="position: absolute">
       <symbol id="plane" viewBox="0 0 24 24">
         <path
@@ -1728,6 +1747,7 @@
         />
       </symbol>
     </svg>
+    <div id="auth-backdrop" class="auth-backdrop" aria-hidden="true"></div>
     <div id="auth-overlay" class="auth-overlay" aria-hidden="false">
       <div class="auth-card">
         <h2>ShiftFlow</h2>
@@ -1739,6 +1759,8 @@
 
     <div
       id="notification-area"
+      data-app-shell
+      hidden
       style="
         position: fixed;
         top: 10px;
@@ -1750,19 +1772,21 @@
       "
     ></div>
 
-    <div class="pull-to-refresh" id="pullToRefresh" role="status" aria-hidden="true">
+    <div
+      class="pull-to-refresh"
+      id="pullToRefresh"
+      role="status"
+      aria-hidden="true"
+      data-app-shell
+      hidden
+    >
       <span class="material-icons pull-to-refresh__icon" id="pullToRefreshIcon" aria-hidden="true"
         >expand_more</span
       >
-      <div
-        class="spinner-border spinner-border-sm text-primary d-none pull-to-refresh__spinner"
-        id="pullToRefreshSpinner"
-        role="presentation"
-      ></div>
       <span class="pull-to-refresh__text" id="pullToRefreshText">下に引っ張って更新</span>
     </div>
 
-    <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true">
+    <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true" data-app-shell hidden>
       <div class="bootstrap-loading__card" role="status" aria-live="polite">
         <div class="spinner-border text-primary" role="presentation"></div>
         <p class="bootstrap-loading__text">ShiftFlow のデータを読み込んでいます…</p>
@@ -1770,7 +1794,7 @@
     </div>
 
     <!-- TODO: 既存UIと統合 -->
-    <section class="pwa-preview-shell" aria-label="ShiftFlow モバイルプレビュー">
+    <section class="pwa-preview-shell" aria-label="ShiftFlow モバイルプレビュー" data-app-shell hidden>
       <header class="pwa-header" aria-label="アプリ共通ヘッダー">
         <div class="pwa-header__title">ShiftFlow</div>
         <button
@@ -1822,7 +1846,7 @@
       </footer>
     </section>
 
-    <header class="navbar navbar-expand-md d-print-none">
+    <header class="navbar navbar-expand-md d-print-none" data-app-shell hidden>
       <div class="container-xl">
         <a
           href="#"
@@ -1869,7 +1893,7 @@
       </div>
     </header>
 
-    <nav class="navbar navbar-expand-md topbar d-none d-md-block">
+    <nav class="navbar navbar-expand-md topbar d-none d-md-block" data-app-shell hidden>
       <div class="container-xl">
         <ul class="navbar-nav">
           <li class="nav-item">
@@ -1903,7 +1927,7 @@
 
     <!-- 認証ゲート（ログイン画面）はGASが自動で表示するため、HTMLからは削除 -->
 
-    <main class="page-body">
+    <main class="page-body" data-app-shell hidden>
       <div class="views-wrapper container-xl" id="viewsWrapper">
         <div class="views-track" id="viewsTrack">
           <section class="view-panel fade-container show" id="view-home">
@@ -2174,7 +2198,7 @@
       </div>
     </main>
 
-    <div class="fab dropup dropup-center">
+    <div class="fab dropup dropup-center" data-app-shell hidden>
       <button
         class="btn dropdown-toggle"
         id="fabButton"
@@ -2200,7 +2224,7 @@
       </ul>
     </div>
 
-    <nav class="navbar navbar-expand footer-nav d-md-none">
+    <nav class="navbar navbar-expand footer-nav d-md-none" data-app-shell hidden>
       <div class="container-fluid">
         <ul class="navbar-nav w-100 justify-content-around">
           <li class="nav-item">
@@ -3306,6 +3330,15 @@
           }, 150);
         }, 2200);
       }
+      function setAppShellHidden(hidden) {
+        $$('[data-app-shell]').forEach(function (el) {
+          if (hidden) {
+            if (!el.hasAttribute('hidden')) el.setAttribute('hidden', '');
+          } else {
+            el.removeAttribute('hidden');
+          }
+        });
+      }
       function requestAuthHelp() {
         if (AUTH_HELP_REQUESTED) return;
         AUTH_HELP_REQUESTED = true;
@@ -3460,6 +3493,7 @@
         if (document.body) {
           document.body.classList.add('auth-screen');
         }
+        setAppShellHidden(true);
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
@@ -3475,15 +3509,23 @@
         }
       }
 
-      function hideAuthOverlay() {
+      function hideAuthOverlay(revealShell) {
         const overlay = byId('auth-overlay');
         if (overlay) {
           overlay.classList.add('d-none');
           overlay.setAttribute('aria-hidden', 'true');
         }
+        if (revealShell === false) {
+          if (document.body) {
+            document.body.classList.add('auth-screen');
+          }
+          setAppShellHidden(true);
+          return;
+        }
         if (document.body) {
           document.body.classList.remove('auth-screen');
         }
+        setAppShellHidden(false);
       }
 
       function handleCredentialResponse(response) {
@@ -3501,7 +3543,7 @@
           return;
         }
         if (notification.isDisplayed()) {
-          hideAuthOverlay();
+          hideAuthOverlay(false);
           return;
         }
         const notDisplayed =
@@ -3867,8 +3909,9 @@
         var ptrEl = byId('pullToRefresh');
         if (!ptrEl) return;
         var iconEl = byId('pullToRefreshIcon');
-        var spinnerEl = byId('pullToRefreshSpinner');
         var textEl = byId('pullToRefreshText');
+        var iconDefault = 'expand_more';
+        var iconRefreshing = 'autorenew';
         var threshold = 85;
         var pulling = false;
         var ready = false;
@@ -3902,29 +3945,27 @@
           ptrEl.classList.toggle('refreshing', refreshing);
           if (refreshing) {
             ptrEl.setAttribute('aria-busy', 'true');
+            setReady(false);
+            if (iconEl) {
+              iconEl.textContent = iconRefreshing;
+            }
           } else {
             ptrEl.setAttribute('aria-busy', 'false');
-          }
-          if (iconEl) {
-            iconEl.classList.toggle('d-none', refreshing);
-          }
-          if (spinnerEl) {
-            spinnerEl.classList.toggle('d-none', !refreshing);
+            if (iconEl) {
+              iconEl.textContent = iconDefault;
+            }
           }
           if (textEl) {
             textEl.textContent = refreshing ? '更新中…' : ready ? '指を離すと更新' : '下に引っ張って更新';
           }
         }
         function hide() {
-          ptrEl.classList.remove('show', 'refreshing');
+          ptrEl.classList.remove('show', 'refreshing', 'ready');
           ptrEl.removeAttribute('aria-busy');
           ptrEl.setAttribute('aria-hidden', 'true');
           setReady(false);
           if (iconEl) {
-            iconEl.classList.remove('d-none');
-          }
-          if (spinnerEl) {
-            spinnerEl.classList.add('d-none');
+            iconEl.textContent = iconDefault;
           }
           if (textEl) {
             textEl.textContent = '下に引っ張って更新';
@@ -5310,7 +5351,10 @@
               setProfileImageLabel(labelText, false);
               updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
               applyUserAvatar(s.imageUrl || '');
-              var themeVal = s.theme || 'light';
+              var themeVal = String(s.theme || 'light').toLowerCase();
+              if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
+                themeVal = 'light';
+              }
               var themeInput = byId('setting-theme');
               if (themeInput) {
                 themeInput.value = themeVal;
