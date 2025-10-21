@@ -855,35 +855,15 @@ function doGet(e) {
     return serveManifest();
   }
 
-  _ensureUserRecord_(); // ★ ここで初回ログインユーザーを自動登録
+  try {
+    _ensureUserRecord_();
+  } catch (err) {
+    Logger.log('[ShiftFlow] ensureUserRecord failed: ' + err);
+  }
 
-  const tpl = HtmlService.createTemplateFromFile('index');
-  const userInfo = getLoggedInUserInfo();
-  const activeUsers = listActiveUsers();
-  const isManager = _isManagerRole(userInfo.role);
-  const isAdmin = _isAdminRole(userInfo.role);
-  const filteredUsers = activeUsers.filter(function (user) {
-    if (isAdmin) return true;
-    if (isManager) return _normalizeEmail(user.email) !== _normalizeEmail(HIDDEN_TEST_ACCOUNT);
-    const normalizedCurrent = _normalizeEmail(userInfo.email);
-    return (
-      _normalizeEmail(user.email) === normalizedCurrent ||
-      _normalizeEmail(user.email) !== _normalizeEmail(HIDDEN_TEST_ACCOUNT)
-    );
-  });
-
-  tpl.userInfo = userInfo;
-  tpl.isManager = isManager;
-  tpl.users = filteredUsers;
-  tpl.folders = listActiveFolders();
-  tpl.initialTasks = listMyTasks();
-
-  const out = tpl
-    .evaluate()
-    .setTitle('ShiftFlow')
+  return HtmlService.createHtmlOutputFromFile('signin')
+    .setTitle('ShiftFlow Sign-In')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-
-  return out;
 }
 
 // 他の関数（_ensureUserRecord_, getLoggedInUserInfoなど）は変更不要
