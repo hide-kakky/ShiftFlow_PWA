@@ -2936,12 +2936,12 @@
       }
 
       // ===== ヘルパ =====
-      var $$ = function (s, r) {
-        return Array.prototype.slice.call((r || document).querySelectorAll(s));
-      };
-      var byId = function (id) {
+      function $$(selector, root) {
+        return Array.prototype.slice.call((root || document).querySelectorAll(selector));
+      }
+      function byId(id) {
         return document.getElementById(id);
-      };
+      }
       let userMap = new Map();
 
       function rebuildUserMap() {
