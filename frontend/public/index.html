@@ -2802,6 +2802,12 @@
               var contentType = res.headers.get('content-type') || '';
               if (contentType.indexOf('application/json') === -1) {
                 return res.text().then(function (text) {
+                  console.warn('[ShiftFlow] Non-JSON response', {
+                    status: res.status,
+                    statusText: res.statusText,
+                    route: route,
+                    snippet: text.slice(0, 200),
+                  });
                   var authRequired =
                     res.status === 200 &&
                     (text.indexOf('accounts.google.com') !== -1 ||
