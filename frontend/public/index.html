@@ -1695,11 +1695,9 @@
             <div class="task-tabs" id="taskTabs">
               <button class="task-tab-btn active" data-task-tab="my" type="button">MY TASK</button>
               <button class="task-tab-btn" data-task-tab="from" type="button">FROM ME</button>
-              <? if (isManager) { ?>
-              <button class="task-tab-btn" data-task-tab="all" type="button">
+              <button class="task-tab-btn d-none" data-task-tab="all" data-manager-only="true" type="button">
                 <span class="material-icons-outlined">admin_panel_settings</span>ALL TASKS
               </button>
-              <? } ?>
             </div>
 
             <div class="task-panels">
@@ -1732,19 +1730,13 @@
                   <div class="task-filter-row">
                     <select class="task-filter-select" id="task-filter-from-assignee">
                       <option value="">Filter by assignee</option>
-                      <? for (var i = 0; i < users.length; i++) { ?>
-                      <option value="<?!= users[i].email ?>">
-                        <?!= users[i].name || users[i].email ?>
-                      </option>
-                      <? } ?>
                     </select>
                   </div>
                 </div>
                 <div class="task-list mt-3" id="task-list-from"></div>
               </div>
 
-              <? if (isManager) { ?>
-              <div class="task-panel" data-task-panel="all">
+              <div class="task-panel d-none" data-task-panel="all" data-manager-only="true">
                 <div class="task-controls">
                   <div class="task-search">
                     <span class="material-icons-outlined">search</span>
@@ -1758,17 +1750,11 @@
                   <div class="task-filter-row">
                     <select class="task-filter-select" id="task-filter-all-assignee">
                       <option value="">Filter by assignee</option>
-                      <? for (var i = 0; i < users.length; i++) { ?>
-                      <option value="<?!= users[i].email ?>">
-                        <?!= users[i].name || users[i].email ?>
-                      </option>
-                      <? } ?>
                     </select>
                   </div>
                 </div>
                 <div class="task-list mt-3" id="task-list-all"></div>
               </div>
-              <? } ?>
             </div>
           </section>
 
@@ -1793,11 +1779,8 @@
             <div class="row g-2 align-items-end mt-2">
               <div class="col-auto">
                 <label class="form-label">Folder</label>
-                <select id="flt-msg-folder" class="form-select">
+                <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
                   <option value="">All</option>
-                  <? var __folders = (typeof folders !== 'undefined' && folders) ? folders : []; for (var i=0;i<__folders.length;i++){ ?>
-                  <option value="<?!= __folders[i].id ?>"><?!= __folders[i].name ?></option>
-                  <? } ?>
                 </select>
               </div>
               <div class="col-auto">
@@ -2133,11 +2116,8 @@
                 <div class="row g-3">
                   <div class="col-12 col-md-6">
                     <label class="form-label">フォルダ</label>
-                    <select class="form-select" id="messageFolder">
-                      <option value="全体">全体</option>
-                      <option value="ブッフェ">ブッフェ</option>
-                      <option value="レセプション">レセプション</option>
-                      <option value="ホール">ホール</option>
+                    <select class="form-select" id="messageFolder" data-folder-select="compose">
+                      <option value="">フォルダを選択</option>
                     </select>
                   </div>
                   <div class="col-12 col-md-6">
@@ -2360,17 +2340,19 @@
             bootstrap.myTasks && typeof bootstrap.myTasks === 'object'
               ? bootstrap.myTasks
               : { tasks: [], meta: {} },
+          folders: Array.isArray(bootstrap.folders) ? bootstrap.folders : [],
         };
       })();
-      const ACTIVE_USERS = Array.isArray(__BOOT__.users) ? __BOOT__.users : [];
-      const CURRENT_USER_EMAIL = String(__BOOT__.currentEmail || '');
-      const HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
-      const USER_IMAGE_URL = typeof __BOOT__.imageUrl === 'string' ? __BOOT__.imageUrl : '';
-      const INITIAL_MY_TASK_PAYLOAD =
+      let ACTIVE_USERS = Array.isArray(__BOOT__.users) ? __BOOT__.users : [];
+      let CURRENT_USER_EMAIL = String(__BOOT__.currentEmail || '');
+      let HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
+      let USER_IMAGE_URL = typeof __BOOT__.imageUrl === 'string' ? __BOOT__.imageUrl : '';
+      let INITIAL_MY_TASK_PAYLOAD =
         __BOOT__.myTasks && typeof __BOOT__.myTasks === 'object'
           ? __BOOT__.myTasks
           : { tasks: [], meta: {} };
-      const IS_MANAGER = !!__BOOT__.isManager;
+      let IS_MANAGER = !!__BOOT__.isManager;
+      let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -2393,9 +2375,9 @@
       let pendingMessageAttachments = [];
       if (__BOOT__.theme) themePreference = __BOOT__.theme || themePreference;
 
-      (function applyBootstrapBindings() {
-        const bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
-        const user = bootstrap.userInfo || {};
+      function applyBootstrapBindings(bootstrap) {
+        const source = bootstrap || window.__SHIFT_FLOW_BOOTSTRAP__ || {};
+        const user = source.userInfo || {};
         const email = typeof user.email === 'string' ? user.email : '';
         const name = user.name || 'ゲストユーザー';
         const avatar = user.imageUrl || '/icons/icon-192.png';
@@ -2422,7 +2404,199 @@
             el.setAttribute('src', avatar);
             el.setAttribute('data-avatar-url', avatar);
           });
-      })();
+      }
+      applyBootstrapBindings(window.__SHIFT_FLOW_BOOTSTRAP__);
+
+      function toggleManagerUI() {
+        var shouldShow = !!IS_MANAGER;
+        document.querySelectorAll('[data-manager-only]').forEach(function (el) {
+          el.classList.toggle('d-none', !shouldShow);
+          if (!shouldShow) {
+            el.setAttribute('aria-hidden', 'true');
+          } else {
+            el.removeAttribute('aria-hidden');
+          }
+        });
+        if (!shouldShow && typeof ACTIVE_TASK_TAB !== 'undefined' && ACTIVE_TASK_TAB === 'all') {
+          ACTIVE_TASK_TAB = 'my';
+        }
+      }
+
+      function populateAssigneeFilters() {
+        var selects = [
+          byId('task-filter-from-assignee'),
+          byId('task-filter-all-assignee'),
+        ];
+        var rows = ACTIVE_USERS.slice().sort(function (a, b) {
+          return String(a.name || a.email || '')
+            .localeCompare(String(b.name || b.email || ''), 'ja');
+        });
+        selects.forEach(function (select) {
+          if (!select) return;
+          var previous = select.value;
+          select.innerHTML = '';
+          var placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Filter by assignee';
+          select.appendChild(placeholder);
+          rows.forEach(function (user) {
+            if (!user || !user.email) return;
+            var option = document.createElement('option');
+            option.value = user.email;
+            option.textContent = user.name || user.email;
+            select.appendChild(option);
+          });
+          if (previous && rows.some(function (u) { return u.email === previous; })) {
+            select.value = previous;
+          }
+        });
+      }
+
+      function getDefaultFolderId() {
+        if (!Array.isArray(FOLDERS) || FOLDERS.length === 0) return '';
+        var fallback = FOLDERS[0].id || '';
+        for (var i = 0; i < FOLDERS.length; i++) {
+          var id = String(FOLDERS[i].id || '');
+          var name = String(FOLDERS[i].name || '');
+          if (id === '全体' || name === '全体') {
+            return id || name;
+          }
+        }
+        return fallback;
+      }
+
+      function populateFolderSelects() {
+        var folders = Array.isArray(FOLDERS) ? FOLDERS : [];
+        var filterSelect = byId('flt-msg-folder');
+        if (filterSelect) {
+          var prev = filterSelect.value;
+          filterSelect.innerHTML = '';
+          var allOption = document.createElement('option');
+          allOption.value = '';
+          allOption.textContent = 'All';
+          filterSelect.appendChild(allOption);
+          folders.forEach(function (folder) {
+            if (!folder || !folder.id) return;
+            var option = document.createElement('option');
+            option.value = folder.id;
+            option.textContent = folder.name || folder.id;
+            filterSelect.appendChild(option);
+          });
+          if (prev && folders.some(function (f) { return f.id === prev; })) {
+            filterSelect.value = prev;
+          }
+        }
+
+        var composeSelect = byId('messageFolder');
+        if (composeSelect) {
+          var prevCompose = composeSelect.value && composeSelect.value !== '' ? composeSelect.value : null;
+          composeSelect.innerHTML = '';
+          var placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'フォルダを選択';
+          composeSelect.appendChild(placeholder);
+          folders.forEach(function (folder) {
+            if (!folder || !folder.id) return;
+            var option = document.createElement('option');
+            option.value = folder.id;
+            option.textContent = folder.name || folder.id;
+            composeSelect.appendChild(option);
+          });
+          var defaultId = prevCompose || getDefaultFolderId();
+          if (defaultId && folders.some(function (f) { return f.id === defaultId; })) {
+            composeSelect.value = defaultId;
+          } else {
+            composeSelect.value = '';
+          }
+        }
+      }
+
+      function applyBootstrapState(bootstrap) {
+        var normalized = bootstrap || {};
+        window.__SHIFT_FLOW_BOOTSTRAP__ = normalized;
+        window.userInfo = normalized.userInfo || {};
+        window.users = Array.isArray(normalized.users) ? normalized.users : [];
+        window.folders = Array.isArray(normalized.folders) ? normalized.folders : [];
+        window.initialTasks =
+          normalized.myTasks && typeof normalized.myTasks === 'object'
+            ? normalized.myTasks
+            : { tasks: [], meta: {} };
+        window.isManager = !!normalized.isManager;
+
+        ACTIVE_USERS = Array.isArray(window.users) ? window.users : [];
+        FOLDERS = Array.isArray(window.folders) ? window.folders : [];
+        IS_MANAGER = !!normalized.isManager;
+
+        var userInfo = normalized.userInfo || {};
+        CURRENT_USER_EMAIL = String(userInfo.email || '');
+        HAS_ACTIVE_EMAIL = CURRENT_USER_EMAIL.length > 0;
+        USER_IMAGE_URL = typeof userInfo.imageUrl === 'string' ? userInfo.imageUrl : USER_IMAGE_URL;
+        INITIAL_MY_TASK_PAYLOAD = window.initialTasks;
+
+        rebuildUserMap();
+        applyBootstrapBindings(normalized);
+        applyUserAvatar(userInfo.imageUrl || '');
+        var themeValue = userInfo.theme || normalized.theme || themePreference;
+        applyThemePreference(themeValue);
+        updateThemeStatus(themeValue);
+
+        toggleManagerUI();
+        if (typeof TASK_STATE !== 'undefined' && TASK_STATE.all) {
+          TASK_STATE.all.restricted = !IS_MANAGER;
+        }
+        populateAssigneeFilters();
+        renderAssigneeList();
+        populateFolderSelects();
+      }
+
+      function hydrateBootstrap() {
+        if (
+          !(
+            globalThis.google &&
+            google.script &&
+            google.script.run &&
+            typeof google.script.run.getBootstrapData === 'function'
+          )
+        ) {
+          toggleManagerUI();
+          populateAssigneeFilters();
+          populateFolderSelects();
+          renderAssigneeList();
+          return Promise.resolve();
+        }
+        return new Promise(function (resolve) {
+          google.script.run
+            .withSuccessHandler(function (payload) {
+              if (payload && typeof payload === 'object') {
+                applyBootstrapState(payload);
+              } else {
+                toggleManagerUI();
+                populateAssigneeFilters();
+                populateFolderSelects();
+                renderAssigneeList();
+              }
+              resolve();
+            })
+            .withFailureHandler(function (err) {
+              console.error('Bootstrap fetch failed:', err);
+              notify(
+                '初期データの取得に失敗しました: ' +
+                  (err && err.message ? err.message : '原因不明のエラー'),
+                false
+              );
+              toggleManagerUI();
+              populateAssigneeFilters();
+              populateFolderSelects();
+              renderAssigneeList();
+              resolve();
+            })
+            .getBootstrapData();
+        });
+      }
+
+      toggleManagerUI();
+      populateAssigneeFilters();
+      populateFolderSelects();
 
       (function ensureGoogleScriptRun() {
         var API_BASE_PATH = '/api';
@@ -2695,7 +2869,18 @@
       var byId = function (id) {
         return document.getElementById(id);
       };
-      const userMap = new Map(ACTIVE_USERS.map((u) => [u.email, u.name]));
+      let userMap = new Map();
+
+      function rebuildUserMap() {
+        userMap = new Map(
+          ACTIVE_USERS.filter(function (u) {
+            return u && typeof u.email === 'string';
+          }).map(function (u) {
+            return [u.email, u.name];
+          })
+        );
+      }
+      rebuildUserMap();
 
       function getNameByEmail(email) {
         return userMap.get(email) || email;
@@ -4597,7 +4782,11 @@
         }
         if (e.target && e.target.id === 'newMessageModal') {
           byId('newMessageForm').reset();
-          byId('messageFolder').value = '全体';
+          var messageFolderEl = byId('messageFolder');
+          if (messageFolderEl) {
+            var defaultFolder = getDefaultFolderId();
+            messageFolderEl.value = defaultFolder || '';
+          }
           byId('messagePriority').value = '中';
           pendingMessageAttachments = [];
           renderPendingMessageAttachments();
@@ -4648,9 +4837,15 @@
         bindMessageAttachmentUploader();
         attachSaveHandlers();
 
-      // 初回読み込み
-      navigateTo('home');
-    });
+        hydrateBootstrap()
+          .catch(function (err) {
+            console.error('Bootstrap load encountered an error:', err);
+          })
+          .finally(function () {
+            ensureTaskBootstrap();
+            navigateTo('home');
+          });
+      });
     </script>
     <div class="container my-4" id="api-debug-panel">
       <button type="button" class="btn btn-outline-primary" id="btnPing">接続テスト</button>

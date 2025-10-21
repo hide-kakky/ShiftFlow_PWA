@@ -692,6 +692,41 @@ function getAuthStatus() {
   return status;
 }
 
+function getBootstrapData() {
+  const userInfo = getLoggedInUserInfo();
+  const bootstrap = {
+    userInfo: userInfo,
+    users: [],
+    folders: [],
+    myTasks: { tasks: [], meta: {} },
+    isManager: _isManagerRole(userInfo.role),
+    theme: userInfo.theme || '',
+  };
+  try {
+    bootstrap.users = listActiveUsers();
+  } catch (userErr) {
+    bootstrap.users = [];
+    bootstrap.usersError = String(userErr);
+  }
+  try {
+    bootstrap.folders = listActiveFolders();
+  } catch (folderErr) {
+    bootstrap.folders = [];
+    bootstrap.foldersError = String(folderErr);
+  }
+  try {
+    bootstrap.myTasks = listMyTasks();
+  } catch (taskErr) {
+    bootstrap.myTasks = {
+      tasks: [],
+      meta: {
+        error: String(taskErr),
+      },
+    };
+  }
+  return bootstrap;
+}
+
 function isManagerUser() {
   const u = getLoggedInUserInfo();
   return _isManagerRole(u.role);
@@ -2084,6 +2119,7 @@ function jsonResponse(payload, statusCode) {
 
 const API_METHODS = {
   getAuthStatus,
+  getBootstrapData,
   getHomeContent,
   listMyTasks,
   listCreatedTasks,
