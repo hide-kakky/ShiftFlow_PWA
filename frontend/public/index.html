@@ -3152,7 +3152,7 @@
           );
         }
         parts.push(
-          '<div class="mb-0">ウェブアプリを再デプロイし、「実行するユーザー: アクセスするユーザー」「アクセスできるユーザー: 組織内のユーザー」等に設定しているか確認してください。</div>'
+          '<div class="mb-0">サインインした Google アカウントで ShiftFlow を利用できます。401 が続く場合は再ログインし、Cloudflare 環境変数（GAS_WEB_APP_URL / GOOGLE_CLIENT_ID）が最新か確認してください。</div>'
         );
         parts.push('</div>');
         box.innerHTML = parts.join('');

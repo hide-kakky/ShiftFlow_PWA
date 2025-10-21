@@ -2148,8 +2148,16 @@ function doPost(e) {
     e && e.parameter && e.parameter.__userEmail ? String(e.parameter.__userEmail || '').trim() : '';
   const nameParam =
     e && e.parameter && e.parameter.__userName ? String(e.parameter.__userName || '').trim() : '';
-  __CURRENT_REQUEST_EMAIL = emailParam;
-  __CURRENT_REQUEST_NAME = nameParam;
+  const headerEmail =
+    e && e.headers && e.headers['x-shiftflow-email']
+      ? String(e.headers['x-shiftflow-email'] || '').trim()
+      : '';
+  const headerName =
+    e && e.headers && e.headers['x-shiftflow-name']
+      ? String(e.headers['x-shiftflow-name'] || '').trim()
+      : '';
+  __CURRENT_REQUEST_EMAIL = emailParam || headerEmail;
+  __CURRENT_REQUEST_NAME = nameParam || headerName;
   const routeParam =
     (body && body.route) ||
     (body && body.method) ||

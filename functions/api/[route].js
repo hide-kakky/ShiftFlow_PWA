@@ -210,6 +210,10 @@ export async function onRequest(context) {
     const bodyText = await request.text();
     init.body = bodyText;
   }
+  init.headers['X-ShiftFlow-Email'] = userEmail;
+  if (tokenPayload.name) {
+    init.headers['X-ShiftFlow-Name'] = tokenPayload.name;
+  }
 
   let upstreamResponse;
   try {
