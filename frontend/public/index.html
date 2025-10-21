@@ -26,11 +26,25 @@
     <!-- Google Sign-In スクリプトは不要なため削除 -->
     <script>
       window.addEventListener('load', function () {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/sw.js').catch(function (error) {
-            console.warn('Service worker registration failed:', error);
-          });
+        if (!('serviceWorker' in navigator)) {
+          return;
         }
+        navigator.serviceWorker.register('/sw.js').catch(function (error) {
+          console.warn('Service worker registration failed:', error);
+        });
+        navigator.serviceWorker.addEventListener('message', function (event) {
+          if (!event || !event.data || event.data.type !== 'API_CACHE_UPDATED') {
+            return;
+          }
+          var handler = window.__SHIFT_FLOW_TRIGGER_REFRESH__;
+          if (typeof handler === 'function') {
+            try {
+              handler(event.data);
+            } catch (err) {
+              console.warn('API cache update handling failed:', err);
+            }
+          }
+        });
       });
     </script>
     <script src="/config"></script>
@@ -4541,6 +4555,93 @@
         }
         return loadMyTasks();
       }
+
+      var API_REFRESH_COOLDOWN_MS = 1500;
+      var API_REFRESH_LAST_RUN = {};
+      var API_REFRESH_PENDING = {};
+
+      function isWithinApiCooldown(key) {
+        var now = Date.now();
+        var last = API_REFRESH_LAST_RUN[key] || 0;
+        return now - last < API_REFRESH_COOLDOWN_MS;
+      }
+
+      function scheduleApiRefresh(key, fn) {
+        if (typeof fn !== 'function') return;
+        API_REFRESH_LAST_RUN[key] = Date.now();
+        if (document.hidden) {
+          API_REFRESH_PENDING[key] = fn;
+          return;
+        }
+        try {
+          fn();
+        } catch (err) {
+          console.warn('API refresh handler failed:', err);
+        }
+      }
+
+      function flushPendingApiRefreshes() {
+        var keys = Object.keys(API_REFRESH_PENDING);
+        if (!keys.length) return;
+        keys.forEach(function (key) {
+          var fn = API_REFRESH_PENDING[key];
+          delete API_REFRESH_PENDING[key];
+          if (typeof fn === 'function') {
+            try {
+              fn();
+            } catch (err) {
+              console.warn('Pending API refresh failed:', err);
+            }
+          }
+        });
+      }
+
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) {
+          flushPendingApiRefreshes();
+        }
+      });
+      window.addEventListener('focus', flushPendingApiRefreshes);
+
+      window.__SHIFT_FLOW_TRIGGER_REFRESH__ = function (message) {
+        if (!message || !message.url) {
+          return;
+        }
+        var pathname = '';
+        try {
+          pathname = new URL(message.url, window.location.origin).pathname || '';
+        } catch (err) {
+          pathname = String(message.url || '');
+        }
+
+        var handlerKey = '';
+        var handler = null;
+
+        if (pathname.indexOf('/api/tasks') === 0) {
+          handlerKey = 'tasks';
+          handler = function () {
+            reloadActiveTaskTab();
+          };
+        } else if (pathname.indexOf('/api/messages') === 0) {
+          handlerKey = 'messages';
+          handler = function () {
+            loadMessages();
+          };
+        } else if (pathname.indexOf('/api/home') === 0) {
+          handlerKey = 'home';
+          handler = function () {
+            loadHome();
+          };
+        } else {
+          return;
+        }
+
+        if (isWithinApiCooldown(handlerKey)) {
+          return;
+        }
+
+        scheduleApiRefresh(handlerKey, handler);
+      };
 
       function bindTaskControls() {
         $$('#taskTabs .task-tab-btn').forEach(function (btn) {
