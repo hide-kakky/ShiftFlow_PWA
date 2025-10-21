@@ -1,6 +1,3 @@
-const GAS_BASE =
-  'https://script.google.com/macros/s/AKfycbwZ5duOTjYt5aCP0rZI1joo9IxWhIndM_PXWlyMQ6iSkuYPqE5o-gUyHM4RkweT9v-e/exec';
-
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
@@ -8,14 +5,31 @@ const CORS_HEADERS = {
 };
 
 export async function onRequest(context) {
-  const { request, params } = context;
+  const { request, params, env } = context;
   const route = params.route || '';
+  const gasBase = env && env.GAS_WEB_APP_URL ? env.GAS_WEB_APP_URL : '';
+
+  if (!gasBase) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'GAS_WEB_APP_URL is not configured on Cloudflare Pages.',
+      }),
+      {
+        status: 500,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  const upstreamUrl = new URL(GAS_BASE);
+  const upstreamUrl = new URL(gasBase);
   const originalUrl = new URL(request.url);
 
   originalUrl.searchParams.forEach((value, key) => {

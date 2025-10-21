@@ -32,6 +32,7 @@
         }
       });
     </script>
+    <script src="/config"></script>
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
 
     <script id="shiftflow-bootstrap" type="application/json">
@@ -2354,7 +2355,8 @@
       let IS_MANAGER = !!__BOOT__.isManager;
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
       const GAS_WEB_APP_URL =
-        'https://script.google.com/macros/s/AKfycbwZ5duOTjYt5aCP0rZI1joo9IxWhIndM_PXWlyMQ6iSkuYPqE5o-gUyHM4RkweT9v-e/exec';
+        typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
+      const HAS_GAS_WEB_APP_URL = GAS_WEB_APP_URL.length > 0;
       const AUTH_NOTICE_MESSAGE =
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       let AUTH_NOTICE_SHOWN = false;
@@ -2362,6 +2364,12 @@
       let AUTH_HELP_REQUESTED = false;
       let TASKS_BOOTSTRAPPED = false;
       var _rszTimer = null;
+      let ACTIVE_TASK_TAB = 'my';
+      if (!HAS_GAS_WEB_APP_URL) {
+        console.warn(
+          '[ShiftFlow] GAS_WEB_APP_URL is not defined. Set the Environment Variable on Cloudflare Pages.'
+        );
+      }
 
       // ===== テーマ適用 =====
       const THEME_MEDIA = window.matchMedia
@@ -3078,6 +3086,11 @@
       }
       function authRequiredCard() {
         requestAuthHelp();
+        var signInButton = HAS_GAS_WEB_APP_URL
+          ? '<a class="btn btn-primary" href="' +
+            esc(GAS_WEB_APP_URL) +
+            '" target="_blank" rel="noopener">Google にサインイン</a>'
+          : '<button type="button" class="btn btn-primary" disabled>Google にサインイン (未設定)</button>';
         return (
           '<div class="card border-warning"><div class="card-body">' +
           '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">lock</span>Google アカウントへのサインインが必要です。</p>' +
@@ -3087,9 +3100,7 @@
           '<li>サインイン完了後、このページに戻って「接続を再チェック」を押すか、ページを再読み込みします。</li>' +
           '</ol>' +
           '<div class="d-flex flex-wrap gap-2">' +
-          '<a class="btn btn-primary" href="' +
-          esc(GAS_WEB_APP_URL) +
-          '" target="_blank" rel="noopener">Google にサインイン</a>' +
+          signInButton +
           '<button type="button" class="btn btn-outline-primary" data-action="auth-retry">接続を再チェック</button>' +
           '</div>' +
           '<div id="auth-help-details" class="mt-3"></div>' +
@@ -3444,7 +3455,6 @@
         from: { search: '', assignee: '' },
         all: { search: '', assignee: '' },
       };
-      let ACTIVE_TASK_TAB = 'my';
 
       function displayAssignees(r) {
         var assigneeEmails =

@@ -1,1 +1,1 @@
-/api/*  https://script.google.com/macros/s/AKfycbwZ5duOTjYt5aCP0rZI1joo9IxWhIndM_PXWlyMQ6iSkuYPqE5o-gUyHM4RkweT9v-e/exec 302
+# Cloudflare Functions (functions/api/[route].js) handle /api/* requests.
