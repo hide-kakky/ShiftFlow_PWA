@@ -2639,14 +2639,18 @@
         event.preventDefault();
         target.disabled = true;
         target.setAttribute('aria-busy', 'true');
-        hydrateBootstrap()
-          .then(function () {
+        var retryPromise = hydrateBootstrap().then(
+          function () {
             refreshDataAfterBootstrap();
-          })
-          .finally(function () {
-            target.disabled = false;
-            target.removeAttribute('aria-busy');
-          });
+          },
+          function (err) {
+            console.error('Auth retry failed:', err);
+          }
+        );
+        retryPromise.then(function () {
+          target.disabled = false;
+          target.removeAttribute('aria-busy');
+        });
       });
 
       toggleManagerUI();
@@ -4906,14 +4910,16 @@
         bindMessageAttachmentUploader();
         attachSaveHandlers();
 
-        hydrateBootstrap()
-          .catch(function (err) {
+        var bootstrapPromise = hydrateBootstrap().then(
+          null,
+          function (err) {
             console.error('Bootstrap load encountered an error:', err);
-          })
-          .finally(function () {
-            ensureTaskBootstrap();
-            navigateTo('home');
-          });
+          }
+        );
+        bootstrapPromise.then(function () {
+          ensureTaskBootstrap();
+          navigateTo('home');
+        });
       });
     </script>
     <script>
