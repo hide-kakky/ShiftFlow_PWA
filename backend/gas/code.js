@@ -2074,18 +2074,12 @@ function testOpenSheet() {
 */
 
 function jsonResponse(payload, statusCode) {
-  const response = ContentService.createTextOutput(JSON.stringify(payload));
-  response.setMimeType(ContentService.MimeType.JSON);
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
-  return {
-    headers,
-    payload: response.getContent(),
-    status: statusCode || 200,
-  };
+  const output = ContentService.createTextOutput(JSON.stringify(payload));
+  output.setMimeType(ContentService.MimeType.JSON);
+  if (statusCode && output.setHeader) {
+    // TextOutput ではヘッダー指定ができないため、Cloudflare Functions 側でCORSを付与する
+  }
+  return output;
 }
 
 function doPost(e) {
