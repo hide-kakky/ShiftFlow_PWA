@@ -3725,6 +3725,94 @@
         });
       }
 
+      var CACHE_DB_NAME = 'shiftflow-cache';
+      var CACHE_DB_VERSION = 1;
+      var CACHE_STORE_NAME = 'datasets';
+      var SUPPORTS_IDB = typeof indexedDB !== 'undefined' && !!indexedDB;
+      var CACHE_DB_PROMISE = null;
+
+      function openCacheDb() {
+        if (!SUPPORTS_IDB) {
+          return Promise.reject(new Error('IndexedDB not supported'));
+        }
+        if (CACHE_DB_PROMISE) return CACHE_DB_PROMISE;
+        CACHE_DB_PROMISE = new Promise(function (resolve, reject) {
+          var request = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
+          request.onupgradeneeded = function (event) {
+            var db = event.target && event.target.result;
+            if (!db) return;
+            if (!db.objectStoreNames.contains(CACHE_STORE_NAME)) {
+              db.createObjectStore(CACHE_STORE_NAME, { keyPath: 'key' });
+            }
+          };
+          request.onsuccess = function (event) {
+            var db = event.target && event.target.result;
+            if (!db) {
+              reject(new Error('Failed to open cache DB'));
+              return;
+            }
+            resolve(db);
+          };
+          request.onerror = function (event) {
+            reject((event && event.target && event.target.error) || new Error('IndexedDB error'));
+          };
+        }).catch(function (err) {
+          CACHE_DB_PROMISE = null;
+          throw err;
+        });
+        return CACHE_DB_PROMISE;
+      }
+
+      function readCacheEntry(key) {
+        if (!SUPPORTS_IDB) {
+          return Promise.resolve(null);
+        }
+        return openCacheDb()
+          .then(function (db) {
+            return new Promise(function (resolve, reject) {
+              var tx = db.transaction(CACHE_STORE_NAME, 'readonly');
+              var store = tx.objectStore(CACHE_STORE_NAME);
+              var req = store.get(key);
+              req.onsuccess = function (event) {
+                resolve((event && event.target && event.target.result) || null);
+              };
+              req.onerror = function (event) {
+                reject((event && event.target && event.target.error) || new Error('read failed'));
+              };
+            });
+          })
+          .catch(function () {
+            return null;
+          });
+      }
+
+      function writeCacheEntry(key, value) {
+        if (!SUPPORTS_IDB) {
+          return Promise.resolve(false);
+        }
+        return openCacheDb()
+          .then(function (db) {
+            return new Promise(function (resolve, reject) {
+              var tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
+              var store = tx.objectStore(CACHE_STORE_NAME);
+              var req = store.put({
+                key: key,
+                value: value,
+                updatedAt: Date.now(),
+              });
+              req.onsuccess = function () {
+                resolve(true);
+              };
+              req.onerror = function (event) {
+                reject((event && event.target && event.target.error) || new Error('write failed'));
+              };
+            });
+          })
+          .catch(function () {
+            return false;
+          });
+      }
+
       function priorityClassName(pr) {
         switch (String(pr || '中')) {
           case '高':
@@ -4088,6 +4176,83 @@
         return h;
       }
 
+      function renderHomeView(data) {
+        var payload = data || {};
+        var tasks = normalizeArray(payload.tasks);
+        var tHTML = tasks.length
+          ? tasks
+              .map(function (t) {
+                return (
+                  '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\'' +
+                  t.id +
+                  '\')">' +
+                  '<div class="card-body d-flex justify-content-between">' +
+                  '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>' +
+                  esc(t.title) +
+                  '</strong>' +
+                  '<span class="text-muted">' +
+                  esc(t.dueDate) +
+                  '</span>' +
+                  '</div>' +
+                  '</a>'
+                );
+              })
+              .join('')
+          : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+        byId('home-today-tasks').innerHTML = tHTML;
+
+        var unread = normalizeArray(payload.messages).filter(function (x) {
+          return !x.isRead;
+        });
+        [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function (b) {
+          if (!b) return;
+          b.textContent = unread.length;
+          b.classList.toggle('d-none', unread.length === 0);
+        });
+
+        var mHTML = unread.length
+          ? unread
+              .map(function (m) {
+                return (
+                  '<div class="card mb-2 msg-card unread"><div class="card-body">' +
+                  '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\'' +
+                  m.id +
+                  '\')">' +
+                  '<div class="d-flex align-items-center">' +
+                  '<span class="msg-icon material-icons">priority_high</span>' +
+                  '<div class="msg-lines flex-grow-1">' +
+                  '<div class="fw-bold">' +
+                  esc(m.title) +
+                  '</div>' +
+                  '<div class="marquee line1"><span class="track">' +
+                  esc(m.preview || m.body || '') +
+                  '</span></div>' +
+                  '</div>' +
+                  '</div>' +
+                  '</a>' +
+                  '</div></div>'
+                );
+              })
+              .join('')
+          : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
+        byId('home-unread').innerHTML = mHTML;
+      }
+
+      function loadHomeFromCache() {
+        return readCacheEntry('home').then(function (entry) {
+          if (!entry || !entry.value) return false;
+          renderHomeView(entry.value);
+          return true;
+        });
+      }
+
+      function cacheHomePayload(data) {
+        return writeCacheEntry('home', {
+          tasks: normalizeArray(data && data.tasks),
+          messages: normalizeArray(data && data.messages),
+        });
+      }
+
       // ===== Home =====
       function loadHome() {
         if (!HAS_ACTIVE_EMAIL) {
@@ -4100,77 +4265,39 @@
           }
           return Promise.resolve(false);
         }
-        byId('home-today-tasks').innerHTML = skel(3);
-        byId('home-unread').innerHTML = skel(3);
-        return new Promise(function (resolve) {
-          google.script.run
-            .withSuccessHandler(function (d) {
-              var tasks = normalizeArray(d && d.tasks);
-              var tHTML = tasks.length
-                ? tasks
-                    .map(function (t) {
-                      return (
-                        '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\'' +
-                        t.id +
-                        '\')">' +
-                        '<div class="card-body d-flex justify-content-between">' +
-                        '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>' +
-                        esc(t.title) +
-                        '</strong>' +
-                        '<span class="text-muted">' +
-                        esc(t.dueDate) +
-                        '</span>' +
-                        '</div>' +
-                        '</a>'
-                      );
-                    })
-                    .join('')
-                : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
-              byId('home-today-tasks').innerHTML = tHTML;
-
-              var unread = normalizeArray(d && d.messages).filter(function (x) {
-                return !x.isRead;
-              });
-              [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function (b) {
-                if (!b) return;
-                b.textContent = unread.length;
-                b.classList.toggle('d-none', unread.length === 0);
-              });
-
-              var mHTML = unread.length
-                ? unread
-                    .map(function (m) {
-                      return (
-                        '<div class="card mb-2 msg-card unread"><div class="card-body">' +
-                        '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\'' +
-                        m.id +
-                        '\')">' +
-                        '<div class="d-flex align-items-center">' +
-                        '<span class="msg-icon material-icons">priority_high</span>' +
-                        '<div class="msg-lines flex-grow-1">' +
-                        '<div class="fw-bold">' +
-                        esc(m.title) +
-                        '</div>' +
-                        '<div class="marquee line1"><span class="track">' +
-                        esc(m.preview || m.body || '') +
-                        '</span></div>' +
-                        '</div>' +
-                        '</div>' +
-                        '</a>' +
-                        '</div></div>'
-                      );
-                    })
-                    .join('')
-                : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
-              byId('home-unread').innerHTML = mHTML;
-              resolve(true);
-            })
-            .withFailureHandler(function (e) {
-              notify('ホーム読み込み失敗: ' + e.message, false);
-              resolve(false);
-            })
-            .getHomeContent();
-        });
+        var skeletonRendered = false;
+        var cacheShown = false;
+        function ensureSkeleton() {
+          if (skeletonRendered) return;
+          byId('home-today-tasks').innerHTML = skel(3);
+          byId('home-unread').innerHTML = skel(3);
+          skeletonRendered = true;
+        }
+        return loadHomeFromCache()
+          .then(function (hadCache) {
+            cacheShown = !!hadCache;
+            if (!hadCache) {
+              ensureSkeleton();
+            }
+          })
+          .then(function () {
+            return new Promise(function (resolve) {
+              google.script.run
+                .withSuccessHandler(function (d) {
+                  renderHomeView(d);
+                  cacheHomePayload(d);
+                  resolve(true);
+                })
+                .withFailureHandler(function (e) {
+                  notify('ホーム読み込み失敗: ' + e.message, false);
+                  if (!cacheShown) {
+                    ensureSkeleton();
+                  }
+                  resolve(false);
+                })
+                .getHomeContent();
+            });
+          });
       }
 
       // ===== Tasks =====
@@ -4370,6 +4497,28 @@
         );
       }
 
+      function loadTasksFromCache(scope) {
+        return readCacheEntry('tasks:' + scope).then(function (entry) {
+          if (!entry || !entry.value) return false;
+          var payload = entry.value || {};
+          var rows = normalizeArray(payload.rows);
+          var meta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+          TASK_STATE[scope].rows = rows;
+          TASK_STATE[scope].meta = meta;
+          TASK_STATE[scope].loaded = true;
+          TASK_STATE[scope].loading = false;
+          renderTaskList(scope);
+          return true;
+        });
+      }
+
+      function cacheTasks(scope, rows, meta) {
+        return writeCacheEntry('tasks:' + scope, {
+          rows: Array.isArray(rows) ? rows : [],
+          meta: meta && typeof meta === 'object' ? meta : {},
+        });
+      }
+
       function ensureTaskBootstrap() {
         if (TASKS_BOOTSTRAPPED) return;
         TASKS_BOOTSTRAPPED = true;
@@ -4378,140 +4527,186 @@
         TASK_STATE.my.meta = (INITIAL_MY_TASK_PAYLOAD && INITIAL_MY_TASK_PAYLOAD.meta) || {};
         TASK_STATE.my.loaded = initialRows.length > 0;
         renderTaskList('my');
+        if (initialRows.length) {
+          cacheTasks('my', initialRows, TASK_STATE.my.meta);
+        }
       }
 
       function loadMyTasks() {
         var scope = 'my';
-        return new Promise(function (resolve) {
-          if (!HAS_ACTIVE_EMAIL) {
-            renderTaskList(scope);
-            if (!AUTH_NOTICE_SHOWN) {
-              notify(AUTH_NOTICE_MESSAGE, false);
-              AUTH_NOTICE_SHOWN = true;
-            }
-            resolve(false);
-            return;
+        if (!HAS_ACTIVE_EMAIL) {
+          renderTaskList(scope);
+          if (!AUTH_NOTICE_SHOWN) {
+            notify(AUTH_NOTICE_MESSAGE, false);
+            AUTH_NOTICE_SHOWN = true;
           }
-          if (!(globalThis.google && google.script && google.script.run)) {
-            setTaskError(
-              scope,
-              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-            );
-            resolve(false);
-            return;
-          }
-          setTaskLoading(scope, true);
-          google.script.run
-            .withSuccessHandler(function (result) {
-              var payload = extractTaskPayload(result);
-              TASK_STATE.my.rows = payload.rows;
-              TASK_STATE.my.meta = {};
-              TASK_STATE.my.loaded = true;
-              setTaskLoading(scope, false);
-              renderTaskList(scope);
-              resolve(true);
-            })
-            .withFailureHandler(function (error) {
-              setTaskLoading(scope, false);
-              setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
-              notify(
-                'マイタスク取得失敗: ' + (error && error.message ? error.message : error),
-                false
-              );
-              resolve(false);
-            })
-            .listMyTasks();
-        });
-      }
-
-      function loadCreatedTasks() {
-        var scope = 'from';
-        return new Promise(function (resolve) {
-          if (!(globalThis.google && google.script && google.script.run)) {
-            setTaskError(
-              scope,
-              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-            );
-            resolve(false);
-            return;
-          }
-          setTaskLoading(scope, true);
-          google.script.run
-            .withSuccessHandler(function (result) {
-              var payload = extractTaskPayload(result);
-              TASK_STATE.from.rows = payload.rows;
-              TASK_STATE.from.meta = {};
-              TASK_STATE.from.loaded = true;
-              setTaskLoading(scope, false);
-              renderTaskList(scope);
-              resolve(true);
-            })
-            .withFailureHandler(function (error) {
-              setTaskLoading(scope, false);
-              setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-              notify(
-                '作成したタスクの取得に失敗しました: ' +
-                  (error && error.message ? error.message : error),
-                false
-              );
-              resolve(false);
-            })
-            .listCreatedTasks(null);
-        });
-      }
-
-      function loadAllTasks() {
-        var scope = 'all';
-        return new Promise(function (resolve) {
-          if (!IS_MANAGER) {
-            TASK_STATE.all.restricted = true;
-            renderTaskList(scope);
-            resolve(false);
-            return;
-          }
-          if (!(globalThis.google && google.script && google.script.run)) {
-            setTaskError(
-              scope,
-              'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-            );
-            resolve(false);
-            return;
-          }
-          setTaskLoading(scope, true);
-          google.script.run
-            .withSuccessHandler(function (result) {
-              var payload = extractTaskPayload(result);
-              if (payload.meta && payload.meta.managerOnly && !payload.meta.isManager) {
-                TASK_STATE.all.restricted = true;
-                setTaskLoading(scope, false);
-                renderTaskList(scope);
-                if (!MANAGER_NOTICE_SHOWN) {
-                  notify('全体のタスク閲覧には管理者権限が必要です。', false);
-                  MANAGER_NOTICE_SHOWN = true;
+          return Promise.resolve(false);
+        }
+        var cacheShown = false;
+        return loadTasksFromCache(scope)
+          .catch(function () {
+            return false;
+          })
+          .then(function (hadCache) {
+            cacheShown = !!hadCache;
+            return new Promise(function (resolve) {
+              if (!(globalThis.google && google.script && google.script.run)) {
+                if (!cacheShown) {
+                  setTaskError(
+                    scope,
+                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                  );
                 }
                 resolve(false);
                 return;
               }
-              TASK_STATE.all.rows = payload.rows;
-              TASK_STATE.all.meta = {};
-              TASK_STATE.all.loaded = true;
-              TASK_STATE.all.restricted = false;
-              setTaskLoading(scope, false);
-              renderTaskList(scope);
-              resolve(true);
-            })
-            .withFailureHandler(function (error) {
-              setTaskLoading(scope, false);
-              setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-              notify(
-                '全体タスクの取得に失敗しました: ' +
-                  (error && error.message ? error.message : error),
-                false
-              );
-              resolve(false);
-            })
-            .listAllTasks(null);
-        });
+              if (!cacheShown) {
+                setTaskLoading(scope, true);
+              }
+              google.script.run
+                .withSuccessHandler(function (result) {
+                  var payload = extractTaskPayload(result);
+                  TASK_STATE.my.rows = payload.rows;
+                  TASK_STATE.my.meta = payload.meta || {};
+                  TASK_STATE.my.loaded = true;
+                  TASK_STATE.my.loading = false;
+                  renderTaskList(scope);
+                  cacheTasks(scope, payload.rows, payload.meta);
+                  resolve(true);
+                })
+                .withFailureHandler(function (error) {
+                  TASK_STATE.my.loading = false;
+                  if (!cacheShown) {
+                    setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
+                  }
+                  notify(
+                    'マイタスク取得失敗: ' + (error && error.message ? error.message : error),
+                    false
+                  );
+                  resolve(false);
+                })
+                .listMyTasks();
+            });
+          });
+      }
+
+      function loadCreatedTasks() {
+        var scope = 'from';
+        var cacheShown = false;
+        return loadTasksFromCache(scope)
+          .catch(function () {
+            return false;
+          })
+          .then(function (hadCache) {
+            cacheShown = !!hadCache;
+            return new Promise(function (resolve) {
+              if (!(globalThis.google && google.script && google.script.run)) {
+                if (!cacheShown) {
+                  setTaskError(
+                    scope,
+                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                  );
+                }
+                resolve(false);
+                return;
+              }
+              if (!cacheShown) {
+                setTaskLoading(scope, true);
+              }
+              google.script.run
+                .withSuccessHandler(function (result) {
+                  var payload = extractTaskPayload(result);
+                  TASK_STATE.from.rows = payload.rows;
+                  TASK_STATE.from.meta = payload.meta || {};
+                  TASK_STATE.from.loaded = true;
+                  TASK_STATE.from.loading = false;
+                  renderTaskList(scope);
+                  cacheTasks(scope, payload.rows, payload.meta);
+                  resolve(true);
+                })
+                .withFailureHandler(function (error) {
+                  TASK_STATE.from.loading = false;
+                  if (!cacheShown) {
+                    setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+                  }
+                  notify(
+                    '作成したタスクの取得に失敗しました: ' +
+                      (error && error.message ? error.message : error),
+                    false
+                  );
+                  resolve(false);
+                })
+                .listCreatedTasks(null);
+            });
+          });
+      }
+
+      function loadAllTasks() {
+        var scope = 'all';
+        if (!IS_MANAGER) {
+          TASK_STATE.all.restricted = true;
+          renderTaskList(scope);
+          return Promise.resolve(false);
+        }
+        var cacheShown = false;
+        return loadTasksFromCache(scope)
+          .catch(function () {
+            return false;
+          })
+          .then(function (hadCache) {
+            cacheShown = !!hadCache;
+            return new Promise(function (resolve) {
+              if (!(globalThis.google && google.script && google.script.run)) {
+                if (!cacheShown) {
+                  setTaskError(
+                    scope,
+                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                  );
+                }
+                resolve(false);
+                return;
+              }
+              if (!cacheShown) {
+                setTaskLoading(scope, true);
+              }
+              google.script.run
+                .withSuccessHandler(function (result) {
+                  var payload = extractTaskPayload(result);
+                  if (payload.meta && payload.meta.managerOnly && !payload.meta.isManager) {
+                    TASK_STATE.all.restricted = true;
+                    TASK_STATE.all.loading = false;
+                    renderTaskList(scope);
+                    if (!MANAGER_NOTICE_SHOWN) {
+                      notify('全体のタスク閲覧には管理者権限が必要です。', false);
+                      MANAGER_NOTICE_SHOWN = true;
+                    }
+                    resolve(false);
+                    return;
+                  }
+                  TASK_STATE.all.rows = payload.rows;
+                  TASK_STATE.all.meta = payload.meta || {};
+                  TASK_STATE.all.loaded = true;
+                  TASK_STATE.all.restricted = false;
+                  TASK_STATE.all.loading = false;
+                  renderTaskList(scope);
+                  cacheTasks(scope, payload.rows, payload.meta);
+                  resolve(true);
+                })
+                .withFailureHandler(function (error) {
+                  TASK_STATE.all.loading = false;
+                  if (!cacheShown) {
+                    setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+                  }
+                  notify(
+                    '全体タスクの取得に失敗しました: ' +
+                      (error && error.message ? error.message : error),
+                    false
+                  );
+                  resolve(false);
+                })
+                .listAllTasks(null);
+            });
+          });
       }
 
       function activateTaskTab(tab, shouldLoad) {
@@ -4761,49 +4956,100 @@
         }
         return rows;
       }
+      function getMessagesCacheKey(folderId, unreadOnly) {
+        var folder = folderId ? String(folderId) : 'all';
+        return 'messages:' + folder + ':unread:' + (unreadOnly ? '1' : '0');
+      }
+      function loadMessagesFromCache(cacheKey) {
+        return readCacheEntry(cacheKey).then(function (entry) {
+          if (!entry || !entry.value) return null;
+          var rows = normalizeArray(entry.value.rows);
+          return { rows: rows, empty: entry.value.empty };
+        });
+      }
+      function cacheMessages(cacheKey, rows) {
+        return writeCacheEntry(cacheKey, {
+          rows: Array.isArray(rows) ? rows : [],
+          empty: !rows || rows.length === 0,
+        });
+      }
+      function renderMessageList(rows) {
+        var list = Array.isArray(rows) ? rows : [];
+        if (!list.length) {
+          return '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
+        }
+        return list
+          .map(function (m) {
+            return rowMsg(m);
+          })
+          .join('');
+      }
       function setMsgLoading(loading) {
         if (loading) byId('msg-list').innerHTML = skel(6);
         var btnAll = byId('btn-msg-markall');
         if (btnAll) btnAll.disabled = !!loading;
       }
       function loadMessages() {
-        return new Promise(function (resolve) {
-          if (!HAS_ACTIVE_EMAIL) {
-            byId('msg-list').innerHTML = authRequiredCard();
-            if (!AUTH_NOTICE_SHOWN) {
-              notify(AUTH_NOTICE_MESSAGE, false);
-              AUTH_NOTICE_SHOWN = true;
-            }
-            resolve(false);
-            return;
+        if (!HAS_ACTIVE_EMAIL) {
+          byId('msg-list').innerHTML = authRequiredCard();
+          if (!AUTH_NOTICE_SHOWN) {
+            notify(AUTH_NOTICE_MESSAGE, false);
+            AUTH_NOTICE_SHOWN = true;
           }
-          setMsgLoading(true);
-          var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
-          if (folderOpt != null) folderOpt = String(folderOpt).trim();
-          if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
-          google.script.run
-            .withSuccessHandler(function (list) {
-              var rows = filterMessages(list);
-              byId('msg-list').innerHTML = rows.length
-                ? rows
-                    .map(function (m) {
-                      return rowMsg(m);
-                    })
-                    .join('')
-                : '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
-              setMsgLoading(false);
-              resolve(true);
+          return Promise.resolve(false);
+        }
+        var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
+        if (folderOpt != null) folderOpt = String(folderOpt).trim();
+        if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
+        var unreadOnlyFlag = !!(byId('flt-msg-unread') || {}).checked;
+        var searchKeyword = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
+        var useCache = !searchKeyword;
+        var cacheKey = useCache ? getMessagesCacheKey(folderOpt, unreadOnlyFlag) : null;
+        var cacheShown = false;
+        var cachePromise = useCache
+          ? loadMessagesFromCache(cacheKey).catch(function () {
+              return null;
             })
-            .withFailureHandler(function (e) {
-              notify('Failed to load messages: ' + e.message, false);
-              setMsgLoading(false);
-              resolve(false);
-            })
-            .getMessages({
-              folderId: folderOpt || undefined,
-              unreadOnly: !!(byId('flt-msg-unread') || {}).checked,
+          : Promise.resolve(null);
+        return cachePromise
+          .then(function (cached) {
+            if (cached && Array.isArray(cached.rows)) {
+              cacheShown = true;
+              byId('msg-list').innerHTML = renderMessageList(cached.rows);
+              var btnAll = byId('btn-msg-markall');
+              if (btnAll) btnAll.disabled = true;
+            } else {
+              setMsgLoading(true);
+            }
+          })
+          .then(function () {
+            return new Promise(function (resolve) {
+              google.script.run
+                .withSuccessHandler(function (list) {
+                  var rows = filterMessages(list);
+                  byId('msg-list').innerHTML = renderMessageList(rows);
+                  if (useCache) {
+                    cacheMessages(cacheKey, rows);
+                  }
+                  setMsgLoading(false);
+                  resolve(true);
+                })
+                .withFailureHandler(function (e) {
+                  notify('Failed to load messages: ' + e.message, false);
+                  if (!cacheShown) {
+                    setMsgLoading(false);
+                  } else {
+                    var btnAll = byId('btn-msg-markall');
+                    if (btnAll) btnAll.disabled = false;
+                  }
+                  resolve(false);
+                })
+                .getMessages({
+                  folderId: folderOpt || undefined,
+                  unreadOnly: unreadOnlyFlag,
+                });
             });
-        });
+          });
       }
       function toggleRead(btn, memoId, shouldRead, onComplete) {
         setButtonLoading(btn, true);
