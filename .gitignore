@@ -5,3 +5,4 @@ node_modules/
 # Mac関連
 .DS_Store
 /frontend/public/.cache
+# Cloudflare Pages は frontend/public を公開対象とし、backend/gas はローカル専用

@@ -199,6 +199,132 @@
         color: var(--text-900);
       }
 
+      /* TODO: スタイルを /css/style.css へ分離 */
+      .pwa-preview-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        max-width: 480px;
+        margin: 16px auto;
+        padding: 20px 16px calc(20px + var(--footer-h));
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(6px);
+      }
+      .pwa-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .pwa-header__title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-900);
+      }
+      .pwa-header__sync {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        border: none;
+        background: var(--primary);
+        color: var(--on-primary);
+        box-shadow: 0 10px 18px rgba(81, 124, 178, 0.28);
+      }
+      .pwa-header__sync:focus-visible {
+        outline: 3px solid rgba(81, 124, 178, 0.35);
+        outline-offset: 2px;
+      }
+      .pwa-main {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .pwa-card {
+        padding: 20px;
+        border-radius: 16px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+      }
+      .pwa-card__meta {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .pwa-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 10px;
+      }
+      .pwa-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(81, 124, 178, 0.08);
+        color: var(--text-900);
+      }
+      .pwa-list__dot {
+        width: 10px;
+        height: 10px;
+        margin-top: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+        flex-shrink: 0;
+      }
+      .pwa-footer {
+        margin-top: auto;
+        min-height: var(--footer-h);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.9), rgba(53, 86, 127, 0.92));
+        box-shadow: var(--footer-shadow);
+        padding: 8px 12px;
+      }
+      .pwa-footer__nav {
+        width: 100%;
+        display: flex;
+        justify-content: space-around;
+        gap: 8px;
+      }
+      .pwa-footer__button {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 8px 6px;
+        border-radius: 12px;
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.75rem;
+      }
+      .pwa-footer__button:focus-visible {
+        outline: 3px solid rgba(255, 255, 255, 0.4);
+        outline-offset: 2px;
+      }
+      .pwa-footer__button--active {
+        background: rgba(255, 255, 255, 0.18);
+        color: #ffffff;
+      }
+      @media (min-width: 768px) {
+        .pwa-preview-shell {
+          margin-top: 32px;
+        }
+      }
+
       /* Header */
       header.navbar {
         background: var(--primary);
@@ -1334,6 +1460,59 @@
         max-width: 520px;
       "
     ></div>
+
+    <!-- TODO: 既存UIと統合 -->
+    <section class="pwa-preview-shell" aria-label="ShiftFlow モバイルプレビュー">
+      <header class="pwa-header" aria-label="アプリ共通ヘッダー">
+        <div class="pwa-header__title">ShiftFlow</div>
+        <button
+          type="button"
+          class="pwa-header__sync"
+          id="pwaSyncPreview"
+          aria-label="最新情報を同期"
+        >
+          <span class="material-icons-outlined" aria-hidden="true">sync</span>
+        </button>
+      </header>
+      <main class="pwa-main" aria-label="ホームカード">
+        <article class="pwa-card" aria-labelledby="pwa-card-title">
+          <h2 id="pwa-card-title" class="h5 mb-2">今日のタスク</h2>
+          <p class="pwa-card__meta">
+            進行中のタスクや共有メモの更新状況がここに表示されます。
+          </p>
+          <ul class="pwa-list" aria-label="ダミータスクリスト">
+            <li>
+              <span class="pwa-list__dot" aria-hidden="true"></span>
+              朝礼メモを確認し、チームに共有する
+            </li>
+            <li>
+              <span class="pwa-list__dot" aria-hidden="true"></span>
+              交代スタッフの引き継ぎ事項をチェック
+            </li>
+            <li>
+              <span class="pwa-list__dot" aria-hidden="true"></span>
+              ヒヤリハットの報告をレビュー
+            </li>
+          </ul>
+        </article>
+      </main>
+      <footer class="pwa-footer" aria-label="アプリ共通フッター">
+        <nav class="pwa-footer__nav" aria-label="メインナビゲーション">
+          <button type="button" class="pwa-footer__button pwa-footer__button--active" aria-label="ホーム">
+            <span class="material-icons-outlined" aria-hidden="true">home</span>
+            <span>ホーム</span>
+          </button>
+          <button type="button" class="pwa-footer__button" aria-label="タスク">
+            <span class="material-icons-outlined" aria-hidden="true">checklist</span>
+            <span>タスク</span>
+          </button>
+          <button type="button" class="pwa-footer__button" aria-label="メッセージ">
+            <span class="material-icons-outlined" aria-hidden="true">mail</span>
+            <span>メッセ</span>
+          </button>
+        </nav>
+      </footer>
+    </section>
 
     <header class="navbar navbar-expand-md d-print-none">
       <div class="container-xl">
