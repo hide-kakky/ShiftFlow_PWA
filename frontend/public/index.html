@@ -159,7 +159,7 @@
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
         --footer-h: 56px;
         --footer-extra: 12px;
-        --header-h: 48px;
+        --header-h: 44px;
         --fade: 220ms;
         --body-bg: linear-gradient(
             180deg,
@@ -434,8 +434,8 @@
         color: var(--on-primary);
         border-bottom: 1px solid rgba(255, 255, 255, 0.18);
         min-height: var(--header-h);
-        padding-top: 2px;
-        padding-bottom: 4px;
+        padding-top: 1px;
+        padding-bottom: 3px;
       }
       header .container-xl {
         padding-top: 0;
@@ -452,9 +452,9 @@
       }
       .navbar-brand.app-brand .brand-mark {
         position: relative;
-        width: 36px;
-        height: 36px;
-        border-radius: 12px;
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -485,15 +485,15 @@
       }
       .navbar-brand.app-brand .brand-icon {
         position: relative;
-        width: 24px;
-        height: 24px;
+        width: 22px;
+        height: 22px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
       }
       .navbar-brand.app-brand .brand-icon .material-icons,
       .navbar-brand.app-brand .brand-icon .material-icons-outlined {
-        font-size: 22px;
+        font-size: 20px;
         line-height: 1;
         color: #ffffff;
         text-shadow: 0 14px 28px rgba(15, 23, 42, 0.32);
@@ -503,7 +503,7 @@
       }
       .navbar-brand.app-brand .brand-text-main {
         font-weight: 700;
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         letter-spacing: 0.07em;
         text-transform: uppercase;
       }
@@ -512,18 +512,18 @@
           gap: 10px;
         }
         .navbar-brand.app-brand .brand-mark {
-          width: 32px;
-          height: 32px;
-          border-radius: 10px;
+          width: 30px;
+          height: 30px;
+          border-radius: 9px;
         }
         .navbar-brand.app-brand .brand-text-main {
-          font-size: 1.05rem;
+          font-size: 1rem;
         }
         header.navbar {
           position: sticky;
           top: 0;
           z-index: 1080;
-          padding-top: calc(2px + var(--safe-top));
+          padding-top: calc(1px + var(--safe-top));
           backdrop-filter: blur(12px);
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
         }
@@ -542,11 +542,11 @@
         background: var(--primary);
         border-top: 1px solid rgba(255, 255, 255, 0.12);
         border-bottom: 1px solid var(--divider);
-        padding: 6px 0;
+        padding: 9px 0;
       }
       .topbar .nav-link {
         color: var(--on-primary);
-        padding: 0.45rem 0.85rem;
+        padding: 0.6rem 1rem;
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -562,7 +562,7 @@
       }
       .topbar .nav-link .material-icons,
       .topbar .nav-link .material-icons-outlined {
-        font-size: 26px;
+        font-size: 28px;
       }
       .badge-unread {
         --s: 20px;
@@ -865,13 +865,13 @@
 
       /* Layout / cards */
       .page-body {
-        padding-top: 6px;
+        padding-top: 4px;
         padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 12px);
         min-height: calc(100vh - var(--header-h) - var(--footer-h));
       }
       @media (max-width: 768px) {
         .page-body {
-          padding-top: calc(var(--header-h) + var(--safe-top) - 8px);
+          padding-top: calc(var(--header-h) + var(--safe-top) - 12px);
           min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
         }
       }
@@ -1949,7 +1949,7 @@
       <div class="views-wrapper container-xl" id="viewsWrapper">
         <div class="views-track" id="viewsTrack">
           <section class="view-panel fade-container show" id="view-home">
-            <div class="d-flex justify-content-between align-items-center mt-2">
+            <div class="d-flex justify-content-between align-items-center mt-0">
               <div class="section-head">
                 <span class="material-icons">event</span>
                 <h3 class="m-0">Today's Task</h3>
@@ -1958,7 +1958,7 @@
             </div>
             <div id="home-today-tasks" class="mt-2"></div>
 
-            <div class="d-flex justify-content-between align-items-center mt-4">
+            <div class="d-flex justify-content-between align-items-center mt-2">
               <div class="section-head">
                 <span class="material-icons">mark_email_unread</span>
                 <h3 class="m-0">New Message</h3>
@@ -1969,7 +1969,7 @@
           </section>
 
           <section class="view-panel fade-container is-hidden" id="view-tasks">
-            <div class="task-header mt-2">
+            <div class="task-header mt-0">
               <div class="task-title-wrap">
                 <span class="material-icons-outlined task-title-icon">send</span>
                 <h3 class="view-title">TASKS</h3>
@@ -2050,7 +2050,7 @@
           </section>
 
           <section class="view-panel fade-container is-hidden" id="view-messages">
-            <div class="task-header mt-2">
+            <div class="task-header mt-0">
               <div class="task-title-wrap">
                 <span class="material-icons-outlined task-title-icon">mail</span>
                 <h3 class="view-title">MESSAGES</h3>
@@ -2097,7 +2097,7 @@
           </section>
 
           <section class="view-panel fade-container is-hidden" id="view-settings">
-            <h3 class="mt-2"><span class="material-icons align-middle me-1">settings</span>設定</h3>
+            <h3 class="mt-0"><span class="material-icons align-middle me-1">settings</span>設定</h3>
             <p class="text-muted mb-3 small">
               個人設定を整えて、チームでの表示や体験を自分好みにカスタマイズしましょう。
             </p>
@@ -4032,8 +4032,11 @@
         var ready = false;
         var refreshing = false;
         var startY = 0;
+        var startX = 0;
+        var interactionMode = null;
         var startedAt = 0;
         var scrollEl = document.scrollingElement || document.documentElement;
+        var horizontalGuard = 10;
 
         function atTop() {
           var top =
@@ -4089,6 +4092,8 @@
         function resetPull() {
           pulling = false;
           startY = 0;
+          startX = 0;
+          interactionMode = null;
           setReady(false);
         }
         function triggerRefresh() {
@@ -4127,6 +4132,8 @@
             if (e.touches && e.touches.length > 1) return;
             var touch = e.touches ? e.touches[0] : e;
             startY = touch.clientY;
+            startX = touch.clientX;
+            interactionMode = null;
             pulling = true;
             setReady(false);
           },
@@ -4143,7 +4150,30 @@
               return;
             }
             var touch = e.touches ? e.touches[0] : e;
+            var diffX = touch.clientX - startX;
             var diff = touch.clientY - startY;
+            var absX = Math.abs(diffX);
+            var absY = Math.abs(diff);
+            if (interactionMode === null) {
+              if (absX > horizontalGuard && absX > absY) {
+                interactionMode = 'horizontal';
+                hide();
+                resetPull();
+                return;
+              }
+              if (diff > 0 && (absY >= absX || absY > horizontalGuard)) {
+                interactionMode = 'vertical';
+              }
+            }
+            if (interactionMode === 'horizontal') {
+              return;
+            }
+            if (interactionMode === null) {
+              if (diff <= 0) {
+                setReady(false);
+              }
+              return;
+            }
             if (diff <= 0) {
               setReady(false);
               return;
