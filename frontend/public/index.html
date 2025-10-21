@@ -1565,6 +1565,53 @@
         font-size: 0.9rem;
         color: #b91c1c;
       }
+      body.bootstrapping header.navbar,
+      body.bootstrapping nav.topbar,
+      body.bootstrapping .footer-nav,
+      body.bootstrapping main.page-body,
+      body.bootstrapping .fab,
+      body.bootstrapping #notification-area {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      .bootstrap-loading {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(10, 18, 40, 0.55);
+        backdrop-filter: blur(8px);
+        z-index: 2500;
+      }
+      body.bootstrapping .bootstrap-loading {
+        display: flex;
+      }
+      .bootstrap-loading__card {
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 20px;
+        padding: 32px 28px;
+        box-shadow: 0 28px 60px rgba(15, 23, 42, 0.32);
+        text-align: center;
+        max-width: 320px;
+        width: 100%;
+      }
+      :root[data-theme='dark'] .bootstrap-loading__card {
+        background: rgba(9, 17, 35, 0.9);
+        box-shadow: 0 28px 60px rgba(2, 8, 20, 0.6);
+      }
+      .bootstrap-loading__card .spinner-border {
+        width: 3rem;
+        height: 3rem;
+        margin-bottom: 18px;
+      }
+      .bootstrap-loading__text {
+        margin: 0;
+        font-weight: 600;
+        color: var(--text-900);
+      }
     </style>
   </head>
   <body>
@@ -1596,6 +1643,13 @@
         max-width: 520px;
       "
     ></div>
+
+    <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true">
+      <div class="bootstrap-loading__card" role="status" aria-live="polite">
+        <div class="spinner-border text-primary" role="presentation"></div>
+        <p class="bootstrap-loading__text">ShiftFlow のデータを読み込んでいます…</p>
+      </div>
+    </div>
 
     <!-- TODO: 既存UIと統合 -->
     <section class="pwa-preview-shell" aria-label="ShiftFlow モバイルプレビュー">
@@ -2631,16 +2685,32 @@
           } else {
             composeSelect.value = '';
           }
-        }
       }
+    }
 
-      function isAuthError(err) {
-        if (!err) return false;
-        if (err.authRequired === true) return true;
-        if (err.status === 401 || err.status === 403) return true;
-        var msg = String(err.message || '');
-        return msg.indexOf('Non-JSON response from backend') !== -1;
+    function setBootstrapLoading(isLoading) {
+      var body = document.body;
+      if (body) {
+        body.classList.toggle('bootstrapping', !!isLoading);
       }
+      var loadingEl = byId('bootstrap-loading');
+      if (!loadingEl) return;
+      if (isLoading) {
+        loadingEl.setAttribute('aria-hidden', 'false');
+        loadingEl.setAttribute('aria-busy', 'true');
+      } else {
+        loadingEl.setAttribute('aria-hidden', 'true');
+        loadingEl.removeAttribute('aria-busy');
+      }
+    }
+
+    function isAuthError(err) {
+      if (!err) return false;
+      if (err.authRequired === true) return true;
+      if (err.status === 401 || err.status === 403) return true;
+      var msg = String(err.message || '');
+      return msg.indexOf('Non-JSON response from backend') !== -1;
+    }
 
       function applyBootstrapState(bootstrap) {
         var normalized = bootstrap || {};
@@ -2765,18 +2835,19 @@
         event.preventDefault();
         target.disabled = true;
         target.setAttribute('aria-busy', 'true');
-        var retryPromise = hydrateBootstrap().then(
-          function () {
+        setBootstrapLoading(true);
+        hydrateBootstrap()
+          .then(function () {
             refreshDataAfterBootstrap();
-          },
-          function (err) {
+          })
+          .catch(function (err) {
             console.error('Auth retry failed:', err);
-          }
-        );
-        retryPromise.then(function () {
-          target.disabled = false;
-          target.removeAttribute('aria-busy');
-        });
+          })
+          .then(function () {
+            setBootstrapLoading(false);
+            target.disabled = false;
+            target.removeAttribute('aria-busy');
+          });
       });
 
       toggleManagerUI();
@@ -3371,13 +3442,19 @@
         }
         if (BOOTSTRAP_STARTED) return;
         BOOTSTRAP_STARTED = true;
+        setBootstrapLoading(true);
         hydrateBootstrap()
           .then(function () {
-            ensureTaskBootstrap();
-            navigateTo('home');
+            try {
+              ensureTaskBootstrap();
+              navigateTo('home');
+            } finally {
+              setBootstrapLoading(false);
+            }
           })
           .catch(function (err) {
             BOOTSTRAP_STARTED = false;
+            setBootstrapLoading(false);
             if (isAuthError && isAuthError(err)) {
               clearAuthToken();
               showAuthOverlay('セッションが切れました。もう一度サインインしてください。');

@@ -55,6 +55,134 @@ const _sheetCache = {};
 let __CURRENT_REQUEST_EMAIL = '';
 let __CURRENT_REQUEST_NAME = '';
 
+/** リクエストスコープのデータキャッシュ */
+const __REQUEST_CACHE = {};
+const REQUEST_CACHE_KEYS = {
+  USER_INFO_PREFIX: 'userInfo:',
+  ACTIVE_USERS: 'activeUsers',
+  ACTIVE_FOLDERS: 'activeFolders',
+  TASK_TABLE: 'taskTable',
+};
+const SCRIPT_CACHE_KEYS = {
+  ACTIVE_USERS: 'SF_ACTIVE_USERS_V1',
+  ACTIVE_FOLDERS: 'SF_ACTIVE_FOLDERS_V1',
+};
+
+function _getRequestCacheValue(key) {
+  if (!key) return undefined;
+  return Object.prototype.hasOwnProperty.call(__REQUEST_CACHE, key)
+    ? __REQUEST_CACHE[key]
+    : undefined;
+}
+
+function _setRequestCacheValue(key, value) {
+  if (!key) return;
+  __REQUEST_CACHE[key] = value;
+}
+
+function _invalidateRequestCache(key) {
+  if (!key) return;
+  if (Object.prototype.hasOwnProperty.call(__REQUEST_CACHE, key)) {
+    delete __REQUEST_CACHE[key];
+  }
+}
+
+function _clearRequestCache() {
+  Object.keys(__REQUEST_CACHE).forEach(function (key) {
+    delete __REQUEST_CACHE[key];
+  });
+}
+
+function _getScriptCacheJSON(key) {
+  if (!key) return null;
+  try {
+    const cache = CacheService.getScriptCache();
+    const raw = cache.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+}
+
+function _setScriptCacheJSON(key, value, ttlSeconds) {
+  if (!key) return;
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized || serialized.length > 90 * 1024) {
+      return;
+    }
+    const cache = CacheService.getScriptCache();
+    cache.put(key, serialized, Math.max(1, ttlSeconds || 300));
+  } catch (err) {
+  }
+}
+
+function _invalidateScriptCacheKeys(keys) {
+  if (!Array.isArray(keys) || !keys.length) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    keys.forEach(function (key) {
+      if (key) cache.remove(key);
+    });
+  } catch (err) {
+  }
+}
+
+function _getCachedValue(requestKey, scriptKey, ttlSeconds, loader) {
+  if (requestKey) {
+    const hit = _getRequestCacheValue(requestKey);
+    if (hit !== undefined) {
+      return hit;
+    }
+  }
+  if (scriptKey) {
+    const cached = _getScriptCacheJSON(scriptKey);
+    if (cached !== null) {
+      if (requestKey) _setRequestCacheValue(requestKey, cached);
+      return cached;
+    }
+  }
+  const value = typeof loader === 'function' ? loader() : null;
+  if (requestKey) {
+    _setRequestCacheValue(requestKey, value);
+  }
+  if (scriptKey && ttlSeconds && ttlSeconds > 0) {
+    _setScriptCacheJSON(scriptKey, value, ttlSeconds);
+  }
+  return value;
+}
+
+function _invalidateCacheGroup(group) {
+  if (group === 'ACTIVE_USERS') {
+    _invalidateRequestCache(REQUEST_CACHE_KEYS.ACTIVE_USERS);
+    _invalidateScriptCacheKeys([SCRIPT_CACHE_KEYS.ACTIVE_USERS]);
+    return;
+  }
+  if (group === 'ACTIVE_FOLDERS') {
+    _invalidateRequestCache(REQUEST_CACHE_KEYS.ACTIVE_FOLDERS);
+    _invalidateScriptCacheKeys([SCRIPT_CACHE_KEYS.ACTIVE_FOLDERS]);
+    return;
+  }
+  if (group === 'TASK_TABLE') {
+    _invalidateRequestCache(REQUEST_CACHE_KEYS.TASK_TABLE);
+  }
+}
+
+function _invalidateUserInfoCache(email) {
+  const normalized = _normalizeEmail(email);
+  if (normalized) {
+    _invalidateRequestCache(REQUEST_CACHE_KEYS.USER_INFO_PREFIX + normalized);
+  }
+  const raw = String(email || '').trim();
+  const keys = [];
+  if (normalized) keys.push('user_info_' + normalized);
+  if (raw && raw !== normalized) keys.push('user_info_' + raw);
+  if (keys.length) {
+    _invalidateScriptCacheKeys(keys);
+  }
+}
+
 // ====== 認証設定（削除） ======
 // GCPクライアントIDは不要になったため削除します。
 // const OAUTH_CLIENT_ID = '...';
@@ -548,6 +676,8 @@ function _ensureUserRecord_() {
   }
   sh.appendRow(newRow);
   _audit('user', email, 'auto_register', {});
+  _invalidateCacheGroup('ACTIVE_USERS');
+  _invalidateUserInfoCache(email);
 }
 
 // ====== ユーザー情報 ======
@@ -611,17 +741,28 @@ function getLoggedInUserInfo() {
     };
   }
 
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'user_info_' + normalizedEmail;
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
+  const requestCacheKey = REQUEST_CACHE_KEYS.USER_INFO_PREFIX + normalizedEmail;
+  const requestHit = _getRequestCacheValue(requestCacheKey);
+  if (requestHit !== undefined) {
+    return requestHit;
+  }
+
+  const scriptCacheKey = 'user_info_' + normalizedEmail;
+  const scriptHit = _getScriptCacheJSON(scriptCacheKey);
+  if (scriptHit) {
+    _setRequestCacheValue(requestCacheKey, scriptHit);
+    return scriptHit;
   }
 
   const userSheet = _openSheet('M_Users');
   const header = _ensureColumns(userSheet, USER_SHEET_COLUMNS);
   const THEME_COL = header['Theme'];
-  const data = userSheet.getDataRange().getValues();
+  const EMAIL_COL = header['Email'];
+  const DISPLAY_COL = header['DisplayName'];
+  const ROLE_COL = header['Role'];
+  const IMAGE_COL = header['ProfileImage'];
+  const lastRow = userSheet.getLastRow();
+  const lastColumn = userSheet.getLastColumn();
   let info = {
     name: 'ゲスト',
     imageUrl: PROFILE_PLACEHOLDER_URL,
@@ -631,30 +772,25 @@ function getLoggedInUserInfo() {
     theme: 'light',
   };
 
-  for (let i = 1; i < data.length; i++) {
-    if (_normalizeEmail(data[i][header['Email']]) === normalizedEmail) {
-      const profileMeta = _resolveProfileImageInfo(data[i][header['ProfileImage']], email);
+  if (EMAIL_COL != null && lastRow >= 2 && lastColumn >= 1) {
+    const values = userSheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i];
+      if (_normalizeEmail(row[EMAIL_COL]) !== normalizedEmail) continue;
+      const profileMeta = _resolveProfileImageInfo(IMAGE_COL != null ? row[IMAGE_COL] : '', email);
       info = {
-        name: data[i][header['DisplayName']] || 'ユーザー',
+        name: (DISPLAY_COL != null ? row[DISPLAY_COL] : '') || 'ユーザー',
         imageUrl: profileMeta.imageUrl,
         imageName: profileMeta.imageName,
-        role: data[i][header['Role']] || '一般',
+        role: (ROLE_COL != null ? row[ROLE_COL] : '') || '一般',
         email: email,
-        theme: THEME_COL != null && THEME_COL >= 0 ? data[i][THEME_COL] || 'light' : 'light',
+        theme: THEME_COL != null ? row[THEME_COL] || 'light' : 'light',
       };
       break;
     }
   }
-  try {
-    const payload = JSON.stringify(info);
-    if (payload.length <= 90 * 1024) {
-      cache.put(cacheKey, payload, 3600);
-    } else {
-      // Skip caching when payload is too large
-    }
-  } catch (e) {
-    // Cache write failures are non-fatal
-  }
+  _setRequestCacheValue(requestCacheKey, info);
+  _setScriptCacheJSON(scriptCacheKey, info, 3600);
   return info;
 }
 
@@ -740,51 +876,90 @@ function isManagerUser() {
 }
 
 function listActiveUsers() {
-  const sh = _openSheet('M_Users');
-  const header = _ensureColumns(sh, USER_SHEET_COLUMNS);
-  const values = sh.getDataRange().getValues();
-  const res = [];
+  return _getCachedValue(
+    REQUEST_CACHE_KEYS.ACTIVE_USERS,
+    SCRIPT_CACHE_KEYS.ACTIVE_USERS,
+    300,
+    function () {
+      const sh = _openSheet('M_Users');
+      const header = _ensureColumns(sh, USER_SHEET_COLUMNS);
+      const EMAIL_COL = header['Email'];
+      const DISPLAY_COL = header['DisplayName'];
+      const ROLE_COL = header['Role'];
+      const ACTIVE_COL = header['IsActive'];
+      if (EMAIL_COL == null || ACTIVE_COL == null) return [];
 
-  for (let i = 1; i < values.length; i++) {
-    const isActiveValue = values[i][header['IsActive']];
-    const isActive =
-      String(isActiveValue || '')
-        .trim()
-        .toUpperCase() === 'TRUE';
+      const lastRow = sh.getLastRow();
+      const lastColumn = sh.getLastColumn();
+      if (lastRow < 2 || lastColumn < 1) {
+        return [];
+      }
 
-    if (isActive) {
-      res.push({
-        email: values[i][header['Email']],
-        name: values[i][header['DisplayName']],
-        role: values[i][header['Role']] || '一般',
-      });
+      const values = sh.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+      const res = [];
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        const isActive =
+          String(row[ACTIVE_COL] || '')
+            .trim()
+            .toUpperCase() === 'TRUE';
+        if (!isActive) continue;
+        res.push({
+          email: row[EMAIL_COL],
+          name: DISPLAY_COL != null ? row[DISPLAY_COL] : '',
+          role: ROLE_COL != null ? row[ROLE_COL] || '一般' : '一般',
+        });
+      }
+      if (res.length === 0) {
+        return [
+          { id: '全体', name: '全体' },
+          { id: 'ブッフェ', name: 'ブッフェ' },
+          { id: 'レセプション', name: 'レセプション' },
+          { id: 'ホール', name: 'ホール' },
+        ];
+      }
+      return res;
     }
-  }
-  return res;
+  );
 }
 function listActiveFolders() {
-  const sh = _openSheet('M_Folders');
-  const hdr = _getHeaderMap(sh);
-  const v = sh.getDataRange().getValues();
-  const res = [];
-  for (let i = 1; i < v.length; i++) {
-    if (String(v[i][hdr['IsArchived']]) !== 'TRUE') {
-      const rawId = String(v[i][hdr['FolderID']] || '').trim();
-      const rawName = String(v[i][hdr['FolderName']] || '').trim();
-      const effectiveId = rawId || rawName;
-      if (!effectiveId) continue;
-      res.push({ id: effectiveId, name: rawName || effectiveId });
+  return _getCachedValue(
+    REQUEST_CACHE_KEYS.ACTIVE_FOLDERS,
+    SCRIPT_CACHE_KEYS.ACTIVE_FOLDERS,
+    300,
+    function () {
+      const sh = _openSheet('M_Folders');
+      const hdr = _getHeaderMap(sh);
+      const ID_COL = hdr['FolderID'];
+      const NAME_COL = hdr['FolderName'];
+      const ARCHIVE_COL = hdr['IsArchived'];
+      const lastRow = sh.getLastRow();
+      const lastColumn = sh.getLastColumn();
+      if (lastRow < 2 || lastColumn < 1) {
+        return [];
+      }
+      const values = sh.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+      const res = [];
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        if (ARCHIVE_COL != null && String(row[ARCHIVE_COL]) === 'TRUE') continue;
+        const rawId = ID_COL != null ? String(row[ID_COL] || '').trim() : '';
+        const rawName = NAME_COL != null ? String(row[NAME_COL] || '').trim() : '';
+        const effectiveId = rawId || rawName;
+        if (!effectiveId) continue;
+        res.push({ id: effectiveId, name: rawName || effectiveId });
+      }
+      if (res.length === 0) {
+        return [
+          { id: '全体', name: '全体' },
+          { id: 'ブッフェ', name: 'ブッフェ' },
+          { id: 'レセプション', name: 'レセプション' },
+          { id: 'ホール', name: 'ホール' },
+        ];
+      }
+      return res;
     }
-  }
-  if (res.length === 0) {
-    res.push(
-      { id: '全体', name: '全体' },
-      { id: 'ブッフェ', name: 'ブッフェ' },
-      { id: 'レセプション', name: 'レセプション' },
-      { id: 'ホール', name: 'ホール' }
-    );
-  }
-  return res;
+  );
 }
 
 function cleanUpArchiveData() {
@@ -843,34 +1018,39 @@ function cleanUpArchiveData() {
 
 // ====== doGet ======
 function doGet(e) {
-  if (e && e.parameter && e.parameter.route) {
-    const route = e.parameter.route;
-    if (route === 'ping') {
+  _clearRequestCache();
+  try {
+    if (e && e.parameter && e.parameter.route) {
+      const route = e.parameter.route;
+      if (route === 'ping') {
+        return jsonResponse({
+          ok: true,
+          route: 'ping',
+          ts: new Date().toISOString(),
+        });
+      }
       return jsonResponse({
         ok: true,
-        route: 'ping',
-        ts: new Date().toISOString(),
+        route: route || 'root',
       });
     }
-    return jsonResponse({
-      ok: true,
-      route: route || 'root',
-    });
-  }
 
-  if (e && e.parameter && e.parameter.page === 'manifest') {
-    return serveManifest();
-  }
+    if (e && e.parameter && e.parameter.page === 'manifest') {
+      return serveManifest();
+    }
 
-  try {
-    _ensureUserRecord_();
-  } catch (err) {
-    Logger.log('[ShiftFlow] ensureUserRecord failed: ' + err);
-  }
+    try {
+      _ensureUserRecord_();
+    } catch (err) {
+      Logger.log('[ShiftFlow] ensureUserRecord failed: ' + err);
+    }
 
-  return HtmlService.createHtmlOutputFromFile('signin')
-    .setTitle('ShiftFlow Sign-In')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    return HtmlService.createHtmlOutputFromFile('signin')
+      .setTitle('ShiftFlow Sign-In')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  } finally {
+    _clearRequestCache();
+  }
 }
 
 // 他の関数（_ensureUserRecord_, getLoggedInUserInfoなど）は変更不要
@@ -958,6 +1138,7 @@ function addNewTask(taskObject) {
       priority: row[header['Priority']],
       assignees: assignees,
     });
+    _invalidateCacheGroup('TASK_TABLE');
     return { success: true, message: 'タスクを追加しました。' };
   } catch (e) {
     Logger.log(e);
@@ -1089,6 +1270,7 @@ function updateTask(taskObject) {
 
         _writeRow(sh, i + 1, rowValues);
         _audit('task', targetId, 'update', { payload: taskObject });
+        _invalidateCacheGroup('TASK_TABLE');
         return { success: true, message: 'タスクを更新しました。' };
       }
     }
@@ -1166,8 +1348,10 @@ function completeTask(taskId) {
             dueDate: nextDue,
             repeatRule: repeat,
           });
+          _invalidateCacheGroup('TASK_TABLE');
           return { success: true, message: 'タスクを完了にしました。（次回を生成）' };
         }
+        _invalidateCacheGroup('TASK_TABLE');
         return { success: true, message: 'タスクを完了にしました。' };
       }
     }
@@ -1203,6 +1387,7 @@ function deleteTaskById(taskId) {
       if (String(v[i][header['TaskID']] || '').trim() === targetId) {
         sh.deleteRow(i + 1);
         _audit('task', targetId, 'delete', {});
+        _invalidateCacheGroup('TASK_TABLE');
         return { success: true, message: 'タスクを削除しました。' };
       }
     }
@@ -1365,21 +1550,23 @@ function listCreatedTasks(filter) {
 }
 
 function _loadTaskTable() {
-  const sh = _openSheet('T_Tasks');
-  const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
-  const rows = sh.getDataRange().getValues();
-  const statuses = new Set();
-  const tasks = [];
-  for (let i = 1; i < rows.length; i++) {
-    const record = _buildTaskRecord(rows[i], header);
-    if (!record) continue;
-    if (record.status) statuses.add(record.status);
-    tasks.push(record);
-  }
-  return {
-    tasks: tasks,
-    statuses: Array.from(statuses).sort(),
-  };
+  return _getCachedValue(REQUEST_CACHE_KEYS.TASK_TABLE, null, 0, function () {
+    const sh = _openSheet('T_Tasks');
+    const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
+    const rows = sh.getDataRange().getValues();
+    const statuses = new Set();
+    const tasks = [];
+    for (let i = 1; i < rows.length; i++) {
+      const record = _buildTaskRecord(rows[i], header);
+      if (!record) continue;
+      if (record.status) statuses.add(record.status);
+      tasks.push(record);
+    }
+    return {
+      tasks: tasks,
+      statuses: Array.from(statuses).sort(),
+    };
+  });
 }
 
 function _findTaskRowById(rows, header, targetId) {
@@ -1977,7 +2164,8 @@ function saveUserSettings(payload) {
         if (rowChanged) {
           _writeRow(sh, i + 1, rowValues);
         }
-        CacheService.getScriptCache().remove('user_info_' + normalizedEmail);
+        _invalidateUserInfoCache(email);
+        _invalidateCacheGroup('ACTIVE_USERS');
         const response = { success: true, message: '設定を保存しました。' };
         if (resultMeta) {
           response.imageUrl = resultMeta.imageUrl;
@@ -2011,7 +2199,8 @@ function updateUserRole(arg) {
         const rowValues = v[i].slice();
         rowValues[hdr['Role']] = arg.role || '一般';
         _writeRow(sh, i + 1, rowValues);
-        CacheService.getScriptCache().remove('user_info_' + arg.email);
+        _invalidateUserInfoCache(arg.email);
+        _invalidateCacheGroup('ACTIVE_USERS');
         _audit('admin', arg.email, 'role_update', { to: arg.role || '一般' });
         return { success: true, message: 'Roleを更新しました。' };
       }
@@ -2031,7 +2220,7 @@ function updateUserRole(arg) {
 // ====== キャッシュクリア ======
 function clearCache() {
   const email = _getCurrentEmail();
-  CacheService.getScriptCache().remove('user_info_' + email);
+  _invalidateUserInfoCache(email);
 }
 
 // ====== 管理者向け：監査ログ簡易取得 ======
@@ -2129,6 +2318,7 @@ const API_METHODS = {
 };
 
 function doPost(e) {
+  _clearRequestCache();
   let body = {};
   if (e && e.postData && e.postData.contents) {
     try {
@@ -2210,6 +2400,7 @@ function doPost(e) {
   } finally {
     __CURRENT_REQUEST_EMAIL = '';
     __CURRENT_REQUEST_NAME = '';
+    _clearRequestCache();
   }
 }
 
