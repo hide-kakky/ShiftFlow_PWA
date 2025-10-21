@@ -2082,22 +2082,92 @@ function jsonResponse(payload, statusCode) {
   return output;
 }
 
+const API_METHODS = {
+  getAuthStatus,
+  getHomeContent,
+  listMyTasks,
+  listCreatedTasks,
+  listAllTasks,
+  getMessages,
+  toggleMemoRead,
+  markMemosReadBulk,
+  getTaskById,
+  updateTask,
+  completeTask,
+  deleteTaskById,
+  markMemoAsRead,
+  getMessageById,
+  addNewComment,
+  deleteMessageById,
+  addNewTask,
+  addNewMessage,
+  getUserSettings,
+  saveUserSettings,
+};
+
 function doPost(e) {
   let body = {};
   if (e && e.postData && e.postData.contents) {
     try {
       body = JSON.parse(e.postData.contents);
     } catch (err) {
-      return jsonResponse({
-        ok: false,
-        error: 'Invalid JSON payload',
-      }, 400);
+      return jsonResponse(
+        {
+          ok: false,
+          error: 'Invalid JSON payload',
+          detail: String(err && err.message ? err.message : err),
+        },
+        400
+      );
     }
   }
-  return jsonResponse({
-    ok: true,
-    received: body,
-  });
+  const routeParam =
+    (body && body.route) ||
+    (body && body.method) ||
+    (e && e.parameter && e.parameter.route) ||
+    (e && e.parameter && e.parameter.method) ||
+    '';
+  const route = String(routeParam || '').trim();
+  if (!route) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Missing route parameter',
+      },
+      400
+    );
+  }
+  const handler = Object.prototype.hasOwnProperty.call(API_METHODS, route)
+    ? API_METHODS[route]
+    : null;
+  if (typeof handler !== 'function') {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Unknown route: ' + route,
+      },
+      404
+    );
+  }
+  const args = Array.isArray(body && body.args) ? body.args : [];
+  try {
+    const result = handler.apply(null, args);
+    return jsonResponse({
+      ok: true,
+      result: result === undefined ? null : result,
+    });
+  } catch (err) {
+    Logger.log(err);
+    return jsonResponse(
+      {
+        ok: false,
+        error: err && err.message ? err.message : String(err || 'Unknown error'),
+        detail: err && err.stack ? err.stack : '',
+        route: route,
+      },
+      500
+    );
+  }
 }
 
 // TODO: CORS設定を本番オリジンで固定する
