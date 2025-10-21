@@ -1,5 +1,5 @@
 const GAS_BASE =
-  'https://script.google.com/macros/s/AKfycbzc5lFnEXBbhW4s-dlGmLsGQEJQky63q4gxfVLPnMaxGqvs-dY-wTwWKp3_uPn7-QpO/exec';
+  'https://script.google.com/macros/s/AKfycbxuVEG1wi9yLHqM5vb5s-0UAs0wi_XUwyqEcU9G9kuAvVkRrRJGn_YFFHIaGdjuYXk0/exec';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
