@@ -2353,6 +2353,10 @@
           : { tasks: [], meta: {} };
       let IS_MANAGER = !!__BOOT__.isManager;
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
+      const GAS_WEB_APP_URL =
+        'https://script.google.com/macros/s/AKfycbwZ5duOTjYt5aCP0rZI1joo9IxWhIndM_PXWlyMQ6iSkuYPqE5o-gUyHM4RkweT9v-e/exec';
+      const AUTH_NOTICE_MESSAGE =
+        'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -2511,6 +2515,14 @@
         }
       }
 
+      function isAuthError(err) {
+        if (!err) return false;
+        if (err.authRequired === true) return true;
+        if (err.status === 401 || err.status === 403) return true;
+        var msg = String(err.message || '');
+        return msg.indexOf('Non-JSON response from backend') !== -1;
+      }
+
       function applyBootstrapState(bootstrap) {
         var normalized = bootstrap || {};
         window.__SHIFT_FLOW_BOOTSTRAP__ = normalized;
@@ -2579,11 +2591,14 @@
             })
             .withFailureHandler(function (err) {
               console.error('Bootstrap fetch failed:', err);
-              notify(
-                '初期データの取得に失敗しました: ' +
-                  (err && err.message ? err.message : '原因不明のエラー'),
-                false
-              );
+              var authError = isAuthError(err);
+              if (!authError) {
+                notify(
+                  '初期データの取得に失敗しました: ' +
+                    (err && err.message ? err.message : '原因不明のエラー'),
+                  false
+                );
+              }
               toggleManagerUI();
               populateAssigneeFilters();
               populateFolderSelects();
@@ -2593,6 +2608,46 @@
             .getBootstrapData();
         });
       }
+
+      function refreshDataAfterBootstrap() {
+        if (!HAS_ACTIVE_EMAIL) {
+          return;
+        }
+        loadHome();
+        loadMessages();
+        if (typeof TASK_STATE !== 'undefined') {
+          if (TASK_STATE.my) {
+            TASK_STATE.my.loaded = false;
+            loadMyTasks();
+          }
+          if (TASK_STATE.from) {
+            TASK_STATE.from.loaded = false;
+            loadCreatedTasks();
+          }
+          if (TASK_STATE.all && IS_MANAGER) {
+            TASK_STATE.all.loaded = false;
+            loadAllTasks();
+          }
+        }
+      }
+
+      document.addEventListener('click', function (event) {
+        var target = typeof event.target.closest === 'function'
+          ? event.target.closest('[data-action="auth-retry"]')
+          : null;
+        if (!target) return;
+        event.preventDefault();
+        target.disabled = true;
+        target.setAttribute('aria-busy', 'true');
+        hydrateBootstrap()
+          .then(function () {
+            refreshDataAfterBootstrap();
+          })
+          .finally(function () {
+            target.disabled = false;
+            target.removeAttribute('aria-busy');
+          });
+      });
 
       toggleManagerUI();
       populateAssigneeFilters();
@@ -2668,11 +2723,17 @@
               var contentType = res.headers.get('content-type') || '';
               if (contentType.indexOf('application/json') === -1) {
                 return res.text().then(function (text) {
+                  var authRequired =
+                    res.status === 200 &&
+                    (text.indexOf('accounts.google.com') !== -1 ||
+                      text.indexOf('google-signin') !== -1 ||
+                      text.indexOf('<form') !== -1);
                   throw createError('Non-JSON response from backend', {
                     status: res.status,
                     statusText: res.statusText,
                     route: route,
                     raw: text,
+                    authRequired: authRequired,
                   });
                 });
               }
@@ -2929,6 +2990,14 @@
           .withFailureHandler(function (err) {
             var box = byId('auth-help-details');
             if (!box) return;
+            if (isAuthError(err)) {
+              box.innerHTML =
+                '<div class="alert alert-warning small mb-0">Google アカウントでサインインすると診断情報が表示されます。' +
+                '<a class="btn btn-sm btn-primary ms-2" href="' +
+                esc(GAS_WEB_APP_URL) +
+                '" target="_blank" rel="noopener">Google にサインイン</a></div>';
+              return;
+            }
             var msg = err && err.message ? err.message : err;
             box.innerHTML =
               '<div class="alert alert-danger small mb-0">診断情報の取得に失敗しました: ' +
@@ -2942,7 +3011,7 @@
         if (!box) return;
         if (isStub) {
           box.innerHTML =
-            '<div class="alert alert-info small mb-0">Cloudflare Pages では Apps Script の診断機能は利用できません。バックエンド接続を有効化すると詳細が表示されます。</div>';
+            '<div class="alert alert-info small mb-0">Cloudflare Pages から直接診断詳細を取得することはできません。<br>Google にサインインしてから再読み込みすると、状態が自動で取得されます。</div>';
           return;
         }
         if (!info) {
@@ -3007,12 +3076,18 @@
         requestAuthHelp();
         return (
           '<div class="card border-warning"><div class="card-body">' +
-          '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">lock</span>Googleアカウントの情報が取得できません。</p>' +
-          '<p class="mb-2">以下を確認してください。</p>' +
-          '<ul class="mb-0 ps-3">' +
-          '<li>Apps Script の Webアプリ設定で「アクセスできるユーザー」を匿名許可からサインイン必須に変更します。</li>' +
-          '<li>設定更新後に再デプロイし、このページを再読み込みします。</li>' +
-          '</ul>' +
+          '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">lock</span>Google アカウントへのサインインが必要です。</p>' +
+          '<p class="mb-2">以下の手順を実行してください。</p>' +
+          '<ol class="mb-3 ps-3">' +
+          '<li>「Google にサインイン」を押して Apps Script Web アプリを開き、組織の Google アカウントで認証します。</li>' +
+          '<li>サインイン完了後、このページに戻って「接続を再チェック」を押すか、ページを再読み込みします。</li>' +
+          '</ol>' +
+          '<div class="d-flex flex-wrap gap-2">' +
+          '<a class="btn btn-primary" href="' +
+          esc(GAS_WEB_APP_URL) +
+          '" target="_blank" rel="noopener">Google にサインイン</a>' +
+          '<button type="button" class="btn btn-outline-primary" data-action="auth-retry">接続を再チェック</button>' +
+          '</div>' +
           '<div id="auth-help-details" class="mt-3"></div>' +
           '</div></div>'
         );
@@ -3280,10 +3355,7 @@
           byId('home-today-tasks').innerHTML = card;
           byId('home-unread').innerHTML = card;
           if (!AUTH_NOTICE_SHOWN) {
-            notify(
-              'Google へのサインイン情報が取得できません。Webアプリ公開設定を見直し、再デプロイしてください。',
-              false
-            );
+            notify(AUTH_NOTICE_MESSAGE, false);
             AUTH_NOTICE_SHOWN = true;
           }
           return;
@@ -3570,7 +3642,7 @@
         if (!HAS_ACTIVE_EMAIL) {
           renderTaskList(scope);
           if (!AUTH_NOTICE_SHOWN) {
-            notify('Google へのサインイン情報が取得できません。公開設定をご確認ください。', false);
+            notify(AUTH_NOTICE_MESSAGE, false);
             AUTH_NOTICE_SHOWN = true;
           }
           return;
@@ -3850,10 +3922,7 @@
         if (!HAS_ACTIVE_EMAIL) {
           byId('msg-list').innerHTML = authRequiredCard();
           if (!AUTH_NOTICE_SHOWN) {
-            notify(
-              'Google へのサインイン情報が取得できません。Webアプリ公開設定を見直し、再デプロイしてください。',
-              false
-            );
+            notify(AUTH_NOTICE_MESSAGE, false);
             AUTH_NOTICE_SHOWN = true;
           }
           return;
@@ -4509,7 +4578,7 @@
       // ===== 設定 =====
       function loadSettings() {
         if (!HAS_ACTIVE_EMAIL) {
-          notify('Google へのサインイン情報が取得できません。設定画面は利用できません。', false);
+          notify(AUTH_NOTICE_MESSAGE, false);
           return;
         }
         google.script.run
@@ -4846,44 +4915,6 @@
             navigateTo('home');
           });
       });
-    </script>
-    <div class="container my-4" id="api-debug-panel">
-      <button type="button" class="btn btn-outline-primary" id="btnPing">接続テスト</button>
-      <pre id="pingResult" class="mt-3 text-break">未実行</pre>
-    </div>
-    <script>
-      (function () {
-        var pingButton = document.getElementById('btnPing');
-        var resultEl = document.getElementById('pingResult');
-        if (!pingButton || !resultEl) {
-          return;
-        }
-        pingButton.addEventListener('click', function () {
-          resultEl.textContent = '読み込み中...';
-          fetch('/api/ping')
-            .then(function (res) {
-              if (!res.ok) {
-                throw new Error('HTTP ' + res.status);
-              }
-              var contentType = res.headers.get('content-type') || '';
-              if (contentType.indexOf('application/json') !== -1) {
-                return res.json();
-              }
-              return res.text().then(function (text) {
-                throw new Error('JSONではない応答: ' + text.slice(0, 120) + '...');
-              });
-            })
-            .then(function (data) {
-              var formatted = JSON.stringify(data, null, 2);
-              resultEl.textContent = formatted;
-              console.log('[ShiftFlow ping]', data);
-            })
-            .catch(function (err) {
-              console.error('Ping failed', err);
-              resultEl.textContent = 'エラー: ' + err.message;
-            });
-        });
-      })();
     </script>
     <script>
       (function () {
