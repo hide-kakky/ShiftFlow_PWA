@@ -159,7 +159,7 @@
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
         --footer-h: 56px;
         --footer-extra: 12px;
-        --header-h: 56px;
+        --header-h: 48px;
         --fade: 220ms;
         --body-bg: linear-gradient(
             180deg,
@@ -434,8 +434,8 @@
         color: var(--on-primary);
         border-bottom: 1px solid rgba(255, 255, 255, 0.18);
         min-height: var(--header-h);
-        padding-top: 4px;
-        padding-bottom: 6px;
+        padding-top: 2px;
+        padding-bottom: 4px;
       }
       header .container-xl {
         padding-top: 0;
@@ -452,9 +452,9 @@
       }
       .navbar-brand.app-brand .brand-mark {
         position: relative;
-        width: 40px;
-        height: 40px;
-        border-radius: 14px;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -485,15 +485,15 @@
       }
       .navbar-brand.app-brand .brand-icon {
         position: relative;
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
       }
       .navbar-brand.app-brand .brand-icon .material-icons,
       .navbar-brand.app-brand .brand-icon .material-icons-outlined {
-        font-size: 24px;
+        font-size: 22px;
         line-height: 1;
         color: #ffffff;
         text-shadow: 0 14px 28px rgba(15, 23, 42, 0.32);
@@ -503,7 +503,7 @@
       }
       .navbar-brand.app-brand .brand-text-main {
         font-weight: 700;
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         letter-spacing: 0.07em;
         text-transform: uppercase;
       }
@@ -512,18 +512,18 @@
           gap: 10px;
         }
         .navbar-brand.app-brand .brand-mark {
-          width: 36px;
-          height: 36px;
-          border-radius: 12px;
+          width: 32px;
+          height: 32px;
+          border-radius: 10px;
         }
         .navbar-brand.app-brand .brand-text-main {
-          font-size: 1.15rem;
+          font-size: 1.05rem;
         }
         header.navbar {
           position: sticky;
           top: 0;
           z-index: 1080;
-          padding-top: calc(4px + var(--safe-top));
+          padding-top: calc(2px + var(--safe-top));
           backdrop-filter: blur(12px);
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
         }
@@ -542,11 +542,11 @@
         background: var(--primary);
         border-top: 1px solid rgba(255, 255, 255, 0.12);
         border-bottom: 1px solid var(--divider);
-        padding: 2px 0;
+        padding: 6px 0;
       }
       .topbar .nav-link {
         color: var(--on-primary);
-        padding: 0.25rem 0.6rem;
+        padding: 0.45rem 0.85rem;
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -559,6 +559,10 @@
       .topbar .nav-link.active {
         background: var(--topbar-active-bg);
         color: var(--topbar-active-fg);
+      }
+      .topbar .nav-link .material-icons,
+      .topbar .nav-link .material-icons-outlined {
+        font-size: 26px;
       }
       .badge-unread {
         --s: 20px;
@@ -861,13 +865,13 @@
 
       /* Layout / cards */
       .page-body {
-        padding-top: 12px;
+        padding-top: 6px;
         padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 12px);
         min-height: calc(100vh - var(--header-h) - var(--footer-h));
       }
       @media (max-width: 768px) {
         .page-body {
-          padding-top: calc(var(--header-h) + var(--safe-top) + 2px);
+          padding-top: calc(var(--header-h) + var(--safe-top) - 8px);
           min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
         }
       }
@@ -1762,7 +1766,7 @@
       </symbol>
     </svg>
     <div id="auth-backdrop" class="auth-backdrop" aria-hidden="true"></div>
-    <div id="auth-overlay" class="auth-overlay" aria-hidden="false">
+    <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
       <div class="auth-card">
         <h2>ShiftFlow</h2>
         <p>Google アカウントでサインインしてください。</p>
@@ -3553,10 +3557,16 @@
       }
 
       function handleOneTapPrompt(notification) {
-        if (!notification || typeof notification.isDisplayed !== 'function') {
+        if (!notification) {
           return;
         }
-        if (notification.isDisplayed()) {
+        const momentType =
+          typeof notification.getMomentType === 'function'
+            ? notification.getMomentType()
+            : null;
+        const isDisplayed =
+          typeof notification.isDisplayed === 'function' && notification.isDisplayed();
+        if (isDisplayed || momentType === 'display') {
           hideAuthOverlay(false);
           return;
         }
@@ -3564,15 +3574,18 @@
           typeof notification.isNotDisplayed === 'function' && notification.isNotDisplayed();
         const skipped =
           typeof notification.isSkippedMoment === 'function' && notification.isSkippedMoment();
-        if (notDisplayed || skipped) {
+        if (notDisplayed || skipped || momentType === 'skipped') {
           showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
           return;
         }
-        if (
-          typeof notification.isDismissedMoment === 'function' &&
-          notification.isDismissedMoment()
-        ) {
-          if (!AUTH_READY) {
+        const dismissed =
+          typeof notification.isDismissedMoment === 'function' && notification.isDismissedMoment();
+        if (dismissed || momentType === 'dismissed') {
+          const reason =
+            typeof notification.getDismissedReason === 'function'
+              ? notification.getDismissedReason()
+              : '';
+          if (reason !== 'credential_returned' && !AUTH_READY) {
             showAuthOverlay();
           }
         }
@@ -6016,7 +6029,7 @@
         attachSaveHandlers();
 
         initPullToRefresh();
-        showAuthOverlay();
+        hideAuthOverlay(false);
         initGoogleSignIn();
       });
     </script>
