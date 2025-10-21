@@ -92,7 +92,7 @@
       (function () {
         var themeMeta = {
           light: { color: '#517cb2', statusBar: 'default' },
-          dark: { color: '#24316e', statusBar: 'black' },
+          dark: { color: '#5f7dff', statusBar: 'black-translucent' },
         };
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
@@ -280,6 +280,7 @@
         background-attachment: fixed;
         background-size: cover;
         color: var(--text-900);
+        position: relative;
       }
 
       /* TODO: スタイルを /css/style.css へ分離 */
@@ -1646,6 +1647,31 @@
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.2s ease;
+      }
+      body.auth-screen::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(145deg, rgba(81, 124, 178, 0.92), rgba(248, 250, 255, 0.96));
+        z-index: 1500;
+        pointer-events: none;
+      }
+      :root[data-theme='dark'] body.auth-screen::before {
+        background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(15, 18, 40, 0.94));
+      }
+      body.auth-screen header.navbar,
+      body.auth-screen nav.topbar,
+      body.auth-screen main.page-body,
+      body.auth-screen .footer-nav,
+      body.auth-screen .fab,
+      body.auth-screen #notification-area,
+      body.auth-screen .pull-to-refresh {
+        opacity: 0;
+        pointer-events: none !important;
+        visibility: hidden;
+      }
+      body.auth-screen .bootstrap-loading {
+        display: none !important;
       }
       .bootstrap-loading {
         position: fixed;
@@ -3423,6 +3449,9 @@
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
+        if (document.body) {
+          document.body.classList.add('auth-screen');
+        }
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
@@ -3443,6 +3472,9 @@
         if (overlay) {
           overlay.classList.add('d-none');
           overlay.setAttribute('aria-hidden', 'true');
+        }
+        if (document.body) {
+          document.body.classList.remove('auth-screen');
         }
       }
 
