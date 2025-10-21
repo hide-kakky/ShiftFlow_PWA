@@ -2441,6 +2441,8 @@
       let BOOTSTRAP_STARTED = false;
       const AUTH_NOTICE_MESSAGE =
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
+      const FEDCM_FALLBACK_MESSAGE =
+        'ブラウザで Google ワンタップを表示できませんでした。下のボタンからサインインしてください。';
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -3299,6 +3301,32 @@
         bootstrapAfterAuth();
       }
 
+      function handleOneTapPrompt(notification) {
+        if (!notification || typeof notification.isDisplayed !== 'function') {
+          return;
+        }
+        if (notification.isDisplayed()) {
+          hideAuthOverlay();
+          return;
+        }
+        const notDisplayed =
+          typeof notification.isNotDisplayed === 'function' && notification.isNotDisplayed();
+        const skipped =
+          typeof notification.isSkippedMoment === 'function' && notification.isSkippedMoment();
+        if (notDisplayed || skipped) {
+          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+          return;
+        }
+        if (
+          typeof notification.isDismissedMoment === 'function' &&
+          notification.isDismissedMoment()
+        ) {
+          if (!AUTH_READY) {
+            showAuthOverlay();
+          }
+        }
+      }
+
       function initGoogleSignIn(retryCount) {
         if (!GOOGLE_CLIENT_ID) {
           console.error('GOOGLE_CLIENT_ID が未設定です。Cloudflare Pages の環境変数を確認してください。');
@@ -3333,7 +3361,7 @@
             width: 260,
           });
         }
-        google.accounts.id.prompt();
+        google.accounts.id.prompt(handleOneTapPrompt);
       }
 
       function bootstrapAfterAuth() {
