@@ -4157,6 +4157,38 @@
       navigateTo('home');
     });
     </script>
+    <div class="container my-4" id="api-debug-panel">
+      <button type="button" class="btn btn-outline-primary" id="btnPing">接続テスト</button>
+      <pre id="pingResult" class="mt-3 text-break">未実行</pre>
+    </div>
+    <script>
+      (function () {
+        var pingButton = document.getElementById('btnPing');
+        var resultEl = document.getElementById('pingResult');
+        if (!pingButton || !resultEl) {
+          return;
+        }
+        pingButton.addEventListener('click', function () {
+          resultEl.textContent = '読み込み中...';
+          fetch('/api/ping')
+            .then(function (res) {
+              if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+              }
+              return res.json();
+            })
+            .then(function (data) {
+              var formatted = JSON.stringify(data, null, 2);
+              resultEl.textContent = formatted;
+              console.log('[ShiftFlow ping]', data);
+            })
+            .catch(function (err) {
+              console.error('Ping failed', err);
+              resultEl.textContent = 'エラー: ' + err.message;
+            });
+        });
+      })();
+    </script>
     <script>
       (function () {
         try {
@@ -4177,20 +4209,6 @@
         }
       })();
     </script>
-    <!--
-      /api/ping への fetch テスト例（実装は後日追加）:
-      window.addEventListener('load', function () {
-        fetch('/api/ping')
-          .then(function (res) {
-            return res.json();
-          })
-          .then(function (data) {
-            console.log(data);
-          })
-          .catch(function (err) {
-            console.error(err);
-          });
-      });
-    -->
+    <!-- TODO: API デバッグ用UIは本番公開前に非表示化する -->
   </body>
 </html>
