@@ -563,11 +563,11 @@
 
       :root[data-theme='dark'] header.navbar,
       :root[data-theme='dark'] .topbar {
-        background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(36, 45, 110, 0.95));
+        background: var(--primary);
       }
       @media (max-width: 768px) {
         :root[data-theme='dark'] header.navbar::before {
-          background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(36, 45, 110, 0.95));
+          background: var(--primary);
         }
       }
       :root[data-theme='dark'] .footer-nav {
@@ -1652,12 +1652,20 @@
         content: '';
         position: fixed;
         inset: 0;
-        background: linear-gradient(145deg, rgba(81, 124, 178, 0.92), rgba(248, 250, 255, 0.96));
+        background: var(--body-bg);
+        background-color: var(--surface);
+        background-repeat: no-repeat;
+        background-size: cover;
+        background-attachment: fixed;
         z-index: 1500;
         pointer-events: none;
       }
       :root[data-theme='dark'] body.auth-screen::before {
-        background: linear-gradient(135deg, rgba(95, 125, 255, 0.92), rgba(15, 18, 40, 0.94));
+        background: var(--body-bg);
+        background-color: var(--surface);
+        background-repeat: no-repeat;
+        background-size: cover;
+        background-attachment: fixed;
       }
       body.auth-screen header.navbar,
       body.auth-screen nav.topbar,
@@ -1712,7 +1720,7 @@
       }
     </style>
   </head>
-  <body>
+      <body class="auth-screen">
     <svg width="0" height="0" style="position: absolute">
       <symbol id="plane" viewBox="0 0 24 24">
         <path
@@ -1720,7 +1728,7 @@
         />
       </symbol>
     </svg>
-    <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
+    <div id="auth-overlay" class="auth-overlay" aria-hidden="false">
       <div class="auth-card">
         <h2>ShiftFlow</h2>
         <p>Google アカウントでサインインしてください。</p>
