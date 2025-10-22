@@ -105,20 +105,33 @@
     <script>
       (function () {
         var themeMeta = {
-          light: { color: '#517cb2', statusBar: 'default' },
-          dark: { color: '#4b67b3', statusBar: 'black-translucent' },
+          light: { statusBar: 'default' },
+          dark: { statusBar: 'black-translucent' },
         };
+        function computeSurfaceColor(theme) {
+          try {
+            var styles = window.getComputedStyle(document.documentElement);
+            var surface = styles ? styles.getPropertyValue('--surface') : '';
+            surface = typeof surface === 'string' ? surface.trim() : '';
+            if (surface) return surface;
+          } catch (err) {}
+          return theme === 'dark' ? '#050b18' : '#f2f4f9';
+        }
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
+        window.__SHIFT_FLOW_GET_SURFACE__ = computeSurfaceColor;
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
           var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
-          var config = themeMeta[resolvedTheme] || themeMeta.light;
           var metaTheme = document.querySelector('meta[name="theme-color"]');
-          if (metaTheme && config.color) {
-            metaTheme.setAttribute('content', config.color);
+          var surfaceColor = computeSurfaceColor(resolvedTheme);
+          if (metaTheme && surfaceColor) {
+            metaTheme.setAttribute('content', surfaceColor);
           }
           var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-          if (appleStatus && config.statusBar) {
-            appleStatus.setAttribute('content', config.statusBar);
+          var statusBar =
+            (themeMeta[resolvedTheme] && themeMeta[resolvedTheme].statusBar) ||
+            (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
+          if (appleStatus && statusBar) {
+            appleStatus.setAttribute('content', statusBar);
           }
         };
 
@@ -1160,15 +1173,57 @@
         border-radius: 50%;
         padding: 0;
         background: var(--fab);
-        border-color: var(--fab);
+        border: none;
         box-shadow: var(--fab-shadow);
         display: flex;
         align-items: center;
         justify-content: center;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.24s ease, box-shadow 0.24s ease;
+      }
+      .fab .btn::before {
+        content: '';
+        position: absolute;
+        inset: 4px;
+        border-radius: inherit;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05));
+        opacity: 0.85;
+        pointer-events: none;
+      }
+      .fab .btn::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0));
+        pointer-events: none;
+        opacity: 0.65;
+      }
+      :root[data-theme='dark'] .fab .btn::before {
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08));
+      }
+      :root[data-theme='dark'] .fab .btn::after {
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+      }
+      .fab .btn:hover,
+      .fab .btn:focus-visible {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 34px rgba(232, 93, 106, 0.4);
+      }
+      .fab .btn:focus-visible {
+        outline: none;
+        box-shadow: 0 20px 34px rgba(232, 93, 106, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.35);
+      }
+      .fab .btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 14px 24px rgba(232, 93, 106, 0.32);
       }
       .fab .btn .material-icons {
         font-size: 30px;
         color: var(--on-primary);
+        position: relative;
+        z-index: 1;
       }
       .fab .dropdown-toggle::after {
         display: none !important;
@@ -2733,20 +2788,34 @@
               var palette =
                 window.__SHIFT_FLOW_THEME_META__ ||
                 {
-                  light: { color: '#517cb2', statusBar: 'default' },
-                  dark: { color: '#4b67b3', statusBar: 'black-translucent' },
+                  light: { statusBar: 'default' },
+                  dark: { statusBar: 'black-translucent' },
                 };
+              var getSurface =
+                typeof window.__SHIFT_FLOW_GET_SURFACE__ === 'function'
+                  ? window.__SHIFT_FLOW_GET_SURFACE__
+                  : function (mode) {
+                      try {
+                        var styles = window.getComputedStyle(document.documentElement);
+                        var surface = styles ? styles.getPropertyValue('--surface') : '';
+                        surface = typeof surface === 'string' ? surface.trim() : '';
+                        if (surface) return surface;
+                      } catch (err) {}
+                      return mode === 'dark' ? '#050b18' : '#f2f4f9';
+                    };
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
-              var config = palette[resolvedTheme] || palette.light;
+              var statusBar =
+                (palette[resolvedTheme] && palette[resolvedTheme].statusBar) ||
+                (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
               var metaTheme = document.querySelector('meta[name="theme-color"]');
-              if (metaTheme && config.color) {
-                metaTheme.setAttribute('content', config.color);
+              if (metaTheme) {
+                metaTheme.setAttribute('content', getSurface(resolvedTheme));
               }
               var appleStatus = document.querySelector(
                 'meta[name="apple-mobile-web-app-status-bar-style"]'
               );
-              if (appleStatus && config.statusBar) {
-                appleStatus.setAttribute('content', config.statusBar);
+              if (appleStatus && statusBar) {
+                appleStatus.setAttribute('content', statusBar);
               }
             };
       if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ !== 'function') {
@@ -2912,22 +2981,36 @@
       }
       var metaTheme = document.querySelector('meta[name="theme-color"]');
       var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+      var pref = document.documentElement.dataset.themePref || 'light';
+      var resolvedPref =
+        typeof resolveThemePreference === 'function'
+          ? resolveThemePreference(pref)
+          : pref;
       if (isLoading) {
-        if (metaTheme) {
-          metaTheme.setAttribute('content', '#ffffff');
+        var getSurface =
+          typeof window.__SHIFT_FLOW_GET_SURFACE__ === 'function'
+            ? window.__SHIFT_FLOW_GET_SURFACE__
+            : function (mode) {
+                try {
+                  var styles = window.getComputedStyle(document.documentElement);
+                  var surface = styles ? styles.getPropertyValue('--surface') : '';
+                  surface = typeof surface === 'string' ? surface.trim() : '';
+                  if (surface) return surface;
+                } catch (err) {}
+                return mode === 'dark' ? '#050b18' : '#f2f4f9';
+              };
+        var surfaceColor = getSurface(resolvedPref);
+        if (metaTheme && surfaceColor) {
+          metaTheme.setAttribute('content', surfaceColor);
         }
         if (appleStatus) {
-          appleStatus.setAttribute('content', 'default');
+          appleStatus.setAttribute(
+            'content',
+            resolvedPref === 'dark' ? 'black-translucent' : 'default'
+          );
         }
-      } else {
-        var pref = document.documentElement.dataset.themePref || 'light';
-        var resolved =
-          typeof resolveThemePreference === 'function'
-            ? resolveThemePreference(pref)
-            : pref;
-        if (typeof syncThemeMeta === 'function') {
-          syncThemeMeta(resolved);
-        }
+      } else if (typeof syncThemeMeta === 'function') {
+        syncThemeMeta(resolvedPref);
       }
       var loadingEl = byId('bootstrap-loading');
       if (!loadingEl) return;
@@ -3982,10 +4065,23 @@
 
       function trackTo(view, opts) {
         var track = byId('viewsTrack');
-        var panel = byId('view-' + view);
-        if (!track || !panel) return;
+        var wrap = byId('viewsWrapper');
+        var idx = order.indexOf(view);
+        if (!track || !wrap || idx < 0) return;
         var animate = !opts || opts.animate !== false;
-        var offset = -panel.offsetLeft;
+        var wrapRect = wrap.getBoundingClientRect();
+        var width = wrapRect ? wrapRect.width : 0;
+        if (!width) {
+          var panel = byId('view-' + view);
+          if (panel) {
+            var panelRect = panel.getBoundingClientRect();
+            width = panelRect ? panelRect.width : 0;
+          }
+        }
+        if (!width) {
+          width = wrap.scrollWidth / Math.max(order.length, 1) || window.innerWidth || 0;
+        }
+        var offset = -idx * width;
         if (!animate) {
           track.style.transition = 'none';
           track.style.transform = 'translateX(' + offset + 'px)';
