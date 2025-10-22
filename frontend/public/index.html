@@ -1072,37 +1072,47 @@
 
       /* Task / Message */
       .card.app-card.task-card {
-        border-left: 5px solid rgba(81, 124, 178, 0.85);
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.12), rgba(81, 124, 178, 0.03) 70%), var(--card);
+        border-left: 4px solid rgba(81, 124, 178, 0.4);
+        background: var(--card);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
       }
       :root[data-theme='dark'] .card.app-card.task-card {
-        border-left-color: rgba(91, 135, 224, 0.78);
-        background: linear-gradient(135deg, rgba(53, 85, 168, 0.36), rgba(16, 25, 45, 0.82) 78%), var(--card);
+        border-left-color: rgba(102, 135, 214, 0.6);
+        box-shadow: 0 12px 32px rgba(3, 9, 24, 0.54);
+      }
+      .card.app-card.task-card .app-card-body {
+        align-items: center;
+      }
+      .card.app-card.task-card .task-title-line strong {
+        font-size: 1.05rem;
       }
       .card.app-card.task-card-completed {
-        border-left-color: transparent;
-        background: linear-gradient(135deg, rgba(148, 163, 184, 0.22), rgba(148, 163, 184, 0.05) 70%), var(--card);
-        opacity: 0.88;
+        border-left-color: rgba(148, 163, 184, 0.9);
+        background: linear-gradient(135deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.04) 70%), var(--card);
+        opacity: 0.92;
       }
       .card.app-card.task-card-completed .task-title-line strong {
         color: var(--muted);
         text-decoration: line-through;
       }
-      .card.app-card.task-card.task-card-pending {
-        border-left-color: rgba(229, 57, 53, 0.85);
-        background: linear-gradient(135deg, rgba(229, 57, 53, 0.22), rgba(229, 57, 53, 0.06) 70%), var(--card);
-        box-shadow: 0 22px 48px rgba(229, 57, 53, 0.14);
+      .card.app-card.task-card.task-card-overdue {
+        border-left-width: 5px;
       }
-      :root[data-theme='dark'] .card.app-card.task-card.task-card-pending {
-        background: linear-gradient(135deg, rgba(229, 98, 82, 0.38), rgba(17, 29, 54, 0.9) 72%), var(--card);
+      .card.app-card.task-card.task-card-overdue-pending {
+        border-left-color: #e34b43;
+        background: linear-gradient(135deg, rgba(227, 75, 67, 0.22), rgba(227, 75, 67, 0.06) 70%), var(--card);
+        box-shadow: 0 16px 40px rgba(227, 75, 67, 0.18);
       }
-      .card.app-card.task-card.task-card-inprogress {
-        border-left-color: rgba(81, 124, 178, 0.95);
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.26), rgba(81, 124, 178, 0.08) 72%), var(--card);
-        box-shadow: 0 20px 44px rgba(81, 124, 178, 0.18);
+      :root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-pending {
+        background: linear-gradient(135deg, rgba(229, 98, 82, 0.42), rgba(17, 29, 54, 0.88) 74%), var(--card);
       }
-      :root[data-theme='dark'] .card.app-card.task-card.task-card-inprogress {
-        background: linear-gradient(135deg, rgba(53, 85, 168, 0.48), rgba(16, 25, 45, 0.82) 80%), var(--card);
+      .card.app-card.task-card.task-card-overdue-inprogress {
+        border-left-color: #f49d3f;
+        background: linear-gradient(135deg, rgba(244, 157, 63, 0.22), rgba(244, 157, 63, 0.06) 70%), var(--card);
+        box-shadow: 0 16px 38px rgba(244, 157, 63, 0.16);
+      }
+      :root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-inprogress {
+        background: linear-gradient(135deg, rgba(244, 157, 63, 0.35), rgba(17, 29, 54, 0.86) 78%), var(--card);
       }
       .card.app-card.msg-card {
         border-left: 5px solid transparent;
@@ -1569,12 +1579,13 @@
         color: var(--priority-low-text);
       }
 
-      .task-assignee-line,
-      .task-meta-line {
-        color: var(--muted);
-        font-size: 0.85rem;
+      .task-assignee-line {
+        color: var(--text-700);
+        font-size: 0.86rem;
       }
       .task-meta-line {
+        color: var(--muted);
+        font-size: 0.82rem;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -1584,11 +1595,11 @@
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        background: var(--priority-middle-bg);
-        color: var(--priority-middle-text);
-        border: 1px solid transparent;
+        background: rgba(81, 124, 178, 0.12);
+        color: var(--text-700);
+        border: none;
         border-radius: 999px;
-        font-size: 0.72rem;
+        font-size: 0.74rem;
         font-weight: 600;
         padding: 2px 10px;
       }
@@ -1596,33 +1607,33 @@
         font-size: 14px;
       }
       :root[data-theme='dark'] .badge-soft {
-        background: rgba(122, 162, 255, 0.26);
-        color: #e8edff;
+        background: rgba(122, 162, 255, 0.24);
+        color: #e0e7ff;
       }
       .card.app-card.task-card-completed {
-        border: 1px dashed var(--divider);
-        background: linear-gradient(135deg, rgba(148, 163, 184, 0.22), rgba(148, 163, 184, 0.05) 70%),
+        border-left-color: rgba(148, 163, 184, 0.9);
+        background: linear-gradient(135deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.04) 70%),
           var(--card);
-        opacity: 0.88;
+        opacity: 0.92;
       }
       .card.app-card.task-card-completed .task-title-line strong {
         text-decoration: line-through;
         color: var(--muted);
       }
       .badge-soft.badge-completed {
-        background: var(--priority-low-bg);
-        color: var(--priority-low-text);
+        background: rgba(148, 163, 184, 0.16);
+        color: rgba(71, 85, 105, 0.92);
       }
       :root[data-theme='dark'] .badge-soft.badge-completed {
-        background: rgba(74, 222, 128, 0.28);
-        color: #bbf7d0;
+        background: rgba(148, 163, 184, 0.24);
+        color: #e2e8f0;
       }
       .badge-soft.badge-overdue {
-        background: var(--priority-high-bg);
-        color: var(--priority-high-text);
+        background: rgba(227, 75, 67, 0.14);
+        color: #d13d36;
       }
       :root[data-theme='dark'] .badge-soft.badge-overdue {
-        background: rgba(248, 113, 113, 0.28);
+        background: rgba(229, 98, 82, 0.34);
         color: #fecaca;
       }
 
@@ -4763,6 +4774,24 @@
         updateTaskOverdueBadge(sourceRows);
       }
 
+      function collectActiveTaskRows() {
+        var state = window.TASK_STATE;
+        var scopes = ['my', 'from', 'all'];
+        var seen = Object.create(null);
+        var collected = [];
+        scopes.forEach(function (scope) {
+          var list = state && state[scope] && state[scope].rows;
+          normalizeArray(list).forEach(function (task) {
+            if (!task) return;
+            var key = task.id != null ? 'id:' + task.id : 'hash:' + [task.title, task.dueDate, task.status].join('|');
+            if (seen[key]) return;
+            seen[key] = true;
+            collected.push(task);
+          });
+        });
+        return collected;
+      }
+
       function computeOverdueTaskCount(rows) {
         var today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -4788,7 +4817,11 @@
       }
 
       function updateTaskOverdueBadge(rows) {
-        var count = computeOverdueTaskCount(rows);
+        var source = normalizeArray(rows);
+        if (!source.length) {
+          source = collectActiveTaskRows();
+        }
+        var count = computeOverdueTaskCount(source);
         [byId('badge-task-overdue-top'), byId('badge-task-overdue-bottom')].forEach(function (el) {
           if (!el) return;
           el.textContent = count;
@@ -4905,8 +4938,11 @@
 
         var cardClass = 'card app-card task-card mb-2 text-decoration-none link-surface';
         if (isCompleted) cardClass += ' task-card-completed';
-        else if (statusLabel === '未着手') cardClass += ' task-card-pending';
-        else if (statusLabel === '対応中') cardClass += ' task-card-inprogress';
+        else if (isOverdue) {
+          cardClass += ' task-card-overdue';
+          if (statusLabel === '未着手') cardClass += ' task-card-overdue-pending';
+          else if (statusLabel === '対応中') cardClass += ' task-card-overdue-inprogress';
+        }
         var text =
           '<a href="#" class="' +
           cardClass +
@@ -5071,6 +5107,8 @@
           renderTaskList(scope);
           if (scope === 'my') {
             updateTaskOverdueBadge(rows);
+          } else {
+            updateTaskOverdueBadge();
           }
           return true;
         });
@@ -5187,6 +5225,7 @@
                   TASK_STATE.from.loaded = true;
                   TASK_STATE.from.loading = false;
                   renderTaskList(scope);
+                  updateTaskOverdueBadge();
                   cacheTasks(scope, payload.rows, payload.meta);
                   resolve(true);
                 })
@@ -5255,6 +5294,7 @@
                   TASK_STATE.all.restricted = false;
                   TASK_STATE.all.loading = false;
                   renderTaskList(scope);
+                  updateTaskOverdueBadge();
                   cacheTasks(scope, payload.rows, payload.meta);
                   resolve(true);
                 })
