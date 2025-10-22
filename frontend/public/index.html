@@ -591,16 +591,17 @@
       }
       .nav-icon-badge {
         position: absolute;
-        top: -6px;
-        right: -6px;
-        transform: none;
+        top: 6px;
+        right: 10px;
+        transform: translate(45%, -45%);
       }
       .topbar .nav-icon-badge {
         box-shadow: 0 0 0 2px var(--primary);
       }
       .footer-nav .nav-icon-badge {
-        top: -4px;
-        right: 4px;
+        top: 10px;
+        right: 50%;
+        transform: translate(55%, -55%);
         box-shadow: 0 0 0 2px var(--footer-bg);
       }
       .badge-unread {
@@ -1021,12 +1022,12 @@
         border-color: rgba(90, 122, 196, 0.72);
       }
       .app-card-body {
-        padding: 16px 20px;
+        padding: 14px 18px;
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 14px;
+        gap: 12px;
         min-width: 0;
       }
       .app-card-main {
@@ -1034,7 +1035,7 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
       }
       .app-card-meta {
         flex: 0 0 auto;
@@ -1045,7 +1046,7 @@
       }
       @media (max-width: 640px) {
         .app-card-body {
-          gap: 12px;
+          gap: 10px;
         }
         .app-card-meta {
           width: 100%;
@@ -1072,11 +1073,11 @@
       /* Task / Message */
       .card.app-card.task-card {
         border-left: 5px solid rgba(81, 124, 178, 0.85);
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.18), rgba(81, 124, 178, 0.06) 72%), var(--card);
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.12), rgba(81, 124, 178, 0.03) 70%), var(--card);
       }
       :root[data-theme='dark'] .card.app-card.task-card {
         border-left-color: rgba(91, 135, 224, 0.78);
-        background: linear-gradient(135deg, rgba(53, 85, 168, 0.42), rgba(16, 25, 45, 0.82) 78%), var(--card);
+        background: linear-gradient(135deg, rgba(53, 85, 168, 0.36), rgba(16, 25, 45, 0.82) 78%), var(--card);
       }
       .card.app-card.task-card-completed {
         border-left-color: transparent;
@@ -1086,6 +1087,22 @@
       .card.app-card.task-card-completed .task-title-line strong {
         color: var(--muted);
         text-decoration: line-through;
+      }
+      .card.app-card.task-card.task-card-pending {
+        border-left-color: rgba(229, 57, 53, 0.85);
+        background: linear-gradient(135deg, rgba(229, 57, 53, 0.22), rgba(229, 57, 53, 0.06) 70%), var(--card);
+        box-shadow: 0 22px 48px rgba(229, 57, 53, 0.14);
+      }
+      :root[data-theme='dark'] .card.app-card.task-card.task-card-pending {
+        background: linear-gradient(135deg, rgba(229, 98, 82, 0.38), rgba(17, 29, 54, 0.9) 72%), var(--card);
+      }
+      .card.app-card.task-card.task-card-inprogress {
+        border-left-color: rgba(81, 124, 178, 0.95);
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.26), rgba(81, 124, 178, 0.08) 72%), var(--card);
+        box-shadow: 0 20px 44px rgba(81, 124, 178, 0.18);
+      }
+      :root[data-theme='dark'] .card.app-card.task-card.task-card-inprogress {
+        background: linear-gradient(135deg, rgba(53, 85, 168, 0.48), rgba(16, 25, 45, 0.82) 80%), var(--card);
       }
       .card.app-card.msg-card {
         border-left: 5px solid transparent;
@@ -4754,6 +4771,10 @@
           if (task.isCompleted || String(task.status || '').trim() === '完了') {
             return count;
           }
+          var status = String(task.status || '').trim();
+          if (status && status !== '未着手' && status !== '対応中') {
+            return count;
+          }
           if (!task.dueDate) {
             return count;
           }
@@ -4871,6 +4892,7 @@
           '<span class="priority-pill ' + priorityCls + '">' + esc(priority) + '</span>';
         var dueLabel = formatDateLabel(r.dueDate);
         var isCompleted = !!r.isCompleted || String(r.status || '').trim() === '完了';
+        var statusLabel = String(r.status || '').trim();
         var dueDateObj = r.dueDate ? new Date(r.dueDate) : null;
         var today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -4883,6 +4905,8 @@
 
         var cardClass = 'card app-card task-card mb-2 text-decoration-none link-surface';
         if (isCompleted) cardClass += ' task-card-completed';
+        else if (statusLabel === '未着手') cardClass += ' task-card-pending';
+        else if (statusLabel === '対応中') cardClass += ' task-card-inprogress';
         var text =
           '<a href="#" class="' +
           cardClass +
