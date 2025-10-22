@@ -432,7 +432,7 @@
         position: relative;
         background: var(--primary);
         color: var(--on-primary);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+        border-bottom: none;
         min-height: var(--header-h);
         padding-top: 4px;
         padding-bottom: 6px;
@@ -628,10 +628,12 @@
         position: relative;
         height: 100%;
         width: 100%;
+        transition: transform 0.3s ease;
       }
       .footer-nav .nav-link .material-icons-outlined {
         font-size: 30px;
         color: var(--on-primary);
+        transition: transform 0.36s ease, filter 0.36s ease, opacity 0.3s ease;
       }
       .footer-nav .nav-link .label {
         display: none;
@@ -646,6 +648,29 @@
         transform: translateX(-50%);
         background: var(--footer-indicator);
         border-radius: 2px;
+      }
+      .footer-nav .nav-link.active {
+        transform: translateY(-4px);
+      }
+      .footer-nav .nav-link .material-icons-outlined {
+        opacity: 0.92;
+      }
+      .footer-nav .nav-link.active .material-icons-outlined {
+        opacity: 1;
+        transform: translateY(-3px);
+        filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.28));
+        animation: navFloat 2.4s ease-in-out infinite;
+      }
+      @keyframes navFloat {
+        0% {
+          transform: translateY(-3px);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+        100% {
+          transform: translateY(-3px);
+        }
       }
 
       .nav-tabs {
@@ -883,6 +908,9 @@
           padding-top: clamp(12px, calc(var(--header-h) + var(--safe-top) - 40px), 28px);
           min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
         }
+      }
+      #home-today-tasks {
+        margin-bottom: clamp(28px, 6vw, 42px);
       }
       #home-unread {
         margin-top: clamp(28px, 6vw, 40px);
@@ -3943,9 +3971,9 @@
       var order = ['home', 'tasks', 'messages', 'settings'];
       var CURRENT_VIEW = 'home';
       var SWIPE_LOCK = false;
-      var SWIPE_THRESHOLD = 52;
-      var SWIPE_VERTICAL_TOLERANCE = 90;
-      var SWIPE_ACTIVATION_DELTA = 12;
+      var SWIPE_THRESHOLD = 44;
+      var SWIPE_VERTICAL_TOLERANCE = 140;
+      var SWIPE_ACTIVATION_DELTA = 10;
       var SWIPE_RESISTANCE = 0.36;
       var SWIPE_TRANSITION = 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)';
       var CURRENT_OFFSET = 0;
