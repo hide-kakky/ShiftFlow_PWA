@@ -4257,6 +4257,7 @@
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
         var track = byId('viewsTrack');
+        var pageShell = document.querySelector('.page-body[data-app-shell]');
         if (!wrap || !track) return;
         var state = {
           active: false,
@@ -4298,9 +4299,18 @@
         }
         function isWithinSwipeArea(node) {
           if (!wrap || !node) return false;
+          if (node.closest && node.closest('.modal.show')) return false;
           if (node === wrap) return true;
           if (node instanceof Node) {
-            return wrap.contains(node);
+            if (wrap.contains(node)) return true;
+            if (node.closest) {
+              var withinWrap = node.closest('#viewsWrapper');
+              if (withinWrap) return true;
+              var withinTrack = node.closest('#viewsTrack');
+              if (withinTrack && wrap.contains(withinTrack)) return true;
+              if (pageShell && node.closest('.page-body[data-app-shell]') === pageShell) return true;
+            }
+            return false;
           }
           return false;
         }
