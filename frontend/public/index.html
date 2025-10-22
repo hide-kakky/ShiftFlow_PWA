@@ -108,23 +108,32 @@
           light: { statusBar: 'default' },
           dark: { statusBar: 'black-translucent' },
         };
-        function computeSurfaceColor(theme) {
+        function readCSSVariable(name) {
           try {
             var styles = window.getComputedStyle(document.documentElement);
-            var surface = styles ? styles.getPropertyValue('--surface') : '';
-            surface = typeof surface === 'string' ? surface.trim() : '';
-            if (surface) return surface;
-          } catch (err) {}
-          return theme === 'dark' ? '#050b18' : '#f2f4f9';
+            var value = styles ? styles.getPropertyValue(name) : '';
+            return typeof value === 'string' ? value.trim() : '';
+          } catch (err) {
+            return '';
+          }
+        }
+        function computeSurfaceColor(theme) {
+          var fallback = theme === 'dark' ? '#050b18' : '#f2f4f9';
+          return readCSSVariable('--surface') || fallback;
+        }
+        function computePrimaryColor(theme) {
+          var fallback = theme === 'dark' ? '#4b67b3' : '#517cb2';
+          return readCSSVariable('--primary') || fallback;
         }
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
         window.__SHIFT_FLOW_GET_SURFACE__ = computeSurfaceColor;
+        window.__SHIFT_FLOW_GET_PRIMARY__ = computePrimaryColor;
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
           var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
           var metaTheme = document.querySelector('meta[name="theme-color"]');
-          var surfaceColor = computeSurfaceColor(resolvedTheme);
-          if (metaTheme && surfaceColor) {
-            metaTheme.setAttribute('content', surfaceColor);
+          var primaryColor = computePrimaryColor(resolvedTheme);
+          if (metaTheme && primaryColor) {
+            metaTheme.setAttribute('content', primaryColor);
           }
           var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
           var statusBar =
@@ -1168,14 +1177,16 @@
         z-index: 1030;
       }
       .fab .btn {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
+        width: 64px;
+        height: 64px;
+        border-radius: 28px;
         padding: 0;
-        background: var(--fab);
         border: none;
-        box-shadow: var(--fab-shadow);
-        display: flex;
+        background:
+          radial-gradient(140% 140% at 30% 22%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0)) top left,
+          linear-gradient(135deg, #ff9cab 0%, #ff5d7d 55%, #ff2c69 100%);
+        box-shadow: 0 22px 34px rgba(255, 92, 124, 0.42), 0 8px 18px rgba(255, 92, 124, 0.28);
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         position: relative;
@@ -1185,26 +1196,31 @@
       .fab .btn::before {
         content: '';
         position: absolute;
-        inset: 4px;
+        inset: 2px;
         border-radius: inherit;
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05));
-        opacity: 0.85;
+        border: 1px solid rgba(255, 255, 255, 0.52);
+        background: radial-gradient(130% 130% at 70% 70%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+        mix-blend-mode: screen;
         pointer-events: none;
       }
       .fab .btn::after {
         content: '';
         position: absolute;
-        inset: 0;
+        inset: -18%;
         border-radius: inherit;
-        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0));
+        background: radial-gradient(140% 140% at 50% 50%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+        opacity: 0;
+        transition: opacity 0.24s ease;
         pointer-events: none;
-        opacity: 0.65;
+      }
+      :root[data-theme='dark'] .fab .btn {
+        background:
+          radial-gradient(140% 140% at 30% 22%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)) top left,
+          linear-gradient(135deg, #ff7191 0%, #ff3a6c 55%, #e3225a 100%);
+        box-shadow: 0 22px 32px rgba(227, 34, 90, 0.48), 0 10px 22px rgba(227, 34, 90, 0.28);
       }
       :root[data-theme='dark'] .fab .btn::before {
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08));
-      }
-      :root[data-theme='dark'] .fab .btn::after {
-        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+        border-color: rgba(255, 255, 255, 0.42);
       }
       .fab .btn:hover,
       .fab .btn:focus-visible {
@@ -1214,6 +1230,10 @@
       .fab .btn:focus-visible {
         outline: none;
         box-shadow: 0 20px 34px rgba(232, 93, 106, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.35);
+      }
+      .fab .btn:hover::after,
+      .fab .btn:focus-visible::after {
+        opacity: 0.35;
       }
       .fab .btn:active {
         transform: translateY(1px);
@@ -2791,17 +2811,12 @@
                   light: { statusBar: 'default' },
                   dark: { statusBar: 'black-translucent' },
                 };
-              var getSurface =
-                typeof window.__SHIFT_FLOW_GET_SURFACE__ === 'function'
-                  ? window.__SHIFT_FLOW_GET_SURFACE__
+              var getPrimary =
+                typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
+                  ? window.__SHIFT_FLOW_GET_PRIMARY__
                   : function (mode) {
-                      try {
-                        var styles = window.getComputedStyle(document.documentElement);
-                        var surface = styles ? styles.getPropertyValue('--surface') : '';
-                        surface = typeof surface === 'string' ? surface.trim() : '';
-                        if (surface) return surface;
-                      } catch (err) {}
-                      return mode === 'dark' ? '#050b18' : '#f2f4f9';
+                      if (mode === 'dark') return '#4b67b3';
+                      return '#517cb2';
                     };
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
               var statusBar =
@@ -2809,7 +2824,7 @@
                 (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
               var metaTheme = document.querySelector('meta[name="theme-color"]');
               if (metaTheme) {
-                metaTheme.setAttribute('content', getSurface(resolvedTheme));
+                metaTheme.setAttribute('content', getPrimary(resolvedTheme));
               }
               var appleStatus = document.querySelector(
                 'meta[name="apple-mobile-web-app-status-bar-style"]'
@@ -4065,36 +4080,24 @@
 
       function trackTo(view, opts) {
         var track = byId('viewsTrack');
-        var wrap = byId('viewsWrapper');
         var idx = order.indexOf(view);
-        if (!track || !wrap || idx < 0) return;
+        var panel = byId('view-' + view);
+        if (!track || !panel || idx < 0) return;
         var animate = !opts || opts.animate !== false;
-        var wrapRect = wrap.getBoundingClientRect();
-        var width = wrapRect ? wrapRect.width : 0;
-        if (!width) {
-          var panel = byId('view-' + view);
-          if (panel) {
-            var panelRect = panel.getBoundingClientRect();
-            width = panelRect ? panelRect.width : 0;
-          }
-        }
-        if (!width) {
-          width = wrap.scrollWidth / Math.max(order.length, 1) || window.innerWidth || 0;
-        }
-        var offset = -idx * width;
+        var offset = panel.offsetLeft;
         if (!animate) {
           track.style.transition = 'none';
-          track.style.transform = 'translateX(' + offset + 'px)';
+          track.style.transform = 'translateX(' + -offset + 'px)';
           requestAnimationFrame(function () {
             track.style.transition = SWIPE_TRANSITION;
           });
         } else {
           track.style.transition = SWIPE_TRANSITION;
           requestAnimationFrame(function () {
-            track.style.transform = 'translateX(' + offset + 'px)';
+            track.style.transform = 'translateX(' + -offset + 'px)';
           });
         }
-        CURRENT_OFFSET = offset;
+        CURRENT_OFFSET = -offset;
       }
 
       function setActiveNav(view) {
