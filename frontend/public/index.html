@@ -1095,6 +1095,7 @@
       .views-wrapper {
         position: relative;
         overflow: hidden;
+        touch-action: pan-y;
       }
       .views-track {
         display: flex;
@@ -4171,7 +4172,7 @@
           var base = wrap.offsetWidth || window.innerWidth || document.documentElement.clientWidth || 360;
           return Math.max(48, Math.min(140, base * 0.18));
         }
-        function resetSwipe() {
+        function resetSwipe(shouldSnap) {
           state.active = false;
           state.dragging = false;
           state.startX = 0;
@@ -4180,6 +4181,10 @@
           state.baseOffset = CURRENT_TRANSFORM;
           state.rawDx = 0;
           state.rawDy = 0;
+          if (shouldSnap !== false) {
+            track.style.transition = SWIPE_TRANSITION;
+            track.style.transform = 'translateX(' + CURRENT_TRANSFORM + 'px)';
+          }
           window.__SHIFT_FLOW_GESTURE__ = null;
         }
 
@@ -4221,6 +4226,7 @@
               if (Math.abs(dx) >= SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 10) {
                 state.dragging = true;
                 window.__SHIFT_FLOW_GESTURE__ = 'horizontal';
+                track.style.transition = 'none';
               } else if (Math.abs(dy) >= SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 10) {
                 window.__SHIFT_FLOW_GESTURE__ = 'vertical';
                 resetSwipe();
@@ -4252,8 +4258,12 @@
               var dy = state.rawDy;
               var dt = Date.now() - state.startTime;
               var threshold = swipeThreshold();
+              var flickDistance = 42;
+              var flickTime = 280;
               var withinVerticalGuard = Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE;
-              if (Math.abs(dx) >= threshold && withinVerticalGuard && dt < 800) {
+              var distanceSatisfied = Math.abs(dx) >= threshold;
+              var flickSatisfied = Math.abs(dx) >= flickDistance && dt < flickTime;
+              if ((distanceSatisfied || flickSatisfied) && withinVerticalGuard) {
                 var idx = order.indexOf(CURRENT_VIEW);
                 var count = order.length;
                 var lastIndex = count - 1;
@@ -4266,6 +4276,10 @@
                 if (target && target !== CURRENT_VIEW) {
                   SWIPE_LOCK = true;
                   navigateTo(target, { animate: true });
+                  var targetPanel = byId('view-' + target);
+                  if (targetPanel) {
+                    CURRENT_TRANSFORM = -targetPanel.offsetLeft;
+                  }
                   setTimeout(function () {
                     SWIPE_LOCK = false;
                   }, 360);
@@ -4278,7 +4292,7 @@
               track.style.transform = 'translateX(' + state.baseOffset + 'px)';
               CURRENT_TRANSFORM = state.baseOffset;
             }
-            resetSwipe();
+            resetSwipe(triggered ? false : true);
           },
           { passive: true }
         );
@@ -4323,7 +4337,7 @@
         var interactionMode = null;
         var startedAt = 0;
         var scrollEl = document.scrollingElement || document.documentElement;
-        var horizontalGuard = 8;
+        var horizontalGuard = 16;
 
         function atTop() {
           var top =
