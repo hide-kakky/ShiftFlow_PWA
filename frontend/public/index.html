@@ -4329,7 +4329,10 @@
         var textEl = byId('pullToRefreshText');
         var iconDefault = 'expand_more';
         var iconRefreshing = 'autorenew';
-        var threshold = 85;
+        var threshold = 110;
+        var activationDelay = 90;
+        var activationDistance = 32;
+        var revealDistance = 20;
         var pulling = false;
         var ready = false;
         var refreshing = false;
@@ -4338,7 +4341,8 @@
         var interactionMode = null;
         var startedAt = 0;
         var scrollEl = document.scrollingElement || document.documentElement;
-        var horizontalGuard = 16;
+        var horizontalGuard = 12;
+        var pullIntentAt = 0;
 
         function atTop() {
           var top =
@@ -4396,6 +4400,7 @@
           startY = 0;
           startX = 0;
           interactionMode = null;
+          pullIntentAt = 0;
           setReady(false);
         }
         function triggerRefresh() {
@@ -4437,6 +4442,7 @@
             startY = touch.clientY;
             startX = touch.clientX;
             interactionMode = null;
+            pullIntentAt = Date.now();
             pulling = true;
             setReady(false);
           },
@@ -4462,6 +4468,7 @@
             var diff = touch.clientY - startY;
             var absX = Math.abs(diffX);
             var absY = Math.abs(diff);
+            var elapsed = Date.now() - pullIntentAt;
             if (interactionMode === null) {
               if (absX > horizontalGuard && absX > absY) {
                 interactionMode = 'horizontal';
@@ -4470,6 +4477,9 @@
                 return;
               }
               if (diff > 0 && (absY >= absX || absY > horizontalGuard)) {
+                if (elapsed < activationDelay || diff < activationDistance) {
+                  return;
+                }
                 interactionMode = 'vertical';
               }
             }
@@ -4486,7 +4496,9 @@
               setReady(false);
               return;
             }
-            show();
+            if (diff >= revealDistance) {
+              show();
+            }
             setReady(diff >= threshold);
           },
           { passive: true }
