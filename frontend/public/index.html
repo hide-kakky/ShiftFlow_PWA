@@ -586,9 +586,40 @@
       .topbar .nav-link .material-icons-outlined {
         font-size: 28px;
       }
+      .nav-link.nav-icon {
+        position: relative;
+      }
+      .nav-icon-badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        transform: none;
+      }
+      .topbar .nav-icon-badge {
+        box-shadow: 0 0 0 2px var(--primary);
+      }
+      .footer-nav .nav-icon-badge {
+        top: -4px;
+        right: 4px;
+        box-shadow: 0 0 0 2px var(--footer-bg);
+      }
       .badge-unread {
         --s: 20px;
         background: var(--badge-bg) !important;
+        color: #fff;
+        font-weight: 800;
+        font-size: 12px;
+        min-width: var(--s);
+        height: var(--s);
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+      .badge-overdue {
+        --s: 20px;
+        background: var(--warn) !important;
         color: #fff;
         font-weight: 800;
         font-size: 12px;
@@ -990,12 +1021,12 @@
         border-color: rgba(90, 122, 196, 0.72);
       }
       .app-card-body {
-        padding: 20px 22px;
+        padding: 16px 20px;
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 18px;
+        gap: 14px;
         min-width: 0;
       }
       .app-card-main {
@@ -1003,7 +1034,7 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
       }
       .app-card-meta {
         flex: 0 0 auto;
@@ -1014,7 +1045,7 @@
       }
       @media (max-width: 640px) {
         .app-card-body {
-          gap: 14px;
+          gap: 12px;
         }
         .app-card-meta {
           width: 100%;
@@ -1120,7 +1151,12 @@
       .msg-link {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
+        text-decoration: none;
+      }
+      .msg-link:hover,
+      .msg-link:focus {
+        text-decoration: none;
       }
       .msg-title-line {
         display: flex;
@@ -1150,11 +1186,11 @@
       .msg-content {
         display: flex;
         align-items: flex-start;
-        gap: 16px;
+        gap: 14px;
         min-width: 0;
       }
       .msg-card-compact .app-card-body {
-        padding: 18px 20px;
+        padding: 14px 18px;
       }
       .msg-card-compact .msg-preview {
         -webkit-line-clamp: 1;
@@ -2133,18 +2169,15 @@
             >
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="#" data-view="tasks" title="Tasks"
-              ><span class="material-icons-outlined">send</span></a
-            >
+            <a class="nav-link nav-icon" href="#" data-view="tasks" title="Tasks">
+              <span class="material-icons-outlined">send</span>
+              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-top">0</span>
+            </a>
           </li>
-          <li class="nav-item position-relative">
-            <a class="nav-link" href="#" data-view="messages" title="Messages">
+          <li class="nav-item">
+            <a class="nav-link nav-icon" href="#" data-view="messages" title="Messages">
               <span class="material-icons-outlined">mail</span>
-              <span
-                class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none"
-                id="badge-unread-top"
-                >0</span
-              >
+              <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-top">0</span>
             </a>
           </li>
           <li class="nav-item">
@@ -2468,29 +2501,26 @@
           </li>
           <li class="nav-item">
             <a
-              class="nav-link text-center"
+              class="nav-link text-center nav-icon"
               href="#"
               data-view="tasks"
               aria-label="タスク"
               title="タスク"
             >
               <span class="material-icons-outlined" aria-hidden="true">send</span>
+              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-bottom">0</span>
             </a>
           </li>
-          <li class="nav-item position-relative">
+          <li class="nav-item">
             <a
-              class="nav-link text-center"
+              class="nav-link text-center nav-icon"
               href="#"
               data-view="messages"
               aria-label="メッセージ"
               title="メッセージ"
             >
               <span class="material-icons-outlined" aria-hidden="true">mail</span>
-              <span
-                class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none"
-                id="badge-unread-bottom"
-                >0</span
-              >
+              <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-bottom">0</span>
             </a>
           </li>
           <li class="nav-item">
@@ -4706,6 +4736,43 @@
               .join('')
           : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
         byId('home-unread').innerHTML = mHTML;
+        var sourceRows =
+          TASK_STATE &&
+          TASK_STATE.my &&
+          Array.isArray(TASK_STATE.my.rows) &&
+          TASK_STATE.my.rows.length
+            ? TASK_STATE.my.rows
+            : tasks;
+        updateTaskOverdueBadge(sourceRows);
+      }
+
+      function computeOverdueTaskCount(rows) {
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return normalizeArray(rows).reduce(function (count, task) {
+          if (!task) return count;
+          if (task.isCompleted || String(task.status || '').trim() === '完了') {
+            return count;
+          }
+          if (!task.dueDate) {
+            return count;
+          }
+          var due = new Date(task.dueDate);
+          if (isNaN(due.getTime())) {
+            return count;
+          }
+          due.setHours(0, 0, 0, 0);
+          return due.getTime() <= today.getTime() ? count + 1 : count;
+        }, 0);
+      }
+
+      function updateTaskOverdueBadge(rows) {
+        var count = computeOverdueTaskCount(rows);
+        [byId('badge-task-overdue-top'), byId('badge-task-overdue-bottom')].forEach(function (el) {
+          if (!el) return;
+          el.textContent = count;
+          el.classList.toggle('d-none', count === 0);
+        });
       }
 
       function loadHomeFromCache() {
@@ -4978,6 +5045,9 @@
           TASK_STATE[scope].loaded = true;
           TASK_STATE[scope].loading = false;
           renderTaskList(scope);
+          if (scope === 'my') {
+            updateTaskOverdueBadge(rows);
+          }
           return true;
         });
       }
@@ -4997,6 +5067,7 @@
         TASK_STATE.my.meta = (INITIAL_MY_TASK_PAYLOAD && INITIAL_MY_TASK_PAYLOAD.meta) || {};
         TASK_STATE.my.loaded = initialRows.length > 0;
         renderTaskList('my');
+        updateTaskOverdueBadge(initialRows);
         if (initialRows.length) {
           cacheTasks('my', initialRows, TASK_STATE.my.meta);
         }
@@ -5041,6 +5112,7 @@
                   TASK_STATE.my.loaded = true;
                   TASK_STATE.my.loading = false;
                   renderTaskList(scope);
+                  updateTaskOverdueBadge(payload.rows);
                   cacheTasks(scope, payload.rows, payload.meta);
                   resolve(true);
                 })
