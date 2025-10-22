@@ -106,7 +106,7 @@
       (function () {
         var themeMeta = {
           light: { color: '#517cb2', statusBar: 'default' },
-          dark: { color: '#5f7dff', statusBar: 'black-translucent' },
+          dark: { color: '#4b67b3', statusBar: 'black-translucent' },
         };
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
@@ -157,9 +157,9 @@
         --fab: #e85d6a;
         --fab-shadow: 0 14px 28px rgba(232, 93, 106, 0.35);
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
-        --footer-h: 64px;
-        --footer-extra: 16px;
-        --header-h: 56px;
+        --footer-h: 72px;
+        --footer-extra: 18px;
+        --header-h: 48px;
         --fade: 220ms;
         --body-bg: linear-gradient(
             180deg,
@@ -218,66 +218,66 @@
       }
       :root[data-theme='dark'] {
         color-scheme: dark;
-        --primary: #5f7dff;
-        --primary-700: #4257d1;
-        --surface: #070d1d;
-        --card: #101a31;
-        --card-border: rgba(122, 162, 255, 0.25);
-        --card-shadow: 0 28px 46px rgba(4, 10, 24, 0.68);
-        --text-900: #e8edff;
-        --text-700: #c7d5ff;
-        --muted: #97a4c7;
-        --on-primary: #f5f8ff;
+        --primary: #4b67b3;
+        --primary-700: #394f8f;
+        --surface: #081326;
+        --card: #111d36;
+        --card-border: rgba(90, 122, 196, 0.32);
+        --card-shadow: 0 28px 46px rgba(5, 12, 28, 0.68);
+        --text-900: #e6edff;
+        --text-700: #c6d4ff;
+        --muted: #8fa2cf;
+        --on-primary: #f6f8ff;
         --warn: #f5a524;
         --fab: #f16fa2;
-        --fab-shadow: 0 18px 36px rgba(241, 111, 162, 0.45);
-        --dropdown-shadow: 0 24px 46px rgba(2, 8, 20, 0.75);
+        --fab-shadow: 0 18px 36px rgba(241, 111, 162, 0.4);
+        --dropdown-shadow: 0 24px 48px rgba(4, 10, 26, 0.75);
         --body-bg: linear-gradient(
             180deg,
-            rgba(95, 125, 255, 0.42) 0%,
-            rgba(36, 53, 112, 0.28) 55%,
-            rgba(5, 12, 30, 0.72) 100%
+            rgba(75, 118, 195, 0.38) 0%,
+            rgba(38, 58, 120, 0.3) 54%,
+            rgba(8, 19, 38, 0.92) 100%
           ),
-          linear-gradient(135deg, rgba(74, 106, 255, 0.32) 0%, rgba(5, 12, 30, 0) 72%), #050912;
-        --task-card-bg: linear-gradient(0deg, rgba(122, 162, 255, 0.18), rgba(122, 162, 255, 0.12)),
+          linear-gradient(140deg, rgba(66, 103, 185, 0.26) 0%, rgba(8, 19, 38, 0) 72%), #050b18;
+        --task-card-bg: linear-gradient(0deg, rgba(90, 130, 210, 0.18), rgba(90, 130, 210, 0.12)),
           var(--card);
         --msg-card-unread-bg: linear-gradient(
             0deg,
-            rgba(255, 196, 119, 0.22),
+            rgba(255, 196, 119, 0.2),
             rgba(255, 196, 119, 0.12)
           ),
           var(--card);
         --badge-bg: #f87171;
-        --topbar-hover-bg: rgba(236, 242, 255, 0.12);
-        --topbar-active-bg: rgba(236, 242, 255, 0.18);
-        --topbar-active-fg: #f5f8ff;
-        --footer-bg: #0b1326;
-        --footer-indicator: #7aa2ff;
-        --footer-shadow: 0 -16px 30px rgba(2, 8, 20, 0.55);
-        --skeleton-1: #1a2742;
-        --skeleton-2: #253357;
-        --input-bg: #111d34;
-        --input-border: #27365b;
-        --assignee-border: #2f3e62;
-        --assignee-bg: #111d34;
-        --assignee-divider: #2a3a5e;
-        --badge-counter-bg: rgba(122, 162, 255, 0.22);
-        --badge-counter-fg: #9fb8ff;
-        --attach-meta: #a8b3d4;
-        --divider: rgba(148, 163, 184, 0.28);
-        --focus-ring: rgba(122, 162, 255, 0.32);
-        --tab-hover-bg: rgba(122, 162, 255, 0.22);
-        --tab-active-bg: rgba(122, 162, 255, 0.25);
-        --tab-active-text: #f5f8ff;
+        --topbar-hover-bg: rgba(214, 224, 255, 0.12);
+        --topbar-active-bg: rgba(214, 224, 255, 0.18);
+        --topbar-active-fg: #f6f8ff;
+        --footer-bg: #0a1833;
+        --footer-indicator: #9db6ff;
+        --footer-shadow: 0 -16px 32px rgba(5, 12, 28, 0.55);
+        --skeleton-1: #17264a;
+        --skeleton-2: #213362;
+        --input-bg: #101d3a;
+        --input-border: #27407c;
+        --assignee-border: #2b3f6d;
+        --assignee-bg: #101d3a;
+        --assignee-divider: #263a66;
+        --badge-counter-bg: rgba(90, 130, 210, 0.24);
+        --badge-counter-fg: #b8c8ff;
+        --attach-meta: #a7b4d6;
+        --divider: rgba(122, 146, 194, 0.28);
+        --focus-ring: rgba(90, 130, 210, 0.32);
+        --tab-hover-bg: rgba(90, 130, 210, 0.22);
+        --tab-active-bg: rgba(90, 130, 210, 0.26);
+        --tab-active-text: #f6f8ff;
         --priority-high-bg: rgba(248, 113, 113, 0.22);
         --priority-high-text: #fecaca;
-        --priority-middle-bg: rgba(122, 162, 255, 0.22);
+        --priority-middle-bg: rgba(90, 130, 210, 0.24);
         --priority-middle-text: #dbe4ff;
         --priority-low-bg: rgba(74, 222, 128, 0.22);
-        --priority-low-text: #bbf7d0;
-        --alert-info-bg: rgba(95, 125, 255, 0.22);
-        --alert-info-border: rgba(95, 125, 255, 0.4);
-        --alert-info-text: #f5f8ff;
+        --priority-low-text: #c1f7d8;
+        --alert-info-bg: rgba(90, 130, 210, 0.22);
+        --alert-info-border: rgba(90, 130, 210, 0.42);
+        --alert-info-text: #f6f8ff;
       }
       * {
         box-sizing: border-box;
@@ -434,35 +434,35 @@
         color: var(--on-primary);
         border-bottom: 1px solid rgba(255, 255, 255, 0.18);
         min-height: var(--header-h);
-        padding-top: 6px;
-        padding-bottom: 8px;
+        padding-top: 4px;
+        padding-bottom: 6px;
       }
       header .container-xl {
         padding-top: 0;
         padding-bottom: 0;
-        min-height: calc(var(--header-h) - 12px);
+        min-height: calc(var(--header-h) - 8px);
         display: flex;
         align-items: center;
       }
       .navbar-brand.app-brand {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 12px;
         position: relative;
         text-decoration: none;
-        padding: 6px 0;
+        padding: 4px 0;
         color: var(--on-primary);
       }
       .navbar-brand.app-brand .brand-mark {
         position: relative;
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, rgba(90, 125, 255, 0.85), rgba(90, 125, 255, 0.45));
-        box-shadow: 0 18px 30px rgba(90, 125, 255, 0.32);
+        background: linear-gradient(135deg, rgba(72, 115, 194, 0.9), rgba(72, 115, 194, 0.52));
+        box-shadow: 0 16px 28px rgba(72, 115, 194, 0.32);
         overflow: hidden;
       }
       .navbar-brand.app-brand .brand-ring {
@@ -496,11 +496,14 @@
       }
       .navbar-brand.app-brand .brand-title {
         line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        height: 100%;
       }
       .navbar-brand.app-brand .brand-text-main {
         font-weight: 700;
-        font-size: 1.2rem;
-        letter-spacing: 0.07em;
+        font-size: 1.24rem;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
       }
       @media (max-width: 768px) {
@@ -508,19 +511,19 @@
           gap: 10px;
         }
         .navbar-brand.app-brand .brand-mark {
-          width: 36px;
-          height: 36px;
-          border-radius: 12px;
+          width: 34px;
+          height: 34px;
+          border-radius: 11px;
         }
         .navbar-brand.app-brand .brand-text-main {
-          font-size: 1.05rem;
+          font-size: 1.12rem;
         }
         header.navbar {
           position: sticky;
           top: 0;
           z-index: 1080;
-          padding-top: calc(6px + var(--safe-top));
-          padding-bottom: 10px;
+          padding-top: calc(4px + var(--safe-top));
+          padding-bottom: 8px;
           backdrop-filter: blur(12px);
           box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
         }
@@ -608,32 +611,38 @@
         padding-right: 0;
         height: 100%;
       }
+      .footer-nav .navbar-nav {
+        height: 100%;
+        width: 100%;
+      }
+      .footer-nav .nav-item {
+        flex: 1 1 25%;
+        display: flex;
+      }
       .footer-nav .nav-link {
         color: var(--on-primary);
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 0.35rem;
-        padding: 0.4rem 0;
+        justify-content: center;
+        padding: 0;
         position: relative;
-        font-weight: 600;
+        height: 100%;
+        width: 100%;
       }
       .footer-nav .nav-link .material-icons-outlined {
-        font-size: 28px;
+        font-size: 30px;
         color: var(--on-primary);
       }
       .footer-nav .nav-link .label {
-        display: block;
-        font-size: 0.75rem;
-        letter-spacing: 0.02em;
+        display: none;
       }
       .footer-nav .nav-link.active::after {
         content: '';
         position: absolute;
-        bottom: 8px;
+        bottom: 10px;
         left: 50%;
-        width: 24px;
-        height: 3px;
+        width: 32px;
+        height: 4px;
         transform: translateX(-50%);
         background: var(--footer-indicator);
         border-radius: 2px;
@@ -874,6 +883,9 @@
           padding-top: clamp(12px, calc(var(--header-h) + var(--safe-top) - 40px), 28px);
           min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
         }
+      }
+      #home-unread {
+        margin-top: 20px;
       }
       .container-xl {
         max-width: 1200px;
@@ -2240,30 +2252,53 @@
       <div class="container-fluid">
         <ul class="navbar-nav w-100 justify-content-around">
           <li class="nav-item">
-            <a class="nav-link text-center active" href="#" data-view="home"
-              ><span class="material-icons-outlined">home</span><span class="label">Home</span></a
+            <a
+              class="nav-link text-center active"
+              href="#"
+              data-view="home"
+              aria-label="ホーム"
+              title="ホーム"
             >
+              <span class="material-icons-outlined" aria-hidden="true">home</span>
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link text-center" href="#" data-view="tasks"
-              ><span class="material-icons-outlined">send</span><span class="label">Tasks</span></a
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-view="tasks"
+              aria-label="タスク"
+              title="タスク"
             >
+              <span class="material-icons-outlined" aria-hidden="true">send</span>
+            </a>
           </li>
           <li class="nav-item position-relative">
-            <a class="nav-link text-center" href="#" data-view="messages"
-              ><span class="material-icons-outlined">mail</span><span class="label">Messages</span
-              ><span
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-view="messages"
+              aria-label="メッセージ"
+              title="メッセージ"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">mail</span>
+              <span
                 class="badge badge-unread position-absolute top-0 start-100 translate-middle d-none"
                 id="badge-unread-bottom"
                 >0</span
-              ></a
-            >
+              >
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link text-center" href="#" data-view="settings"
-              ><span class="material-icons-outlined">settings</span
-              ><span class="label">Settings</span></a
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-view="settings"
+              aria-label="設定"
+              title="設定"
             >
+              <span class="material-icons-outlined" aria-hidden="true">settings</span>
+            </a>
           </li>
         </ul>
       </div>
@@ -2671,7 +2706,7 @@
                 window.__SHIFT_FLOW_THEME_META__ ||
                 {
                   light: { color: '#517cb2', statusBar: 'default' },
-                  dark: { color: '#050912', statusBar: 'black-translucent' },
+                  dark: { color: '#4b67b3', statusBar: 'black-translucent' },
                 };
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
               var config = palette[resolvedTheme] || palette.light;
@@ -3906,20 +3941,36 @@
 
       // ===== スワイプビュー =====
       var order = ['home', 'tasks', 'messages', 'settings'];
-      var CURRENT_VIEW = 'home',
-        SWIPE_LOCK = false;
-      var SWIPE_THRESHOLD = 70;
-      var SWIPE_VERTICAL_TOLERANCE = 80;
-      var SWIPE_ACTIVATION_DELTA = 14;
+      var CURRENT_VIEW = 'home';
+      var SWIPE_LOCK = false;
+      var SWIPE_THRESHOLD = 64;
+      var SWIPE_VERTICAL_TOLERANCE = 90;
+      var SWIPE_ACTIVATION_DELTA = 12;
+      var SWIPE_RESISTANCE = 0.36;
+      var SWIPE_TRANSITION = 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+      var CURRENT_OFFSET = 0;
 
       window.__SHIFT_FLOW_GESTURE__ = null;
 
-      function trackTo(view) {
+      function trackTo(view, opts) {
         var track = byId('viewsTrack');
         var panel = byId('view-' + view);
         if (!track || !panel) return;
-        var offset = panel.offsetLeft;
-        track.style.transform = 'translateX(' + -offset + 'px)';
+        var animate = !opts || opts.animate !== false;
+        var offset = -panel.offsetLeft;
+        if (!animate) {
+          track.style.transition = 'none';
+          track.style.transform = 'translateX(' + offset + 'px)';
+          requestAnimationFrame(function () {
+            track.style.transition = SWIPE_TRANSITION;
+          });
+        } else {
+          track.style.transition = SWIPE_TRANSITION;
+          requestAnimationFrame(function () {
+            track.style.transform = 'translateX(' + offset + 'px)';
+          });
+        }
+        CURRENT_OFFSET = offset;
       }
 
       function setActiveNav(view) {
@@ -3943,12 +3994,15 @@
           }
         });
       }
-      function navigateTo(v) {
+      function navigateTo(v, opts) {
+        var options = opts || {};
         CURRENT_VIEW = v;
         setActiveNav(v);
         showPanel(v);
-        trackTo(v);
-        scrollToTopNow();
+        trackTo(v, { animate: options.animate !== false });
+        if (!options.skipScroll) {
+          scrollToTopNow();
+        }
         if (v === 'home') loadHome();
         if (v === 'tasks') {
           ensureTaskBootstrap();
@@ -3981,32 +4035,62 @@
 
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
-        if (!wrap) return;
-        var x0 = null;
-        var y0 = null;
-        var t0 = 0;
-        var gesture = null;
+        var track = byId('viewsTrack');
+        if (!wrap || !track) return;
+        var state = {
+          active: false,
+          dragging: false,
+          startX: 0,
+          startY: 0,
+          baseOffset: 0,
+          rawDx: 0,
+          rawDy: 0,
+          allowPrev: false,
+          allowNext: false,
+        };
         var unify = function (e) {
           if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0];
           if (e.touches && e.touches.length) return e.touches[0];
           return e;
         };
-        var clearSwipe = function () {
-          x0 = null;
-          y0 = null;
-          t0 = 0;
-          gesture = null;
+        function resetSwipe() {
+          state.active = false;
+          state.dragging = false;
+          state.startX = 0;
+          state.startY = 0;
+          state.baseOffset = 0;
+          state.rawDx = 0;
+          state.rawDy = 0;
+          state.allowPrev = false;
+          state.allowNext = false;
           window.__SHIFT_FLOW_GESTURE__ = null;
-        };
+        }
+        function releaseSwipe(triggered) {
+          track.style.transition = SWIPE_TRANSITION;
+          if (!triggered) {
+            track.style.transform = 'translateX(' + state.baseOffset + 'px)';
+            CURRENT_OFFSET = state.baseOffset;
+          }
+          resetSwipe();
+        }
 
         wrap.addEventListener(
           'touchstart',
           function (e) {
+            if (SWIPE_LOCK) return;
+            if (e.touches && e.touches.length > 1) return;
             var t = unify(e);
-            x0 = t.clientX;
-            y0 = t.clientY;
-            t0 = Date.now();
-            gesture = null;
+            state.active = true;
+            state.dragging = false;
+            state.startX = t.clientX;
+            state.startY = t.clientY;
+            state.baseOffset = CURRENT_OFFSET;
+            state.rawDx = 0;
+            state.rawDy = 0;
+            var idx = order.indexOf(CURRENT_VIEW);
+            state.allowPrev = idx > 0;
+            state.allowNext = idx < order.length - 1;
+            track.style.transition = 'none';
             window.__SHIFT_FLOW_GESTURE__ = null;
           },
           { passive: true }
@@ -4015,69 +4099,90 @@
         wrap.addEventListener(
           'touchmove',
           function (e) {
-            if (x0 === null) return;
+            if (!state.active) return;
             if (e.touches && e.touches.length > 1) {
-              clearSwipe();
+              releaseSwipe(false);
               return;
             }
             var t = unify(e);
-            var dx = t.clientX - x0;
-            var dy = t.clientY - y0;
-            if (!gesture) {
+            var dx = t.clientX - state.startX;
+            var dy = t.clientY - state.startY;
+            if (!state.dragging) {
               if (Math.abs(dx) > SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 4) {
-                gesture = 'horizontal';
+                state.dragging = true;
                 window.__SHIFT_FLOW_GESTURE__ = 'horizontal';
               } else if (Math.abs(dy) > SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 6) {
-                gesture = 'vertical';
                 window.__SHIFT_FLOW_GESTURE__ = 'vertical';
+                releaseSwipe(false);
+                return;
+              } else {
+                return;
               }
             }
-            if (gesture === 'horizontal' && e.cancelable) {
-              e.preventDefault();
+            if (window.__SHIFT_FLOW_GESTURE__ === 'vertical') return;
+            if (e.cancelable) e.preventDefault();
+            state.rawDx = dx;
+            state.rawDy = dy;
+            var damped = dx;
+            if (dx > 0 && !state.allowPrev) {
+              damped = dx * SWIPE_RESISTANCE;
+            } else if (dx < 0 && !state.allowNext) {
+              damped = dx * SWIPE_RESISTANCE;
             }
+            var offset = state.baseOffset + damped;
+            track.style.transform = 'translateX(' + offset + 'px)';
           },
           { passive: false }
         );
 
         wrap.addEventListener(
           'touchend',
-          function (e) {
-            if (x0 === null || SWIPE_LOCK || gesture === 'vertical') {
-              clearSwipe();
+          function () {
+            if (!state.active) {
+              resetSwipe();
               return;
             }
-            var t = unify(e);
-            var dx = t.clientX - x0;
-            var dy = t.clientY - y0;
-            var dt = Date.now() - t0;
-            if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE && dt < 900) {
-              SWIPE_LOCK = true;
+            var triggered = false;
+            if (state.dragging && !SWIPE_LOCK) {
               var idx = order.indexOf(CURRENT_VIEW);
               var target = null;
-              if (dx < 0) {
-                target = idx < order.length - 1 ? order[idx + 1] : order[0];
-              } else if (dx > 0) {
-                target = idx > 0 ? order[idx - 1] : order[order.length - 1];
+              if (state.rawDx < -SWIPE_THRESHOLD && state.allowNext && Math.abs(state.rawDy) < SWIPE_VERTICAL_TOLERANCE) {
+                target = order[idx + 1];
+              } else if (
+                state.rawDx > SWIPE_THRESHOLD &&
+                state.allowPrev &&
+                Math.abs(state.rawDy) < SWIPE_VERTICAL_TOLERANCE
+              ) {
+                target = order[idx - 1];
               }
               if (target && target !== CURRENT_VIEW) {
-                navigateTo(target);
+                SWIPE_LOCK = true;
+                navigateTo(target, { animate: true });
+                setTimeout(function () {
+                  SWIPE_LOCK = false;
+                }, 340);
+                triggered = true;
               }
-              setTimeout(function () {
-                SWIPE_LOCK = false;
-              }, 320);
             }
-            clearSwipe();
+            releaseSwipe(triggered);
           },
           { passive: true }
         );
 
-        wrap.addEventListener('touchcancel', clearSwipe, { passive: true });
+        wrap.addEventListener(
+          'touchcancel',
+          function () {
+            if (!state.active) return;
+            releaseSwipe(false);
+          },
+          { passive: true }
+        );
       })();
 
       window.addEventListener('resize', function () {
         clearTimeout(_rszTimer);
         _rszTimer = setTimeout(function () {
-          trackTo(CURRENT_VIEW);
+          trackTo(CURRENT_VIEW, { animate: false });
         }, 120);
       });
 
