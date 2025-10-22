@@ -1177,15 +1177,13 @@
         z-index: 1030;
       }
       .fab .btn {
-        width: 64px;
-        height: 64px;
-        border-radius: 28px;
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
         padding: 0;
         border: none;
-        background:
-          radial-gradient(140% 140% at 30% 22%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0)) top left,
-          linear-gradient(135deg, #ff9cab 0%, #ff5d7d 55%, #ff2c69 100%);
-        box-shadow: 0 22px 34px rgba(255, 92, 124, 0.42), 0 8px 18px rgba(255, 92, 124, 0.28);
+        background: linear-gradient(140deg, #ff97ab 0%, #ff5d7d 55%, #ff1f68 100%);
+        box-shadow: 0 24px 36px rgba(255, 95, 125, 0.45), 0 10px 20px rgba(255, 95, 125, 0.28);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1196,31 +1194,28 @@
       .fab .btn::before {
         content: '';
         position: absolute;
-        inset: 2px;
+        inset: 0;
         border-radius: inherit;
-        border: 1px solid rgba(255, 255, 255, 0.52);
-        background: radial-gradient(130% 130% at 70% 70%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
-        mix-blend-mode: screen;
+        background: radial-gradient(130% 130% at 25% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
         pointer-events: none;
+        opacity: 0.85;
       }
       .fab .btn::after {
         content: '';
         position: absolute;
-        inset: -18%;
+        inset: -25%;
         border-radius: inherit;
-        background: radial-gradient(140% 140% at 50% 50%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+        background: radial-gradient(120% 120% at 50% 50%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
         opacity: 0;
         transition: opacity 0.24s ease;
         pointer-events: none;
       }
       :root[data-theme='dark'] .fab .btn {
-        background:
-          radial-gradient(140% 140% at 30% 22%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)) top left,
-          linear-gradient(135deg, #ff7191 0%, #ff3a6c 55%, #e3225a 100%);
-        box-shadow: 0 22px 32px rgba(227, 34, 90, 0.48), 0 10px 22px rgba(227, 34, 90, 0.28);
+        background: linear-gradient(140deg, #ff6f90 0%, #ff3771 55%, #e01c5f 100%);
+        box-shadow: 0 24px 34px rgba(224, 28, 95, 0.5), 0 12px 22px rgba(224, 28, 95, 0.28);
       }
       :root[data-theme='dark'] .fab .btn::before {
-        border-color: rgba(255, 255, 255, 0.42);
+        opacity: 0.7;
       }
       .fab .btn:hover,
       .fab .btn:focus-visible {
@@ -1240,7 +1235,7 @@
         box-shadow: 0 14px 24px rgba(232, 93, 106, 0.32);
       }
       .fab .btn .material-icons {
-        font-size: 30px;
+        font-size: 34px;
         color: var(--on-primary);
         position: relative;
         z-index: 1;
@@ -4069,12 +4064,9 @@
       var order = ['home', 'tasks', 'messages', 'settings'];
       var CURRENT_VIEW = 'home';
       var SWIPE_LOCK = false;
-      var SWIPE_THRESHOLD = 44;
-      var SWIPE_VERTICAL_TOLERANCE = 140;
-      var SWIPE_ACTIVATION_DELTA = 10;
-      var SWIPE_RESISTANCE = 0.36;
+      var SWIPE_VERTICAL_TOLERANCE = 160;
+      var SWIPE_ACTIVATION_DELTA = 14;
       var SWIPE_TRANSITION = 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-      var CURRENT_OFFSET = 0;
 
       window.__SHIFT_FLOW_GESTURE__ = null;
 
@@ -4097,7 +4089,6 @@
             track.style.transform = 'translateX(' + -offset + 'px)';
           });
         }
-        CURRENT_OFFSET = -offset;
       }
 
       function setActiveNav(view) {
@@ -4162,63 +4153,44 @@
 
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
-        var track = byId('viewsTrack');
-        if (!wrap || !track) return;
-        var state = {
-          active: false,
-          dragging: false,
-          startX: 0,
-          startY: 0,
-          baseOffset: 0,
-          rawDx: 0,
-          rawDy: 0,
-          allowPrev: false,
-          allowNext: false,
-        };
+        if (!wrap) return;
+        var active = false;
+        var gesture = null;
+        var startX = 0;
+        var startY = 0;
+        var startTime = 0;
         var unify = function (e) {
           if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0];
           if (e.touches && e.touches.length) return e.touches[0];
           return e;
         };
-        function resetSwipe() {
-          state.active = false;
-          state.dragging = false;
-          state.startX = 0;
-          state.startY = 0;
-          state.baseOffset = 0;
-          state.rawDx = 0;
-          state.rawDy = 0;
-          state.allowPrev = false;
-          state.allowNext = false;
-          window.__SHIFT_FLOW_GESTURE__ = null;
+        function swipeThreshold() {
+          var base = window.innerWidth || document.documentElement.clientWidth || 360;
+          return Math.min(140, Math.max(48, base * 0.22));
         }
-        function releaseSwipe(triggered) {
-          track.style.transition = SWIPE_TRANSITION;
-          if (!triggered) {
-            track.style.transform = 'translateX(' + state.baseOffset + 'px)';
-            CURRENT_OFFSET = state.baseOffset;
-          }
-          resetSwipe();
+        function resetSwipe() {
+          active = false;
+          gesture = null;
+          startX = 0;
+          startY = 0;
+          startTime = 0;
+          window.__SHIFT_FLOW_GESTURE__ = null;
         }
 
         wrap.addEventListener(
           'touchstart',
           function (e) {
             if (SWIPE_LOCK) return;
-            if (e.touches && e.touches.length > 1) return;
+            if (e.touches && e.touches.length > 1) {
+              resetSwipe();
+              return;
+            }
             var t = unify(e);
-            state.active = true;
-            state.dragging = false;
-            state.startX = t.clientX;
-            state.startY = t.clientY;
-            state.baseOffset = CURRENT_OFFSET;
-            state.rawDx = 0;
-            state.rawDy = 0;
-            var idx = order.indexOf(CURRENT_VIEW);
-            var totalViews = order.length;
-            state.allowPrev = idx > 0;
-            state.allowNext = idx < totalViews - 1;
-            track.style.transition = 'none';
+            active = true;
+            gesture = null;
+            startX = t.clientX;
+            startY = t.clientY;
+            startTime = Date.now();
             window.__SHIFT_FLOW_GESTURE__ = null;
           },
           { passive: true }
@@ -4227,79 +4199,65 @@
         wrap.addEventListener(
           'touchmove',
           function (e) {
-            if (!state.active) return;
+            if (!active) return;
             if (e.touches && e.touches.length > 1) {
-              releaseSwipe(false);
+              resetSwipe();
               return;
             }
             var t = unify(e);
-            var dx = t.clientX - state.startX;
-            var dy = t.clientY - state.startY;
-            if (!state.dragging) {
-              if (Math.abs(dx) > SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 4) {
-                state.dragging = true;
+            var dx = t.clientX - startX;
+            var dy = t.clientY - startY;
+            if (!gesture) {
+              if (Math.abs(dx) >= SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 14) {
+                gesture = 'horizontal';
                 window.__SHIFT_FLOW_GESTURE__ = 'horizontal';
-              } else if (Math.abs(dy) > SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 6) {
+              } else if (Math.abs(dy) >= SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 14) {
+                gesture = 'vertical';
                 window.__SHIFT_FLOW_GESTURE__ = 'vertical';
-                releaseSwipe(false);
-                return;
-              } else {
-                return;
               }
             }
-            if (window.__SHIFT_FLOW_GESTURE__ === 'vertical') return;
-            if (e.cancelable) e.preventDefault();
-            state.rawDx = dx;
-            state.rawDy = dy;
-            var damped = dx;
-            if (dx > 0 && !state.allowPrev) {
-              damped = dx * SWIPE_RESISTANCE;
-            } else if (dx < 0 && !state.allowNext) {
-              damped = dx * SWIPE_RESISTANCE;
+            if (gesture === 'horizontal' && e.cancelable) {
+              e.preventDefault();
             }
-            var offset = state.baseOffset + damped;
-            track.style.transform = 'translateX(' + offset + 'px)';
           },
           { passive: false }
         );
 
         wrap.addEventListener(
           'touchend',
-          function () {
-            if (!state.active) {
-              resetSwipe();
-              return;
-            }
-            var triggered = false;
-            if (state.dragging && !SWIPE_LOCK) {
+          function (e) {
+            if (!active) return;
+            var t = unify(e);
+            var dx = t.clientX - startX;
+            var dy = t.clientY - startY;
+            var dt = Date.now() - startTime;
+            var threshold = swipeThreshold();
+            var withinVerticalGuard = Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE;
+            if (
+              gesture === 'horizontal' &&
+              !SWIPE_LOCK &&
+              withinVerticalGuard &&
+              Math.abs(dx) >= threshold &&
+              dt < 800
+            ) {
               var idx = order.indexOf(CURRENT_VIEW);
               var count = order.length;
               var lastIndex = count - 1;
               var target = null;
-              var withinVerticalGuard = Math.abs(state.rawDy) < SWIPE_VERTICAL_TOLERANCE;
-              if (state.rawDx < -SWIPE_THRESHOLD && withinVerticalGuard) {
-                if (idx < lastIndex) {
-                  target = order[idx + 1];
-                } else if (count > 1) {
-                  target = order[0];
-                }
-              } else if (state.rawDx > SWIPE_THRESHOLD && withinVerticalGuard) {
-                if (idx > 0) {
-                  target = order[idx - 1];
-                } else if (count > 1) {
-                  target = order[lastIndex];
-                }
+              if (dx < 0) {
+                target = idx < lastIndex ? order[idx + 1] : order[0];
+              } else if (dx > 0) {
+                target = idx > 0 ? order[idx - 1] : order[lastIndex];
               }
               if (target && target !== CURRENT_VIEW) {
                 SWIPE_LOCK = true;
                 navigateTo(target, { animate: true });
                 setTimeout(function () {
                   SWIPE_LOCK = false;
-                }, 340);
-                triggered = true;
+                }, 360);
               }
             }
-            releaseSwipe(triggered);
+            resetSwipe();
           },
           { passive: true }
         );
@@ -4307,8 +4265,7 @@
         wrap.addEventListener(
           'touchcancel',
           function () {
-            if (!state.active) return;
-            releaseSwipe(false);
+            resetSwipe();
           },
           { passive: true }
         );
