@@ -953,6 +953,7 @@
         overflow: hidden;
         background-clip: padding-box;
         color: var(--text-900);
+        touch-action: pan-y;
       }
       .card .card-body {
         padding: 14px 16px;
@@ -976,21 +977,29 @@
       }
 
       /* Task / Message */
-      .msg-card {
-        border-radius: 14px;
-        overflow: hidden;
-        background-clip: padding-box;
-      }
-      .task-card {
+      .card.task-card {
         border-left: 4px solid var(--primary);
         background: var(--task-card-bg);
-        border-radius: 14px;
-        overflow: hidden;
-        background-clip: padding-box;
+        transition: transform var(--fade) ease, box-shadow var(--fade) ease;
       }
-      .msg-card.unread {
+      .card.task-card:hover,
+      .card.task-card:focus-within {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 32px rgba(81, 124, 178, 0.24);
+      }
+      .task-card-body {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+      }
+      .card.msg-card {
+        position: relative;
+      }
+      .card.msg-card.unread {
         background: var(--msg-card-unread-bg);
-        border-left: 4px solid var(--warn);
+        border-left-color: var(--warn);
       }
       .msg-icon {
         width: 24px;
@@ -1002,15 +1011,6 @@
       .msg-card.unread .msg-icon {
         color: var(--warn);
       }
-      .msg-card .title {
-        font-weight: 700;
-      }
-      .msg-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
       .msg-card .priority-pill {
         font-size: 0.7rem;
         padding: 2px 8px;
@@ -1019,39 +1019,38 @@
       .msg-lines {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 4px;
         line-height: 1.25;
         min-width: 0;
       }
-      .marquee {
-        position: relative;
-        overflow: hidden;
-        white-space: nowrap;
+      .msg-preview {
         color: var(--muted);
         font-size: 0.95rem;
-        width: 100%;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .marquee .track {
-        display: inline-block;
-        padding-left: 100%;
-        will-change: transform;
-        animation: marq 10s linear infinite;
+      .msg-link {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
-      .marquee.line2 .track {
-        animation-delay: 0.6s;
+      .msg-title-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
       }
-      @keyframes marq {
-        0% {
-          transform: translateX(0);
-        }
-        100% {
-          transform: translateX(-100%);
-        }
+      .msg-title-line .msg-title {
+        font-weight: 700;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .marquee .track {
-          animation: none !important;
-        }
+      .msg-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       /* Fade / Shimmer */
@@ -4545,23 +4544,10 @@
         var tHTML = tasks.length
           ? tasks
               .map(function (t) {
-                return (
-                  '<a href="#" class="card task-card mb-2 text-decoration-none link-surface" onclick="event.preventDefault(); openTaskDetail(\'' +
-                  t.id +
-                  '\')">' +
-                  '<div class="card-body d-flex justify-content-between">' +
-                  '<strong class="d-flex align-items-center"><span class="material-icons me-1">send</span>' +
-                  esc(t.title) +
-                  '</strong>' +
-                  '<span class="text-muted">' +
-                  esc(t.dueDate) +
-                  '</span>' +
-                  '</div>' +
-                  '</a>'
-                );
+                return rowTask(t, false);
               })
               .join('')
-          : '<div class="card"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
+          : '<div class="card task-card mb-2"><div class="card-body text-muted">今日のタスクはありません。</div></div>';
         byId('home-today-tasks').innerHTML = tHTML;
 
         var unread = normalizeArray(payload.messages).filter(function (x) {
@@ -4576,28 +4562,10 @@
         var mHTML = unread.length
           ? unread
               .map(function (m) {
-                return (
-                  '<div class="card mb-2 msg-card unread"><div class="card-body">' +
-                  '<a href="#" class="text-decoration-none link-surface" onclick="event.preventDefault(); openMessageModal(\'' +
-                  m.id +
-                  '\')">' +
-                  '<div class="d-flex align-items-center">' +
-                  '<span class="msg-icon material-icons">priority_high</span>' +
-                  '<div class="msg-lines flex-grow-1">' +
-                  '<div class="fw-bold">' +
-                  esc(m.title) +
-                  '</div>' +
-                  '<div class="marquee line1"><span class="track">' +
-                  esc(m.preview || m.body || '') +
-                  '</span></div>' +
-                  '</div>' +
-                  '</div>' +
-                  '</a>' +
-                  '</div></div>'
-                );
+                return renderMessageCard(m, { compact: true, hideAction: true });
               })
               .join('')
-          : '<div class="card"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
+          : '<div class="card task-card mb-2"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
         byId('home-unread').innerHTML = mHTML;
       }
 
@@ -4715,7 +4683,7 @@
           '" onclick="event.preventDefault(); openTaskDetail(\'' +
           r.id +
           '\')">' +
-          '<div class="card-body task-card d-flex align-items-start justify-content-between gap-3">' +
+          '<div class="card-body task-card-body d-flex align-items-start justify-content-between gap-3">' +
           '<div class="task-info-wrap flex-grow-1">' +
           '<div class="task-title-line d-flex align-items-center gap-2 flex-wrap">' +
           priorityPill +
@@ -5235,10 +5203,12 @@
       }
 
       // ===== Messages =====
-      function rowMsg(m) {
-        var cls = m.isRead ? 'card mb-2 msg-card' : 'card mb-2 msg-card unread';
-        var lab = m.isRead ? 'Mark as unread' : 'Mark as read';
-        var style = m.isRead ? 'btn-outline-primary' : 'btn-primary';
+      function renderMessageCard(m, options) {
+        var opts = options || {};
+        var isRead = !!m.isRead;
+        var classes = ['card', 'task-card', 'msg-card', 'mb-2'];
+        if (!isRead) classes.push('unread');
+        if (opts.compact) classes.push('msg-card-compact');
         var priority = m.priority || '中';
         var priorityPill =
           '<span class="priority-pill ' +
@@ -5247,49 +5217,80 @@
           esc(priority) +
           '</span>';
         var preview = m.preview || m.body || '';
+        var previewHtml = esc(preview || '').replace(/\n/g, '<br>');
+        var icon = isRead ? 'mark_email_read' : 'mark_email_unread';
+        var linkClasses = ['msg-link', 'link-surface', 'flex-grow-1'];
+        if (!opts.hideAction) linkClasses.push('me-3');
+        var bodyClasses = [
+          'card-body',
+          'task-card-body',
+          'd-flex',
+          'align-items-start',
+          'justify-content-between',
+          'gap-3',
+        ];
+        var actionHtml = '';
+        if (!opts.hideAction) {
+          var lab = isRead ? 'Mark as unread' : 'Mark as read';
+          var style = isRead ? 'btn-outline-primary' : 'btn-primary';
+          var toggleFlag = isRead ? 'false' : 'true';
+          actionHtml =
+            '<div class="msg-actions flex-shrink-0">' +
+            '<button class="btn ' +
+            style +
+            ' btn-sm msg-action-btn" onclick="event.preventDefault(); toggleRead(this,\'' +
+            m.id +
+            '\',' +
+            toggleFlag +
+            ')">' +
+            '<span class="label">' +
+            lab +
+            '</span>' +
+            '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>' +
+            '</button>' +
+            '</div>';
+        }
         return (
           '<div class="' +
-          cls +
+          classes.join(' ') +
           '" data-memo="' +
           m.id +
           '">' +
-          '<div class="card-body d-flex align-items-start justify-content-between">' +
-          '<a href="#" class="text-decoration-none link-surface flex-grow-1 me-2 pe-3 text-truncate-container" onclick="event.preventDefault(); openMessageModal(\'' +
+          '<div class="' +
+          bodyClasses.join(' ') +
+          '">' +
+          '<a href="#" class="' +
+          linkClasses.join(' ') +
+          '" onclick="event.preventDefault(); openMessageModal(\'' +
           m.id +
           '\')">' +
-          '<div class="d-flex align-items-center">' +
+          '<div class="d-flex align-items-start gap-3">' +
           '<span class="msg-icon material-icons">' +
-          (m.isRead ? 'mark_email_read' : 'mark_email_unread') +
+          icon +
           '</span>' +
           '<div class="msg-lines flex-grow-1">' +
-          '<div class="msg-header">' +
+          '<div class="msg-title-line">' +
           priorityPill +
-          '<div class="fw-bold ' +
-          (m.isRead ? 'text-muted' : '') +
+          '<span class="msg-title ' +
+          (isRead ? 'text-muted' : '') +
           '">' +
           esc(m.title) +
-          '</div></div>' +
-          '<div class="marquee"><span class="track">' +
-          esc(preview) +
-          '</span></div>' +
+          '</span>' +
+          '</div>' +
+          '<div class="msg-preview">' +
+          previewHtml +
+          '</div>' +
           '</div>' +
           '</div>' +
           '</a>' +
-          '<button class="btn ' +
-          style +
-          ' btn-sm msg-action-btn flex-shrink-0" onclick="event.preventDefault(); toggleRead(this,\'' +
-          m.id +
-          "'," +
-          (m.isRead ? 'false' : 'true') +
-          ')">' +
-          '<span class="label">' +
-          lab +
-          '</span>' +
-          '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>' +
-          '</button>' +
+          actionHtml +
           '</div>' +
           '</div>'
         );
+      }
+
+      function rowMsg(m) {
+        return renderMessageCard(m, { hideAction: false });
       }
       function filterMessages(list) {
         var folderEl = byId('flt-msg-folder');
@@ -5339,7 +5340,7 @@
       function renderMessageList(rows) {
         var list = Array.isArray(rows) ? rows : [];
         if (!list.length) {
-          return '<div class="card"><div class="card-body text-muted">No messages.</div></div>';
+          return '<div class="card task-card mb-2"><div class="card-body text-muted">No messages.</div></div>';
         }
         return list
           .map(function (m) {
