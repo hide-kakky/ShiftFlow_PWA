@@ -2997,21 +2997,16 @@
           ? resolveThemePreference(pref)
           : pref;
       if (isLoading) {
-        var getSurface =
-          typeof window.__SHIFT_FLOW_GET_SURFACE__ === 'function'
-            ? window.__SHIFT_FLOW_GET_SURFACE__
+        var getPrimary =
+          typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
+            ? window.__SHIFT_FLOW_GET_PRIMARY__
             : function (mode) {
-                try {
-                  var styles = window.getComputedStyle(document.documentElement);
-                  var surface = styles ? styles.getPropertyValue('--surface') : '';
-                  surface = typeof surface === 'string' ? surface.trim() : '';
-                  if (surface) return surface;
-                } catch (err) {}
-                return mode === 'dark' ? '#050b18' : '#f2f4f9';
+                if (mode === 'dark') return '#4b67b3';
+                return '#517cb2';
               };
-        var surfaceColor = getSurface(resolvedPref);
-        if (metaTheme && surfaceColor) {
-          metaTheme.setAttribute('content', surfaceColor);
+        var primaryColor = getPrimary(resolvedPref);
+        if (metaTheme && primaryColor) {
+          metaTheme.setAttribute('content', primaryColor);
         }
         if (appleStatus) {
           appleStatus.setAttribute(
@@ -4067,6 +4062,7 @@
       var SWIPE_VERTICAL_TOLERANCE = 160;
       var SWIPE_ACTIVATION_DELTA = 14;
       var SWIPE_TRANSITION = 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+      var CURRENT_TRANSFORM = 0;
 
       window.__SHIFT_FLOW_GESTURE__ = null;
 
@@ -4089,6 +4085,7 @@
             track.style.transform = 'translateX(' + -offset + 'px)';
           });
         }
+        CURRENT_TRANSFORM = -offset;
       }
 
       function setActiveNav(view) {
@@ -4153,27 +4150,36 @@
 
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
-        if (!wrap) return;
-        var active = false;
-        var gesture = null;
-        var startX = 0;
-        var startY = 0;
-        var startTime = 0;
+        var track = byId('viewsTrack');
+        if (!wrap || !track) return;
+        var state = {
+          active: false,
+          dragging: false,
+          startX: 0,
+          startY: 0,
+          startTime: 0,
+          baseOffset: 0,
+          rawDx: 0,
+          rawDy: 0,
+        };
         var unify = function (e) {
           if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0];
           if (e.touches && e.touches.length) return e.touches[0];
           return e;
         };
         function swipeThreshold() {
-          var base = window.innerWidth || document.documentElement.clientWidth || 360;
-          return Math.min(140, Math.max(48, base * 0.22));
+          var base = wrap.offsetWidth || window.innerWidth || document.documentElement.clientWidth || 360;
+          return Math.max(48, Math.min(140, base * 0.18));
         }
         function resetSwipe() {
-          active = false;
-          gesture = null;
-          startX = 0;
-          startY = 0;
-          startTime = 0;
+          state.active = false;
+          state.dragging = false;
+          state.startX = 0;
+          state.startY = 0;
+          state.startTime = 0;
+          state.baseOffset = CURRENT_TRANSFORM;
+          state.rawDx = 0;
+          state.rawDy = 0;
           window.__SHIFT_FLOW_GESTURE__ = null;
         }
 
@@ -4186,11 +4192,15 @@
               return;
             }
             var t = unify(e);
-            active = true;
-            gesture = null;
-            startX = t.clientX;
-            startY = t.clientY;
-            startTime = Date.now();
+            state.active = true;
+            state.dragging = false;
+            state.startX = t.clientX;
+            state.startY = t.clientY;
+            state.startTime = Date.now();
+            state.baseOffset = CURRENT_TRANSFORM;
+            state.rawDx = 0;
+            state.rawDy = 0;
+            track.style.transition = 'none';
             window.__SHIFT_FLOW_GESTURE__ = null;
           },
           { passive: true }
@@ -4199,63 +4209,74 @@
         wrap.addEventListener(
           'touchmove',
           function (e) {
-            if (!active) return;
+            if (!state.active) return;
             if (e.touches && e.touches.length > 1) {
               resetSwipe();
               return;
             }
             var t = unify(e);
-            var dx = t.clientX - startX;
-            var dy = t.clientY - startY;
-            if (!gesture) {
-              if (Math.abs(dx) >= SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 14) {
-                gesture = 'horizontal';
+            var dx = t.clientX - state.startX;
+            var dy = t.clientY - state.startY;
+            if (!state.dragging) {
+              if (Math.abs(dx) >= SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 10) {
+                state.dragging = true;
                 window.__SHIFT_FLOW_GESTURE__ = 'horizontal';
-              } else if (Math.abs(dy) >= SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 14) {
-                gesture = 'vertical';
+              } else if (Math.abs(dy) >= SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 10) {
                 window.__SHIFT_FLOW_GESTURE__ = 'vertical';
+                resetSwipe();
+                return;
+              } else {
+                return;
               }
             }
-            if (gesture === 'horizontal' && e.cancelable) {
-              e.preventDefault();
-            }
+            if (window.__SHIFT_FLOW_GESTURE__ !== 'horizontal') return;
+            if (e.cancelable) e.preventDefault();
+            state.rawDx = dx;
+            state.rawDy = dy;
+            var nextOffset = state.baseOffset + dx;
+            track.style.transform = 'translateX(' + nextOffset + 'px)';
           },
           { passive: false }
         );
 
         wrap.addEventListener(
           'touchend',
-          function (e) {
-            if (!active) return;
-            var t = unify(e);
-            var dx = t.clientX - startX;
-            var dy = t.clientY - startY;
-            var dt = Date.now() - startTime;
-            var threshold = swipeThreshold();
-            var withinVerticalGuard = Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE;
-            if (
-              gesture === 'horizontal' &&
-              !SWIPE_LOCK &&
-              withinVerticalGuard &&
-              Math.abs(dx) >= threshold &&
-              dt < 800
-            ) {
-              var idx = order.indexOf(CURRENT_VIEW);
-              var count = order.length;
-              var lastIndex = count - 1;
-              var target = null;
-              if (dx < 0) {
-                target = idx < lastIndex ? order[idx + 1] : order[0];
-              } else if (dx > 0) {
-                target = idx > 0 ? order[idx - 1] : order[lastIndex];
+          function () {
+            if (!state.active) {
+              resetSwipe();
+              return;
+            }
+            var triggered = false;
+            if (state.dragging && !SWIPE_LOCK) {
+              var dx = state.rawDx;
+              var dy = state.rawDy;
+              var dt = Date.now() - state.startTime;
+              var threshold = swipeThreshold();
+              var withinVerticalGuard = Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE;
+              if (Math.abs(dx) >= threshold && withinVerticalGuard && dt < 800) {
+                var idx = order.indexOf(CURRENT_VIEW);
+                var count = order.length;
+                var lastIndex = count - 1;
+                var target = null;
+                if (dx < 0) {
+                  target = idx < lastIndex ? order[idx + 1] : order[0];
+                } else if (dx > 0) {
+                  target = idx > 0 ? order[idx - 1] : order[lastIndex];
+                }
+                if (target && target !== CURRENT_VIEW) {
+                  SWIPE_LOCK = true;
+                  navigateTo(target, { animate: true });
+                  setTimeout(function () {
+                    SWIPE_LOCK = false;
+                  }, 360);
+                  triggered = true;
+                }
               }
-              if (target && target !== CURRENT_VIEW) {
-                SWIPE_LOCK = true;
-                navigateTo(target, { animate: true });
-                setTimeout(function () {
-                  SWIPE_LOCK = false;
-                }, 360);
-              }
+            }
+            if (!triggered) {
+              track.style.transition = SWIPE_TRANSITION;
+              track.style.transform = 'translateX(' + state.baseOffset + 'px)';
+              CURRENT_TRANSFORM = state.baseOffset;
             }
             resetSwipe();
           },
@@ -4265,6 +4286,8 @@
         wrap.addEventListener(
           'touchcancel',
           function () {
+            track.style.transition = SWIPE_TRANSITION;
+            track.style.transform = 'translateX(' + CURRENT_TRANSFORM + 'px)';
             resetSwipe();
           },
           { passive: true }
