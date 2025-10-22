@@ -2985,12 +2985,23 @@
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       const FEDCM_FALLBACK_MESSAGE =
         'ブラウザで Google ワンタップを表示できませんでした。下のボタンからサインインしてください。';
+      const AUTH_STORAGE_KEY = 'shiftflow.authToken';
+      const AUTH_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+      const AUTH_TOKEN_EXPIRY_GRACE_MS = 30 * 1000;
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
       let TASKS_BOOTSTRAPPED = false;
       var _rszTimer = null;
       let ACTIVE_TASK_TAB = 'my';
+      let AUTH_SESSION_LIMIT_EXPIRES_AT = 0;
+      let AUTH_SESSION_REFRESH_TIMER = null;
+      const RESTORED_AUTH_RECORD = restoreStoredAuthToken();
+      if (RESTORED_AUTH_RECORD && RESTORED_AUTH_RECORD.token) {
+        setAuthToken(RESTORED_AUTH_RECORD.token, {
+          sessionExpiresAt: RESTORED_AUTH_RECORD.sessionExpiresAt,
+        });
+      }
       if (!HAS_GAS_WEB_APP_URL) {
         console.warn(
           '[ShiftFlow] GAS_WEB_APP_URL is not defined. Set the Environment Variable on Cloudflare Pages.'
@@ -3860,10 +3871,184 @@
         }
       }
 
-      function setAuthToken(token) {
+      function getAuthStorage() {
+        try {
+          return window.localStorage || null;
+        } catch (err) {
+          console.warn('Local storage is unavailable:', err);
+          return null;
+        }
+      }
+
+      function persistAuthToken(token, payload, preservedExpiresAt) {
+        if (!token) {
+          const storage = getAuthStorage();
+          if (storage) {
+            try {
+              storage.removeItem(AUTH_STORAGE_KEY);
+            } catch (err) {
+              console.warn('Failed to clear persisted auth token:', err);
+            }
+          }
+          return 0;
+        }
+        const now = Date.now();
+        const sessionExpiresAt =
+          typeof preservedExpiresAt === 'number' && preservedExpiresAt > now
+            ? preservedExpiresAt
+            : now + AUTH_SESSION_MAX_AGE_MS;
+        const tokenExpiresAt =
+          payload && typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+        const storage = getAuthStorage();
+        if (storage) {
+          try {
+            storage.setItem(
+              AUTH_STORAGE_KEY,
+              JSON.stringify({
+                token: token,
+                tokenExpiresAt: tokenExpiresAt,
+                sessionExpiresAt: sessionExpiresAt,
+              })
+            );
+          } catch (err) {
+            console.warn('Failed to persist auth token:', err);
+          }
+        }
+        return sessionExpiresAt;
+      }
+
+      function restoreStoredAuthToken() {
+        const storage = getAuthStorage();
+        if (!storage) return null;
+        let raw = null;
+        try {
+          raw = storage.getItem(AUTH_STORAGE_KEY);
+        } catch (err) {
+          console.warn('Failed to read persisted auth token:', err);
+          return null;
+        }
+        if (!raw) return null;
+        let record = null;
+        try {
+          record = JSON.parse(raw);
+        } catch (err) {
+          console.warn('Failed to parse persisted auth token:', err);
+          try {
+            storage.removeItem(AUTH_STORAGE_KEY);
+          } catch (removeErr) {
+            console.warn('Failed to purge invalid auth token payload:', removeErr);
+          }
+          return null;
+        }
+        if (!record || typeof record.token !== 'string' || record.token.length === 0) {
+          try {
+            storage.removeItem(AUTH_STORAGE_KEY);
+          } catch (err) {
+            console.warn('Failed to purge empty auth token payload:', err);
+          }
+          return null;
+        }
+        const now = Date.now();
+        const sessionExpiresAt =
+          typeof record.sessionExpiresAt === 'number'
+            ? record.sessionExpiresAt
+            : typeof record.expiresAt === 'number'
+            ? record.expiresAt
+            : 0;
+        if (sessionExpiresAt > 0 && now > sessionExpiresAt) {
+          try {
+            storage.removeItem(AUTH_STORAGE_KEY);
+          } catch (err) {
+            console.warn('Failed to remove expired auth token:', err);
+          }
+          return null;
+        }
+        const tokenExpiresAt =
+          typeof record.tokenExpiresAt === 'number'
+            ? record.tokenExpiresAt
+            : typeof record.expiresAt === 'number'
+            ? record.expiresAt
+            : 0;
+        return {
+          token: record.token,
+          tokenExpiresAt: tokenExpiresAt,
+          sessionExpiresAt: sessionExpiresAt,
+        };
+      }
+
+      function hasValidAuthToken() {
+        if (!window.__SHIFT_FLOW_AUTH_TOKEN__ || !AUTH_TOKEN_PAYLOAD) {
+          return false;
+        }
+        if (typeof AUTH_TOKEN_PAYLOAD.exp !== 'number') {
+          return true;
+        }
+        return AUTH_TOKEN_PAYLOAD.exp * 1000 > Date.now() + AUTH_TOKEN_EXPIRY_GRACE_MS;
+      }
+
+      function scheduleAuthRefresh(payload, sessionExpiresAt) {
+        if (AUTH_SESSION_REFRESH_TIMER) {
+          clearTimeout(AUTH_SESSION_REFRESH_TIMER);
+          AUTH_SESSION_REFRESH_TIMER = null;
+        }
+        if (!payload || typeof payload.exp !== 'number') return;
+        const now = Date.now();
+        if (sessionExpiresAt && sessionExpiresAt > 0 && sessionExpiresAt <= now) {
+          return;
+        }
+        const tokenExpiresAt = payload.exp * 1000;
+        const effectiveExpiry =
+          sessionExpiresAt && sessionExpiresAt > 0
+            ? Math.min(tokenExpiresAt, sessionExpiresAt)
+            : tokenExpiresAt;
+        if (effectiveExpiry <= now) {
+          AUTH_SESSION_REFRESH_TIMER = setTimeout(requestCredentialRefresh, 100);
+          return;
+        }
+        const bufferMs = 2 * 60 * 1000;
+        let timeoutMs = effectiveExpiry - now - bufferMs;
+        if (timeoutMs <= 0) {
+          timeoutMs = 1000;
+        }
+        AUTH_SESSION_REFRESH_TIMER = setTimeout(
+          requestCredentialRefresh,
+          Math.max(1000, timeoutMs)
+        );
+      }
+
+      function requestCredentialRefresh() {
+        AUTH_SESSION_REFRESH_TIMER = null;
+        if (AUTH_SESSION_LIMIT_EXPIRES_AT && AUTH_SESSION_LIMIT_EXPIRES_AT <= Date.now()) {
+          return;
+        }
+        if (
+          !(
+            globalThis.google &&
+            google.accounts &&
+            google.accounts.id &&
+            typeof google.accounts.id.prompt === 'function'
+          )
+        ) {
+          AUTH_SESSION_REFRESH_TIMER = setTimeout(requestCredentialRefresh, 2000);
+          return;
+        }
+        try {
+          google.accounts.id.prompt(handleOneTapPrompt);
+        } catch (err) {
+          console.warn('Failed to request credential refresh:', err);
+        }
+      }
+
+      function setAuthToken(token, options) {
         window.__SHIFT_FLOW_AUTH_TOKEN__ = token || '';
         AUTH_TOKEN_PAYLOAD = token ? decodeJwtPayload(token) : null;
         AUTH_READY = !!token;
+        AUTH_SESSION_LIMIT_EXPIRES_AT = persistAuthToken(
+          window.__SHIFT_FLOW_AUTH_TOKEN__,
+          AUTH_TOKEN_PAYLOAD,
+          options && options.sessionExpiresAt
+        );
+        scheduleAuthRefresh(AUTH_TOKEN_PAYLOAD, AUTH_SESSION_LIMIT_EXPIRES_AT);
       }
 
       function clearAuthToken() {
@@ -3951,7 +4136,7 @@
             typeof notification.getDismissedReason === 'function'
               ? notification.getDismissedReason()
               : '';
-          if (reason !== 'credential_returned' && !AUTH_READY) {
+          if (reason !== 'credential_returned' && !hasValidAuthToken()) {
             showAuthOverlay();
           }
         }
@@ -3978,7 +4163,7 @@
         google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleCredentialResponse,
-          auto_select: false,
+          auto_select: true,
           ux_mode: 'popup',
           cancel_on_tap_outside: false,
           use_fedcm_for_prompt: true,
@@ -3996,7 +4181,7 @@
       }
 
       function bootstrapAfterAuth() {
-        if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
+        if (!hasValidAuthToken()) {
           showAuthOverlay();
           return;
         }
@@ -6686,7 +6871,13 @@
         attachSaveHandlers();
 
         initPullToRefresh();
-        hideAuthOverlay(false);
+        const tokenStillValid = hasValidAuthToken();
+        if (tokenStillValid) {
+          hideAuthOverlay();
+          bootstrapAfterAuth();
+        } else {
+          hideAuthOverlay(false);
+        }
         initGoogleSignIn();
       });
     </script>
