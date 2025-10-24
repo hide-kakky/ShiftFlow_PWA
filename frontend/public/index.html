@@ -141,7 +141,9 @@
           if (metaTheme && primaryColor) {
             metaTheme.setAttribute('content', primaryColor);
           }
-          var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+          var appleStatus = document.querySelector(
+            'meta[name="apple-mobile-web-app-status-bar-style"]'
+          );
           var statusBar =
             (themeMeta[resolvedTheme] && themeMeta[resolvedTheme].statusBar) ||
             (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
@@ -151,10 +153,7 @@
         };
 
         var bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
-        var pref =
-          (bootstrap.userInfo && bootstrap.userInfo.theme) ||
-          bootstrap.theme ||
-          'light';
+        var pref = (bootstrap.userInfo && bootstrap.userInfo.theme) || bootstrap.theme || 'light';
         var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
         var resolved = pref === 'system' && media ? (media.matches ? 'dark' : 'light') : pref;
         document.documentElement.setAttribute('data-theme', resolved);
@@ -969,7 +968,9 @@
       @media (max-width: 768px) {
         .page-body {
           padding-top: clamp(12px, calc(var(--header-h) + var(--safe-top) - 40px), 28px);
-          min-height: calc(100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top));
+          min-height: calc(
+            100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top)
+          );
         }
       }
       #home-today-tasks {
@@ -1004,18 +1005,19 @@
         position: relative;
         border-radius: 20px;
         border: 1px solid rgba(81, 124, 178, 0.18);
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.12) 0%, rgba(81, 124, 178, 0.02) 80%),
+        background: linear-gradient(
+            135deg,
+            rgba(81, 124, 178, 0.12) 0%,
+            rgba(81, 124, 178, 0.02) 80%
+          ),
           var(--card);
         box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
-        transition: transform var(--fade) ease, box-shadow var(--fade) ease, border-color var(--fade) ease;
+        transition: transform var(--fade) ease, box-shadow var(--fade) ease,
+          border-color var(--fade) ease;
       }
       :root[data-theme='dark'] .card.app-card {
         border-color: rgba(90, 122, 196, 0.46);
-        background: linear-gradient(
-            135deg,
-            rgba(75, 118, 195, 0.22) 0%,
-            rgba(17, 29, 54, 0.92) 68%
-          ),
+        background: linear-gradient(135deg, rgba(75, 118, 195, 0.22) 0%, rgba(17, 29, 54, 0.92) 68%),
           var(--card);
         box-shadow: 0 20px 48px rgba(4, 10, 26, 0.68);
       }
@@ -1097,7 +1099,12 @@
       }
       .card.app-card.task-card-completed {
         border-left-color: rgba(148, 163, 184, 0.9);
-        background: linear-gradient(135deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.04) 70%), var(--card);
+        background: linear-gradient(
+            135deg,
+            rgba(148, 163, 184, 0.18),
+            rgba(148, 163, 184, 0.04) 70%
+          ),
+          var(--card);
         opacity: 0.92;
       }
       .card.app-card.task-card-completed .task-title-line strong {
@@ -1109,34 +1116,42 @@
       }
       .card.app-card.task-card.task-card-overdue-pending {
         border-left-color: #e34b43;
-        background: linear-gradient(135deg, rgba(227, 75, 67, 0.22), rgba(227, 75, 67, 0.06) 70%), var(--card);
+        background: linear-gradient(135deg, rgba(227, 75, 67, 0.22), rgba(227, 75, 67, 0.06) 70%),
+          var(--card);
         box-shadow: 0 16px 40px rgba(227, 75, 67, 0.18);
       }
       :root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-pending {
-        background: linear-gradient(135deg, rgba(229, 98, 82, 0.42), rgba(17, 29, 54, 0.88) 74%), var(--card);
+        background: linear-gradient(135deg, rgba(229, 98, 82, 0.42), rgba(17, 29, 54, 0.88) 74%),
+          var(--card);
       }
       .card.app-card.task-card.task-card-overdue-inprogress {
         border-left-color: #f49d3f;
-        background: linear-gradient(135deg, rgba(244, 157, 63, 0.22), rgba(244, 157, 63, 0.06) 70%), var(--card);
+        background: linear-gradient(135deg, rgba(244, 157, 63, 0.22), rgba(244, 157, 63, 0.06) 70%),
+          var(--card);
         box-shadow: 0 16px 38px rgba(244, 157, 63, 0.16);
       }
       :root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-inprogress {
-        background: linear-gradient(135deg, rgba(244, 157, 63, 0.35), rgba(17, 29, 54, 0.86) 78%), var(--card);
+        background: linear-gradient(135deg, rgba(244, 157, 63, 0.35), rgba(17, 29, 54, 0.86) 78%),
+          var(--card);
       }
       .card.app-card.msg-card {
         border-left: 5px solid transparent;
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.12), rgba(81, 124, 178, 0.03) 70%), var(--card);
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.12), rgba(81, 124, 178, 0.03) 70%),
+          var(--card);
       }
       :root[data-theme='dark'] .card.app-card.msg-card {
-        background: linear-gradient(135deg, rgba(53, 85, 168, 0.36), rgba(16, 25, 45, 0.88) 76%), var(--card);
+        background: linear-gradient(135deg, rgba(53, 85, 168, 0.36), rgba(16, 25, 45, 0.88) 76%),
+          var(--card);
       }
       .card.app-card.msg-card.unread {
         border-left-color: var(--warn);
         box-shadow: 0 22px 52px rgba(229, 57, 53, 0.18);
-        background: linear-gradient(135deg, rgba(229, 57, 53, 0.18), rgba(229, 57, 53, 0.05) 68%), var(--card);
+        background: linear-gradient(135deg, rgba(229, 57, 53, 0.18), rgba(229, 57, 53, 0.05) 68%),
+          var(--card);
       }
       :root[data-theme='dark'] .card.app-card.msg-card.unread {
-        background: linear-gradient(135deg, rgba(229, 98, 82, 0.32), rgba(17, 29, 54, 0.92) 70%), var(--card);
+        background: linear-gradient(135deg, rgba(229, 98, 82, 0.32), rgba(17, 29, 54, 0.92) 70%),
+          var(--card);
       }
       .msg-icon {
         width: 42px;
@@ -1375,7 +1390,11 @@
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        background: radial-gradient(130% 130% at 25% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+        background: radial-gradient(
+          130% 130% at 25% 20%,
+          rgba(255, 255, 255, 0.55),
+          rgba(255, 255, 255, 0)
+        );
         pointer-events: none;
         opacity: 0.85;
       }
@@ -1384,7 +1403,11 @@
         position: absolute;
         inset: -25%;
         border-radius: inherit;
-        background: radial-gradient(120% 120% at 50% 50%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+        background: radial-gradient(
+          120% 120% at 50% 50%,
+          rgba(255, 255, 255, 0.2),
+          rgba(255, 255, 255, 0)
+        );
         opacity: 0;
         transition: opacity 0.24s ease;
         pointer-events: none;
@@ -1621,7 +1644,11 @@
       }
       .card.app-card.task-card-completed {
         border-left-color: rgba(148, 163, 184, 0.9);
-        background: linear-gradient(135deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.04) 70%),
+        background: linear-gradient(
+            135deg,
+            rgba(148, 163, 184, 0.18),
+            rgba(148, 163, 184, 0.04) 70%
+          ),
           var(--card);
         opacity: 0.92;
       }
@@ -2042,7 +2069,6 @@
         margin: 0;
         font-weight: 600;
         color: var(--text-900);
-        
       }
     </style>
   </head>
@@ -2107,7 +2133,12 @@
 
     <!-- ===== Static PWA preview shell (hidden until UI integration) ===== -->
     <!-- TODO: 既存UIと統合 -->
-    <section class="pwa-preview-shell" aria-label="ShiftFlow モバイルプレビュー" data-app-shell hidden>
+    <section
+      class="pwa-preview-shell"
+      aria-label="ShiftFlow モバイルプレビュー"
+      data-app-shell
+      hidden
+    >
       <header class="pwa-header" aria-label="アプリ共通ヘッダー">
         <div class="pwa-header__title">ShiftFlow</div>
         <button
@@ -2122,9 +2153,7 @@
       <main class="pwa-main" aria-label="ホームカード">
         <article class="pwa-card" aria-labelledby="pwa-card-title">
           <h2 id="pwa-card-title" class="h5 mb-2">今日のタスク</h2>
-          <p class="pwa-card__meta">
-            進行中のタスクや共有メモの更新状況がここに表示されます。
-          </p>
+          <p class="pwa-card__meta">進行中のタスクや共有メモの更新状況がここに表示されます。</p>
           <ul class="pwa-list" aria-label="ダミータスクリスト">
             <li>
               <span class="pwa-list__dot" aria-hidden="true"></span>
@@ -2143,7 +2172,11 @@
       </main>
       <footer class="pwa-footer" aria-label="アプリ共通フッター">
         <nav class="pwa-footer__nav" aria-label="メインナビゲーション">
-          <button type="button" class="pwa-footer__button pwa-footer__button--active" aria-label="ホーム">
+          <button
+            type="button"
+            class="pwa-footer__button pwa-footer__button--active"
+            aria-label="ホーム"
+          >
             <span class="material-icons-outlined" aria-hidden="true">home</span>
             <span>ホーム</span>
           </button>
@@ -2162,13 +2195,7 @@
     <!-- ===== Desktop header and user menu ===== -->
     <header class="navbar navbar-expand-md d-print-none" data-app-shell hidden>
       <div class="container-xl">
-        <a
-          href="#"
-          class="navbar-brand app-brand"
-          data-view="home"
-          title=""
-          data-bind-user-email
-        >
+        <a href="#" class="navbar-brand app-brand" data-view="home" title="" data-bind-user-email>
           <span class="brand-mark">
             <span class="brand-ring"></span>
             <img src="/icons/icon-192.png" alt="ShiftFlow" class="brand-icon" />
@@ -2216,7 +2243,9 @@
           <li class="nav-item">
             <a class="nav-link nav-icon" href="#" data-view="tasks" title="Tasks">
               <span class="material-icons-outlined">send</span>
-              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-top">0</span>
+              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-top"
+                >0</span
+              >
             </a>
           </li>
           <li class="nav-item">
@@ -2282,7 +2311,12 @@
             <div class="task-tabs" id="taskTabs">
               <button class="task-tab-btn active" data-task-tab="my" type="button">MY TASK</button>
               <button class="task-tab-btn" data-task-tab="from" type="button">FROM ME</button>
-              <button class="task-tab-btn d-none" data-task-tab="all" data-manager-only="true" type="button">
+              <button
+                class="task-tab-btn d-none"
+                data-task-tab="all"
+                data-manager-only="true"
+                type="button"
+              >
                 <span class="material-icons-outlined">admin_panel_settings</span>ALL TASKS
               </button>
             </div>
@@ -2423,7 +2457,11 @@
                       data-bind-user-avatar
                       alt="プロフィール画像のプレビュー"
                     />
-                    <button class="btn btn-outline-secondary w-100" type="button" id="btn-setting-image">
+                    <button
+                      class="btn btn-outline-secondary w-100"
+                      type="button"
+                      id="btn-setting-image"
+                    >
                       <span class="material-icons-outlined align-middle me-1">image</span>画像を選択
                     </button>
                     <div class="settings-image-meta" id="setting-image-name">未設定</div>
@@ -2444,7 +2482,9 @@
                     />
                     <div class="settings-upload-note">
                       <span class="material-icons-outlined align-middle">info</span>
-                      <span>最大2MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span>
+                      <span
+                        >最大2MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span
+                      >
                     </div>
                   </div>
                 </div>
@@ -2469,7 +2509,8 @@
                       <option value="system">システムに合わせる</option>
                     </select>
                     <div class="theme-status" id="setting-theme-display">
-                      <span class="material-icons-outlined align-middle">light_mode</span>ライトテーマを適用中
+                      <span class="material-icons-outlined align-middle">light_mode</span
+                      >ライトテーマを適用中
                     </div>
                   </div>
                   <div class="settings-theme-guide">
@@ -2504,7 +2545,9 @@
                 </div>
                 <div>
                   <h5>管理者メニュー</h5>
-                  <p>ユーザー管理機能を準備中です。今後この画面から各種管理が行えるようになります。</p>
+                  <p>
+                    ユーザー管理機能を準備中です。今後この画面から各種管理が行えるようになります。
+                  </p>
                 </div>
               </div>
               <p class="mb-0 text-muted small">
@@ -2567,7 +2610,9 @@
               title="タスク"
             >
               <span class="material-icons-outlined" aria-hidden="true">send</span>
-              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-bottom">0</span>
+              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-bottom"
+                >0</span
+              >
             </a>
           </li>
           <li class="nav-item">
@@ -2579,7 +2624,9 @@
               title="メッセージ"
             >
               <span class="material-icons-outlined" aria-hidden="true">mail</span>
-              <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-bottom">0</span>
+              <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-bottom"
+                >0</span
+              >
             </a>
           </li>
           <li class="nav-item">
@@ -2751,9 +2798,7 @@
                   <button class="btn btn-outline-secondary" type="button" id="btn-message-attach">
                     画像を追加
                   </button>
-                  <span class="small text-muted" id="message-attach-hint"
-                    >最大3件・各4MBまで</span
-                  >
+                  <span class="small text-muted" id="message-attach-hint">最大3件・各4MBまで</span>
                 </div>
                 <input
                   type="file"
@@ -2902,7 +2947,9 @@
                 </button>
                 <button class="btn btn-primary" id="btnMsgMarkRead" data-read-state="unread">
                   <span class="label">
-                    <span class="material-icons align-middle me-1 js-msg-read-icon">mark_email_read</span>
+                    <span class="material-icons align-middle me-1 js-msg-read-icon"
+                      >mark_email_read</span
+                    >
                     <span class="label-text">既読にする</span>
                   </span>
                   <span
@@ -3001,12 +3048,10 @@
         typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function'
           ? window.__SHIFT_FLOW_SYNC_THEME_META__
           : function (theme) {
-              var palette =
-                window.__SHIFT_FLOW_THEME_META__ ||
-                {
-                  light: { statusBar: 'default' },
-                  dark: { statusBar: 'black-translucent' },
-                };
+              var palette = window.__SHIFT_FLOW_THEME_META__ || {
+                light: { statusBar: 'default' },
+                dark: { statusBar: 'black-translucent' },
+              };
               var getPrimary =
                 typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
                   ? window.__SHIFT_FLOW_GET_PRIMARY__
@@ -3055,29 +3100,23 @@
         const email = typeof user.email === 'string' ? user.email : '';
         const name = user.name || 'ゲストユーザー';
         const avatar = user.imageUrl || '/icons/icon-192.png';
-        document
-          .querySelectorAll('[data-bind-user-email]')
-          .forEach(function (el) {
-            if (email) {
-              el.setAttribute('title', email);
-            } else {
-              el.removeAttribute('title');
-            }
-            if (email && el.tagName === 'A' && el.textContent.trim() === '') {
-              el.textContent = email;
-            }
-          });
-        document
-          .querySelectorAll('[data-bind-user-name]')
-          .forEach(function (el) {
-            el.textContent = name;
-          });
-        document
-          .querySelectorAll('[data-bind-user-avatar]')
-          .forEach(function (el) {
-            el.setAttribute('src', avatar);
-            el.setAttribute('data-avatar-url', avatar);
-          });
+        document.querySelectorAll('[data-bind-user-email]').forEach(function (el) {
+          if (email) {
+            el.setAttribute('title', email);
+          } else {
+            el.removeAttribute('title');
+          }
+          if (email && el.tagName === 'A' && el.textContent.trim() === '') {
+            el.textContent = email;
+          }
+        });
+        document.querySelectorAll('[data-bind-user-name]').forEach(function (el) {
+          el.textContent = name;
+        });
+        document.querySelectorAll('[data-bind-user-avatar]').forEach(function (el) {
+          el.setAttribute('src', avatar);
+          el.setAttribute('data-avatar-url', avatar);
+        });
       }
       applyBootstrapBindings(window.__SHIFT_FLOW_BOOTSTRAP__);
 
@@ -3097,13 +3136,12 @@
       }
 
       function populateAssigneeFilters() {
-        var selects = [
-          byId('task-filter-from-assignee'),
-          byId('task-filter-all-assignee'),
-        ];
+        var selects = [byId('task-filter-from-assignee'), byId('task-filter-all-assignee')];
         var rows = ACTIVE_USERS.slice().sort(function (a, b) {
-          return String(a.name || a.email || '')
-            .localeCompare(String(b.name || b.email || ''), 'ja');
+          return String(a.name || a.email || '').localeCompare(
+            String(b.name || b.email || ''),
+            'ja'
+          );
         });
         selects.forEach(function (select) {
           if (!select) return;
@@ -3120,7 +3158,12 @@
             option.textContent = user.name || user.email;
             select.appendChild(option);
           });
-          if (previous && rows.some(function (u) { return u.email === previous; })) {
+          if (
+            previous &&
+            rows.some(function (u) {
+              return u.email === previous;
+            })
+          ) {
             select.value = previous;
           }
         });
@@ -3156,14 +3199,20 @@
             option.textContent = folder.name || folder.id;
             filterSelect.appendChild(option);
           });
-          if (prev && folders.some(function (f) { return f.id === prev; })) {
+          if (
+            prev &&
+            folders.some(function (f) {
+              return f.id === prev;
+            })
+          ) {
             filterSelect.value = prev;
           }
         }
 
         var composeSelect = byId('messageFolder');
         if (composeSelect) {
-          var prevCompose = composeSelect.value && composeSelect.value !== '' ? composeSelect.value : null;
+          var prevCompose =
+            composeSelect.value && composeSelect.value !== '' ? composeSelect.value : null;
           composeSelect.innerHTML = '';
           var placeholder = document.createElement('option');
           placeholder.value = '';
@@ -3177,65 +3226,70 @@
             composeSelect.appendChild(option);
           });
           var defaultId = prevCompose || getDefaultFolderId();
-          if (defaultId && folders.some(function (f) { return f.id === defaultId; })) {
+          if (
+            defaultId &&
+            folders.some(function (f) {
+              return f.id === defaultId;
+            })
+          ) {
             composeSelect.value = defaultId;
           } else {
             composeSelect.value = '';
           }
-      }
-    }
-
-    function setBootstrapLoading(isLoading) {
-      var body = document.body;
-      if (body) {
-        body.classList.toggle('bootstrapping', !!isLoading);
-      }
-      var metaTheme = document.querySelector('meta[name="theme-color"]');
-      var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-      var pref = document.documentElement.dataset.themePref || 'light';
-      var resolvedPref =
-        typeof resolveThemePreference === 'function'
-          ? resolveThemePreference(pref)
-          : pref;
-      if (isLoading) {
-        var getPrimary =
-          typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
-            ? window.__SHIFT_FLOW_GET_PRIMARY__
-            : function (mode) {
-                if (mode === 'dark') return '#4b67b3';
-                return '#517cb2';
-              };
-        var primaryColor = getPrimary(resolvedPref);
-        if (metaTheme && primaryColor) {
-          metaTheme.setAttribute('content', primaryColor);
         }
-        if (appleStatus) {
-          appleStatus.setAttribute(
-            'content',
-            resolvedPref === 'dark' ? 'black-translucent' : 'default'
-          );
-        }
-      } else if (typeof syncThemeMeta === 'function') {
-        syncThemeMeta(resolvedPref);
       }
-      var loadingEl = byId('bootstrap-loading');
-      if (!loadingEl) return;
-      if (isLoading) {
-        loadingEl.setAttribute('aria-hidden', 'false');
-        loadingEl.setAttribute('aria-busy', 'true');
-      } else {
-        loadingEl.setAttribute('aria-hidden', 'true');
-        loadingEl.removeAttribute('aria-busy');
-      }
-    }
 
-    function isAuthError(err) {
-      if (!err) return false;
-      if (err.authRequired === true) return true;
-      if (err.status === 401 || err.status === 403) return true;
-      var msg = String(err.message || '');
-      return msg.indexOf('Non-JSON response from backend') !== -1;
-    }
+      function setBootstrapLoading(isLoading) {
+        var body = document.body;
+        if (body) {
+          body.classList.toggle('bootstrapping', !!isLoading);
+        }
+        var metaTheme = document.querySelector('meta[name="theme-color"]');
+        var appleStatus = document.querySelector(
+          'meta[name="apple-mobile-web-app-status-bar-style"]'
+        );
+        var pref = document.documentElement.dataset.themePref || 'light';
+        var resolvedPref =
+          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
+        if (isLoading) {
+          var getPrimary =
+            typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
+              ? window.__SHIFT_FLOW_GET_PRIMARY__
+              : function (mode) {
+                  if (mode === 'dark') return '#4b67b3';
+                  return '#517cb2';
+                };
+          var primaryColor = getPrimary(resolvedPref);
+          if (metaTheme && primaryColor) {
+            metaTheme.setAttribute('content', primaryColor);
+          }
+          if (appleStatus) {
+            appleStatus.setAttribute(
+              'content',
+              resolvedPref === 'dark' ? 'black-translucent' : 'default'
+            );
+          }
+        } else if (typeof syncThemeMeta === 'function') {
+          syncThemeMeta(resolvedPref);
+        }
+        var loadingEl = byId('bootstrap-loading');
+        if (!loadingEl) return;
+        if (isLoading) {
+          loadingEl.setAttribute('aria-hidden', 'false');
+          loadingEl.setAttribute('aria-busy', 'true');
+        } else {
+          loadingEl.setAttribute('aria-hidden', 'true');
+          loadingEl.removeAttribute('aria-busy');
+        }
+      }
+
+      function isAuthError(err) {
+        if (!err) return false;
+        if (err.authRequired === true) return true;
+        if (err.status === 401 || err.status === 403) return true;
+        var msg = String(err.message || '');
+        return msg.indexOf('Non-JSON response from backend') !== -1;
+      }
 
       function applyBootstrapState(bootstrap) {
         var normalized = bootstrap || {};
@@ -3353,9 +3407,10 @@
       }
 
       document.addEventListener('click', function (event) {
-        var target = typeof event.target.closest === 'function'
-          ? event.target.closest('[data-action="auth-retry"]')
-          : null;
+        var target =
+          typeof event.target.closest === 'function'
+            ? event.target.closest('[data-action="auth-retry"]')
+            : null;
         if (!target) return;
         event.preventDefault();
         target.disabled = true;
@@ -3414,25 +3469,25 @@
         }
 
         function deliverFailure(handler, error, userObject) {
-        if (typeof handler === 'function') {
-          deliver(handler, error, userObject);
-          return;
-        }
-        if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
-          console.info('[ShiftFlow] auth required, prompting sign-in.');
-          clearAuthToken();
-          var overlayMessage = '再度サインインしてください。';
-          if (error && error.response && error.response.reason) {
-            overlayMessage = String(error.response.reason);
-          } else if (error && error.response && error.response.error) {
-            overlayMessage = String(error.response.error);
+          if (typeof handler === 'function') {
+            deliver(handler, error, userObject);
+            return;
           }
-          showAuthOverlay(overlayMessage);
-          initGoogleSignIn();
-          return;
+          if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
+            console.info('[ShiftFlow] auth required, prompting sign-in.');
+            clearAuthToken();
+            var overlayMessage = '再度サインインしてください。';
+            if (error && error.response && error.response.reason) {
+              overlayMessage = String(error.response.reason);
+            } else if (error && error.response && error.response.error) {
+              overlayMessage = String(error.response.error);
+            }
+            showAuthOverlay(overlayMessage);
+            initGoogleSignIn();
+            return;
+          }
+          console.error('[ShiftFlow] backend request failed', error);
         }
-        console.error('[ShiftFlow] backend request failed', error);
-      }
 
         function createError(message, extra) {
           var err = new Error(message || 'Request failed');
@@ -3445,107 +3500,134 @@
           return err;
         }
 
+        // === Helpers ===
+        async function _getIdTokenOrThrow() {
+          if (window.__SHIFT_FLOW_AUTH_TOKEN__) return window.__SHIFT_FLOW_AUTH_TOKEN__;
+          const cached = sessionStorage.getItem('SHIFT_FLOW_ID_TOKEN');
+          if (cached) {
+            window.__SHIFT_FLOW_AUTH_TOKEN__ = cached;
+            return cached;
+          }
+          if (window.google?.accounts?.id) {
+            const token = await new Promise((resolve, reject) => {
+              try {
+                google.accounts.id.prompt(() => {
+                  const t0 = Date.now();
+                  const timer = setInterval(() => {
+                    if (window.__SHIFT_FLOW_AUTH_TOKEN__) {
+                      clearInterval(timer);
+                      resolve(window.__SHIFT_FLOW_AUTH_TOKEN__);
+                    } else if (Date.now() - t0 > 3000) {
+                      clearInterval(timer);
+                      reject(new Error('NO_ID_TOKEN'));
+                    }
+                  }, 100);
+                });
+              } catch (e) {
+                reject(e);
+              }
+            });
+            sessionStorage.setItem('SHIFT_FLOW_ID_TOKEN', token);
+            return token;
+          }
+          throw new Error('NO_ID_TOKEN');
+        }
+
+        function _rid() {
+          return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
+            (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+          );
+        }
+
         function invokeRemote(route, argsSnapshot, handlers) {
           var url = API_BASE_PATH + '/' + encodeURIComponent(route);
-          var init = {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-            },
-            body: JSON.stringify({
-              route: route,
-              args: argsSnapshot,
-            }),
-          };
-          if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
-            var missingErr = createError('Auth token missing', { authRequired: true });
-            deliverFailure(handlers.failure, missingErr, handlers.userObject);
-            return;
-          }
-          if (AUTH_TOKEN_PAYLOAD && AUTH_TOKEN_PAYLOAD.exp) {
-            var expMs = Number(AUTH_TOKEN_PAYLOAD.exp) * 1000;
-            if (expMs && Date.now() >= expMs - 30 * 1000) {
-              clearAuthToken();
-              var expiredErr = createError('Auth token expired', { authRequired: true });
-              deliverFailure(handlers.failure, expiredErr, handlers.userObject);
-              return;
-            }
-          }
-          if (window.__SHIFT_FLOW_AUTH_TOKEN__) {
-            init.headers.Authorization = 'Bearer ' + window.__SHIFT_FLOW_AUTH_TOKEN__;
-          }
-          fetch(url, init)
-            .then(function (res) {
-              var contentType = res.headers.get('content-type') || '';
-              if (contentType.indexOf('application/json') === -1) {
-                return res.text().then(function (text) {
-                  console.warn('[ShiftFlow] Non-JSON response', {
-                    status: res.status,
-                    statusText: res.statusText,
-                    route: route,
-                    snippet: text.slice(0, 200),
-                  });
-                  var authRequired =
-                    res.status === 200 &&
-                    (text.indexOf('accounts.google.com') !== -1 ||
-                      text.indexOf('google-signin') !== -1 ||
-                      text.indexOf('<form') !== -1);
-                  throw createError('Non-JSON response from backend', {
-                    status: res.status,
-                    statusText: res.statusText,
-                    route: route,
-                    raw: text,
-                    authRequired: authRequired,
-                  });
-                });
-              }
-              return res.json().then(function (body) {
-                return { res: res, body: body };
+
+          async function _doFetch(withFreshToken) {
+            const idToken = await _getIdTokenOrThrow();
+            const init = {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                Authorization: 'Bearer ' + idToken,
+                'X-Shiftflow-Request-Id': _rid(),
+              },
+              body: JSON.stringify({ route: route, args: argsSnapshot }),
+            };
+
+            const res = await fetch(url, init);
+            const ctype = res.headers.get('content-type') || '';
+            if (ctype.indexOf('application/json') === -1) {
+              const text = await res.text();
+              const authRequired =
+                res.status === 200 &&
+                (text.includes('accounts.google.com') ||
+                  text.includes('google-signin') ||
+                  text.includes('<form'));
+              throw createError('Non-JSON response from backend', {
+                status: res.status,
+                statusText: res.statusText,
+                route,
+                raw: text,
+                authRequired,
               });
-            })
-            .then(function (packet) {
-              var res = packet.res;
-              var body = packet.body || {};
-              var successHandler = handlers.success;
-              var failureHandler = handlers.failure;
-              var userObj = handlers.userObject;
+            }
+            const body = await res.json();
+            return { res, body };
+          }
+
+          (async () => {
+            try {
+              let packet = await _doFetch(false);
+              if (
+                !packet.res.ok &&
+                (packet.res.status === 401 ||
+                  /Missing Authorization bearer token/i.test(packet.body?.detail || ''))
+              ) {
+                window.__SHIFT_FLOW_AUTH_TOKEN__ = '';
+                sessionStorage.removeItem('SHIFT_FLOW_ID_TOKEN');
+                packet = await _doFetch(true);
+              }
+
+              const res = packet.res,
+                body = packet.body || {};
+              const { success: successHandler, failure: failureHandler, userObject } = handlers;
 
               if (!res.ok) {
-                var msg =
-                  body && body.error
-                    ? body.error
-                    : 'HTTP ' + res.status + ' calling ' + route;
-                var httpError = createError(msg, {
+                const msg = body?.error || `HTTP ${res.status} calling ${route}`;
+                const httpError = createError(msg, {
                   status: res.status,
                   statusText: res.statusText,
-                  route: route,
-                  detail: body && body.detail ? body.detail : undefined,
+                  route,
+                  detail: body?.detail,
                   response: body,
                 });
-                deliverFailure(failureHandler, httpError, userObj);
+                if (res.status === 403 && /Shared secret mismatch/i.test(body?.detail || '')) {
+                  httpError.hint =
+                    'Shared secret はブラウザではなく Functions→GAS 間で一致させてください。';
+                }
+                deliverFailure(failureHandler, httpError, userObject);
                 return;
               }
+
               if (body.ok === false) {
-                var backendError = createError(
-                  body && body.error ? body.error : 'Unknown backend error',
-                  {
-                    route: route,
-                    detail: body && body.detail ? body.detail : undefined,
-                    response: body,
-                  }
-                );
-                deliverFailure(failureHandler, backendError, userObj);
+                const backendError = createError(body.error || 'Unknown backend error', {
+                  route,
+                  detail: body?.detail,
+                  response: body,
+                });
+                deliverFailure(failureHandler, backendError, userObject);
                 return;
               }
-              deliver(successHandler, body.result, userObj);
-            })
-            .catch(function (err) {
-              var wrappedError =
+
+              deliver(successHandler, body.result, userObject);
+            } catch (err) {
+              const wrapped =
                 err instanceof Error ? err : createError('Network error', { cause: err });
-              wrappedError.route = route;
-              deliverFailure(handlers.failure, wrappedError, handlers.userObject);
-            });
+              wrapped.route = route;
+              deliverFailure(handlers.failure, wrapped, handlers.userObject);
+            }
+          })();
         }
 
         var runProxy = new Proxy(function () {}, {
@@ -3932,7 +4014,9 @@
 
       function handleCredentialResponse(response) {
         if (!response || !response.credential) {
-          showAuthOverlay('Google から認証トークンが取得できませんでした。もう一度お試しください。');
+          showAuthOverlay(
+            'Google から認証トークンが取得できませんでした。もう一度お試しください。'
+          );
           return;
         }
         setAuthToken(response.credential);
@@ -3945,9 +4029,7 @@
           return;
         }
         const momentType =
-          typeof notification.getMomentType === 'function'
-            ? notification.getMomentType()
-            : null;
+          typeof notification.getMomentType === 'function' ? notification.getMomentType() : null;
         const isDisplayed =
           typeof notification.isDisplayed === 'function' && notification.isDisplayed();
         if (isDisplayed || momentType === 'display') {
@@ -3978,14 +4060,20 @@
       // ----- Google Identity Services (One Tap) bootstrap sequence -----
       function initGoogleSignIn(retryCount) {
         if (!GOOGLE_CLIENT_ID) {
-          console.error('GOOGLE_CLIENT_ID が未設定です。Cloudflare Pages の環境変数を確認してください。');
-          showAuthOverlay('Google クライアント ID が設定されていません。管理者に連絡してください。');
+          console.error(
+            'GOOGLE_CLIENT_ID が未設定です。Cloudflare Pages の環境変数を確認してください。'
+          );
+          showAuthOverlay(
+            'Google クライアント ID が設定されていません。管理者に連絡してください。'
+          );
           return;
         }
         if (!(window.google && google.accounts && google.accounts.id)) {
           const attempts = typeof retryCount === 'number' ? retryCount : 0;
           if (attempts > 50) {
-            showAuthOverlay('Google の認証スクリプトを読み込めませんでした。ページを再読み込みしてください。');
+            showAuthOverlay(
+              'Google の認証スクリプトを読み込めませんでした。ページを再読み込みしてください。'
+            );
             return;
           }
           setTimeout(function () {
@@ -4040,7 +4128,11 @@
               return;
             }
             console.error('Bootstrap load encountered an error:', err);
-            notify('初期データの取得に失敗しました: ' + (err && err.message ? err.message : '不明なエラー'), false);
+            notify(
+              '初期データの取得に失敗しました: ' +
+                (err && err.message ? err.message : '不明なエラー'),
+              false
+            );
           });
       }
       function managerRequiredCard(info) {
@@ -4353,7 +4445,9 @@
           ]).then(function () {});
         }
         if (CURRENT_VIEW === 'messages') {
-          return Promise.all([Promise.resolve(loadMessages()), Promise.resolve(loadHome())]).then(function () {});
+          return Promise.all([Promise.resolve(loadMessages()), Promise.resolve(loadHome())]).then(
+            function () {}
+          );
         }
         if (CURRENT_VIEW === 'settings') {
           return Promise.resolve(loadSettings());
@@ -4401,7 +4495,8 @@
           return null;
         }
         function swipeThreshold() {
-          var base = wrap.offsetWidth || window.innerWidth || document.documentElement.clientWidth || 360;
+          var base =
+            wrap.offsetWidth || window.innerWidth || document.documentElement.clientWidth || 360;
           return Math.max(48, Math.min(140, base * 0.18));
         }
         function isWithinSwipeArea(node) {
@@ -4415,7 +4510,8 @@
               if (withinWrap) return true;
               var withinTrack = node.closest('#viewsTrack');
               if (withinTrack && wrap.contains(withinTrack)) return true;
-              if (pageShell && node.closest('.page-body[data-app-shell]') === pageShell) return true;
+              if (pageShell && node.closest('.page-body[data-app-shell]') === pageShell)
+                return true;
             }
             return false;
           }
@@ -4551,7 +4647,10 @@
         document.addEventListener('touchstart', handleSwipeStart, { passive: true, capture: true });
         document.addEventListener('touchmove', handleSwipeMove, { passive: false, capture: true });
         document.addEventListener('touchend', handleSwipeEnd, { passive: true, capture: true });
-        document.addEventListener('touchcancel', handleSwipeCancel, { passive: true, capture: true });
+        document.addEventListener('touchcancel', handleSwipeCancel, {
+          passive: true,
+          capture: true,
+        });
       })();
 
       window.addEventListener('resize', function () {
@@ -4593,7 +4692,10 @@
           var top =
             scrollEl && typeof scrollEl.scrollTop === 'number'
               ? scrollEl.scrollTop
-              : window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+              : window.pageYOffset ||
+                document.documentElement.scrollTop ||
+                document.body.scrollTop ||
+                0;
           return top <= 0;
         }
         function setReady(flag) {
@@ -4625,7 +4727,11 @@
             }
           }
           if (textEl) {
-            textEl.textContent = refreshing ? '更新中…' : ready ? '指を離すと更新' : '下に引っ張って更新';
+            textEl.textContent = refreshing
+              ? '更新中…'
+              : ready
+              ? '指を離すと更新'
+              : '下に引っ張って更新';
           }
         }
         function hide() {
@@ -4832,7 +4938,10 @@
           var list = state && state[scope] && state[scope].rows;
           normalizeArray(list).forEach(function (task) {
             if (!task) return;
-            var key = task.id != null ? 'id:' + task.id : 'hash:' + [task.title, task.dueDate, task.status].join('|');
+            var key =
+              task.id != null
+                ? 'id:' + task.id
+                : 'hash:' + [task.title, task.dueDate, task.status].join('|');
             if (seen[key]) return;
             seen[key] = true;
             collected.push(task);
@@ -5556,7 +5665,7 @@
             style +
             ' btn-sm msg-action-btn" onclick="event.preventDefault(); toggleRead(this,\'' +
             m.id +
-            '\',' +
+            "'," +
             toggleFlag +
             ')">' +
             '<span class="label">' +
@@ -5682,7 +5791,9 @@
         if (folderOpt != null) folderOpt = String(folderOpt).trim();
         if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
         var unreadOnlyFlag = !!(byId('flt-msg-unread') || {}).checked;
-        var searchKeyword = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
+        var searchKeyword = byId('msg-search-box')
+          ? (byId('msg-search-box').value || '').trim()
+          : '';
         var useCache = !searchKeyword;
         var cacheKey = useCache ? getMessagesCacheKey(folderOpt, unreadOnlyFlag) : null;
         var cacheShown = false;
@@ -6012,7 +6123,9 @@
           if (!authorLabel) {
             authorLabel = '投稿者不明';
           }
-          var safeBody = esc(c.body || '').replace(/&lt;br&gt;/gi, '<br>').replace(/\n/g, '<br>');
+          var safeBody = esc(c.body || '')
+            .replace(/&lt;br&gt;/gi, '<br>')
+            .replace(/\n/g, '<br>');
           commentsHtml +=
             '<div class="card mb-2"><div class="card-body"><p class="mb-0">' +
             safeBody +
@@ -6127,7 +6240,8 @@
             }
             var detailModalEl = byId('messageDetailModal');
             var detailModal =
-              detailModalEl && (bootstrap.Modal.getInstance(detailModalEl) || new bootstrap.Modal(detailModalEl));
+              detailModalEl &&
+              (bootstrap.Modal.getInstance(detailModalEl) || new bootstrap.Modal(detailModalEl));
             if (detailModal) detailModal.hide();
             var hint = byId('taskFromMsgHint');
             if (hint) hint.classList.remove('d-none');
@@ -6258,7 +6372,10 @@
             return;
           }
           if (file.size > PROFILE_IMAGE_MAX_BYTES) {
-            notify('画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。', false);
+            notify(
+              '画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。',
+              false
+            );
             input.value = '';
             return;
           }
@@ -6421,7 +6538,8 @@
             if (res && res.success) {
               var labelText = '';
               if (res.imageName) labelText = res.imageName;
-              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
+              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL)
+                labelText = '設定済み';
               setProfileImageLabel(labelText, false);
               updateSettingsAvatarPreview(res.imageUrl || '', { pending: false });
               applyUserAvatar(res.imageUrl || '');
