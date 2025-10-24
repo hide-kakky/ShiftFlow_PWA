@@ -17,6 +17,13 @@ const USER_SHEET_COLUMNS = [
   'Role',
   'IsActive',
   'Theme',
+  'AuthSubject',
+  'Status',
+  'FirstLoginAt',
+  'LastLoginAt',
+  'ApprovedBy',
+  'ApprovedAt',
+  'Notes',
 ];
 const MEMO_SHEET_COLUMNS = [
   'MemoID',
@@ -46,6 +53,81 @@ const TASK_SHEET_COLUMNS = [
   'Attachments',
   'AttachmentIDs',
 ];
+const LOGIN_AUDIT_COLUMNS = [
+  'LoginID',
+  'UserEmail',
+  'UserSub',
+  'Status',
+  'Reason',
+  'RequestID',
+  'TokenIat',
+  'AttemptedAt',
+  'ClientIp',
+  'UserAgent',
+  'Role',
+];
+const GOOGLE_TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
+const GOOGLE_OAUTH_CLIENT_ID =
+  PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '';
+const SHARED_SECRET =
+  PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SHARED_SECRET') || '';
+const ROUTE_PERMISSIONS = {
+  getBootstrapData: ['admin', 'manager', 'member'],
+  getHomeContent: ['admin', 'manager', 'member'],
+  listMyTasks: ['admin', 'manager', 'member'],
+  listCreatedTasks: ['admin', 'manager'],
+  listAllTasks: ['admin', 'manager'],
+  getMessages: ['admin', 'manager', 'member'],
+  getMessageById: ['admin', 'manager', 'member'],
+  addNewMessage: ['admin', 'manager', 'member'],
+  deleteMessageById: ['admin', 'manager', 'member'],
+  toggleMemoRead: ['admin', 'manager', 'member'],
+  markMemosReadBulk: ['admin', 'manager', 'member'],
+  markMemoAsRead: ['admin', 'manager', 'member'],
+  addNewTask: ['admin', 'manager', 'member'],
+  updateTask: ['admin', 'manager', 'member'],
+  completeTask: ['admin', 'manager', 'member'],
+  deleteTaskById: ['admin', 'manager', 'member'],
+  getTaskById: ['admin', 'manager', 'member'],
+  getUserSettings: ['admin', 'manager', 'member', 'guest'],
+  saveUserSettings: ['admin', 'manager', 'member'],
+  listActiveUsers: ['admin', 'manager'],
+  listActiveFolders: ['admin', 'manager', 'member'],
+  clearCache: ['admin'],
+  getAuditLogs: ['admin', 'manager'],
+  resolveAccessContext: ['admin', 'manager', 'member', 'guest'],
+};
+const ROLE_ALIASES = {
+  admin: 'admin',
+  administrator: 'admin',
+  管理者: 'admin',
+  管理職: 'manager',
+  manager: 'manager',
+  supervisor: 'manager',
+  member: 'member',
+  一般: 'member',
+  staff: 'member',
+  guest: 'guest',
+  ゲスト: 'guest',
+  viewer: 'guest',
+};
+const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
+
+function _getRoutePermissions(route) {
+  const name = String(route || '').trim();
+  if (!name) return null;
+  if (Object.prototype.hasOwnProperty.call(ROUTE_PERMISSIONS, name)) {
+    return ROUTE_PERMISSIONS[name];
+  }
+  return null;
+}
+
+function _isRoleAllowedForRoute(route, role) {
+  const permissions = _getRoutePermissions(route);
+  if (!permissions || !permissions.length) return true;
+  const normalized = _normalizeRole(role);
+  return permissions.indexOf(normalized) !== -1;
+}
 
 /** Spreadsheetインスタンスのキャッシュ */
 let _cachedSpreadsheet = null;
@@ -54,6 +136,17 @@ const _sheetCache = {};
 /** Cloudflare 経由で渡されたユーザー情報（リクエストスコープ） */
 let __CURRENT_REQUEST_EMAIL = '';
 let __CURRENT_REQUEST_NAME = '';
+/** Cloudflare で評価されたアクセスコンテキスト（リクエストスコープ） */
+let __CURRENT_ACCESS_CONTEXT = null;
+
+function _createHttpError(status, message, detail) {
+  const err = new Error(message || 'Request failed');
+  err.httpStatus = status;
+  if (detail !== undefined) {
+    err.detail = detail;
+  }
+  return err;
+}
 
 /** リクエストスコープのデータキャッシュ */
 const __REQUEST_CACHE = {};
@@ -271,25 +364,32 @@ function _startOfToday() {
   return now.getTime();
 }
 
-function _isManagerRole(role) {
-  const normalized = String(role || '')
+function _normalizeRole(role) {
+  const key = String(role || '')
     .trim()
     .toLowerCase();
-  return (
-    normalized === '管理職' ||
-    normalized === '管理者' ||
-    normalized === 'admin' ||
-    normalized === 'administrator' ||
-    normalized === 'manager'
-  );
+  if (!key) return 'guest';
+  return ROLE_ALIASES[key] || 'guest';
+}
+
+function _normalizeUserStatus(status) {
+  const value = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (!value) return 'pending';
+  if (value === 'active' || value === 'pending' || value === 'suspended') return value;
+  if (value === 'disabled' || value === 'inactive') return 'suspended';
+  if (value === 'revoked') return 'revoked';
+  return 'pending';
+}
+
+function _isManagerRole(role) {
+  const normalized = _normalizeRole(role);
+  return normalized === 'admin' || normalized === 'manager';
 }
 
 function _isAdminRole(role) {
-  return (
-    String(role || '')
-      .trim()
-      .toLowerCase() === 'admin'
-  );
+  return _normalizeRole(role) === 'admin';
 }
 
 function _normalizeStatus(status) {
@@ -361,6 +461,42 @@ function _audit(type, targetId, action, meta) {
     return id;
   } catch (e) {
     Logger.log('AUDIT_FAIL: ' + e);
+    return '';
+  }
+}
+
+function _ensureLoginAuditSheet() {
+  const ss = _getSpreadsheet();
+  const sh = ss.getSheetByName('T_LoginAudit') || ss.insertSheet('T_LoginAudit');
+  _sheetCache['T_LoginAudit'] = sh;
+  _ensureColumns(sh, LOGIN_AUDIT_COLUMNS);
+  return sh;
+}
+
+function _logLoginAttempt(entry) {
+  try {
+    const sh = _ensureLoginAuditSheet();
+    const hdr = _getHeaderMap(sh);
+    const width = sh.getLastColumn();
+    const row = new Array(width);
+    for (let i = 0; i < width; i++) row[i] = '';
+    const loginId = entry && entry.id ? String(entry.id) : Utilities.getUuid();
+    const status = entry && entry.status ? String(entry.status) : '';
+    if (hdr['LoginID'] != null) row[hdr['LoginID']] = loginId;
+    if (hdr['UserEmail'] != null) row[hdr['UserEmail']] = entry && entry.email ? entry.email : '';
+    if (hdr['UserSub'] != null) row[hdr['UserSub']] = entry && entry.sub ? entry.sub : '';
+    if (hdr['Status'] != null) row[hdr['Status']] = status;
+    if (hdr['Reason'] != null) row[hdr['Reason']] = entry && entry.reason ? entry.reason : '';
+    if (hdr['RequestID'] != null) row[hdr['RequestID']] = entry && entry.requestId ? entry.requestId : '';
+    if (hdr['TokenIat'] != null) row[hdr['TokenIat']] = entry && entry.tokenIat ? entry.tokenIat : '';
+    if (hdr['AttemptedAt'] != null) row[hdr['AttemptedAt']] = new Date();
+    if (hdr['ClientIp'] != null) row[hdr['ClientIp']] = entry && entry.clientIp ? entry.clientIp : '';
+    if (hdr['UserAgent'] != null) row[hdr['UserAgent']] = entry && entry.userAgent ? entry.userAgent : '';
+    if (hdr['Role'] != null) row[hdr['Role']] = entry && entry.role ? entry.role : '';
+    sh.appendRow(row);
+    return loginId;
+  } catch (err) {
+    Logger.log('LOGIN_AUDIT_FAIL: ' + err);
     return '';
   }
 }
@@ -637,49 +773,395 @@ function _verifyGoogleIdToken_(idToken){ ... }
 */
 
 /**
- * 【修正】M_Usersにユーザーを保証し、レコード情報を返す（初回は自動仮登録方針）
- * 組み込み認証では名前やプロフィール画像は直接取得できないため、
- * emailのみを使って初回登録を行います。
+ * M_Users にユーザーを保証し、レコード情報を返す。
+ * opts:
+ *   - email (override current email)
+ *   - displayName
+ *   - sub (Google subject)
+ *   - initialStatus ('pending'|'active'|'suspended')
+ *   - initialRole
+ *   - updateLastLogin (boolean)
+ *   - status (force status update)
+ *   - approvedBy / approvedAt
  */
-function _ensureUserRecord_() {
-  const rawEmail = _getCurrentEmail();
+function _ensureUserRecord_(opts) {
+  const options = opts || {};
+  const rawEmail = options.email || _getCurrentEmail();
   const email = String(rawEmail || '').trim();
   const normalizedEmail = _normalizeEmail(email);
-  if (!normalizedEmail) return; // 何らかの理由でemailが取れない場合は中断
+  if (!normalizedEmail) return null;
 
   const sh = _openSheet('M_Users');
   const hdr = _ensureColumns(sh, USER_SHEET_COLUMNS);
-  const v = sh.getDataRange().getValues();
+  const width = sh.getLastColumn();
+  const lastRow = sh.getLastRow();
 
-  // ユーザーが既に登録されているかチェック
-  for (let i = 1; i < v.length; i++) {
-    if (_normalizeEmail(v[i][hdr['Email']]) === normalizedEmail) {
-      return; // 登録済みなので処理を終了
+  let targetRow = -1;
+  let rowValues = null;
+
+  if (lastRow >= 2) {
+    const data = sh.getRange(2, 1, lastRow - 1, width).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const rowEmail = hdr['Email'] != null ? row[hdr['Email']] : '';
+      if (_normalizeEmail(rowEmail) === normalizedEmail) {
+        targetRow = i + 2;
+        rowValues = row.slice();
+        break;
+      }
+      if (options.sub && hdr['AuthSubject'] != null) {
+        const rowSub = String(row[hdr['AuthSubject']] || '').trim();
+        if (rowSub && rowSub === options.sub) {
+          targetRow = i + 2;
+          rowValues = row.slice();
+          break;
+        }
+      }
     }
   }
 
-  // 未登録なら自動仮登録
-  const id = Utilities.getUuid();
-  const newRow = [];
-  newRow[hdr['UserID']] = id;
-  newRow[hdr['Email']] = email;
-  const preferredName = __CURRENT_REQUEST_NAME ? __CURRENT_REQUEST_NAME : email;
-  newRow[hdr['DisplayName']] = preferredName;
-  newRow[hdr['ProfileImage']] = PROFILE_PLACEHOLDER_URL;
-  newRow[hdr['Role']] = 'member';
-  newRow[hdr['IsActive']] = 'TRUE';
-  newRow[hdr['Theme']] = 'light';
+  const now = new Date();
+  const normalizedRole = _normalizeRole(options.initialRole || 'member');
+  const desiredStatus = String(options.initialStatus || 'pending').toLowerCase();
+  const displayName = options.displayName || options.name || email;
 
-  const lastCol = sh.getLastColumn();
-  for (let c = 0; c < lastCol; c++) {
-    if (newRow[c] === undefined) newRow[c] = '';
+  if (targetRow === -1 || !rowValues) {
+    const newRow = new Array(width);
+    for (let c = 0; c < width; c++) {
+      newRow[c] = '';
+    }
+    if (hdr['UserID'] != null) newRow[hdr['UserID']] = Utilities.getUuid();
+    if (hdr['Email'] != null) newRow[hdr['Email']] = email;
+    if (hdr['DisplayName'] != null) newRow[hdr['DisplayName']] = displayName;
+    if (hdr['ProfileImage'] != null) newRow[hdr['ProfileImage']] = PROFILE_PLACEHOLDER_URL;
+    if (hdr['Role'] != null) newRow[hdr['Role']] = normalizedRole;
+    if (hdr['IsActive'] != null) newRow[hdr['IsActive']] = desiredStatus === 'active' ? 'TRUE' : 'FALSE';
+    if (hdr['Theme'] != null) newRow[hdr['Theme']] = 'light';
+    if (hdr['AuthSubject'] != null) newRow[hdr['AuthSubject']] = options.sub || '';
+    if (hdr['Status'] != null) newRow[hdr['Status']] = desiredStatus;
+    if (hdr['FirstLoginAt'] != null) newRow[hdr['FirstLoginAt']] = now;
+    if (hdr['LastLoginAt'] != null) newRow[hdr['LastLoginAt']] = now;
+    if (hdr['ApprovedBy'] != null) newRow[hdr['ApprovedBy']] = options.approvedBy || '';
+    if (hdr['ApprovedAt'] != null) newRow[hdr['ApprovedAt']] = options.approvedAt || '';
+    if (hdr['Notes'] != null) newRow[hdr['Notes']] = options.notes || '';
+    sh.appendRow(newRow);
+    _audit('user', email, 'auto_register', { status: desiredStatus });
+    _invalidateCacheGroup('ACTIVE_USERS');
+    _invalidateUserInfoCache(email);
+    return _buildUserRecordFromRow(newRow, hdr);
   }
-  sh.appendRow(newRow);
-  _audit('user', email, 'auto_register', {});
-  _invalidateCacheGroup('ACTIVE_USERS');
-  _invalidateUserInfoCache(email);
+
+  let changed = false;
+  if (hdr['DisplayName'] != null && displayName && rowValues[hdr['DisplayName']] !== displayName) {
+    rowValues[hdr['DisplayName']] = displayName;
+    changed = true;
+  }
+  if (hdr['AuthSubject'] != null && options.sub) {
+    const currentSub = String(rowValues[hdr['AuthSubject']] || '').trim();
+    if (!currentSub || currentSub !== options.sub) {
+      rowValues[hdr['AuthSubject']] = options.sub;
+      changed = true;
+    }
+  }
+  if (options.status && hdr['Status'] != null) {
+    const currentStatus = String(rowValues[hdr['Status']] || '').toLowerCase();
+    if (currentStatus !== options.status) {
+      rowValues[hdr['Status']] = options.status;
+      if (hdr['IsActive'] != null) {
+        rowValues[hdr['IsActive']] = options.status === 'active' ? 'TRUE' : 'FALSE';
+      }
+      changed = true;
+    }
+  }
+  if (options.updateLastLogin && hdr['LastLoginAt'] != null) {
+    rowValues[hdr['LastLoginAt']] = now;
+    changed = true;
+  }
+  if (changed) {
+    _writeRow(sh, targetRow, rowValues);
+    _invalidateCacheGroup('ACTIVE_USERS');
+    _invalidateUserInfoCache(email);
+  }
+  return _buildUserRecordFromRow(rowValues, hdr);
 }
 
+function _buildUserRecordFromRow(row, hdr) {
+  if (!row || !hdr) return null;
+  const record = {
+    userId: hdr['UserID'] != null ? row[hdr['UserID']] : '',
+    email: hdr['Email'] != null ? row[hdr['Email']] : '',
+    displayName: hdr['DisplayName'] != null ? row[hdr['DisplayName']] || '' : '',
+    rawRole: hdr['Role'] != null ? row[hdr['Role']] || '' : '',
+    role: _normalizeRole(hdr['Role'] != null ? row[hdr['Role']] : ''),
+    isActive:
+      hdr['IsActive'] != null
+        ? String(row[hdr['IsActive']] || '')
+            .trim()
+            .toUpperCase() === 'TRUE'
+        : false,
+    authSubject: hdr['AuthSubject'] != null ? row[hdr['AuthSubject']] || '' : '',
+    firstLoginAt: hdr['FirstLoginAt'] != null ? row[hdr['FirstLoginAt']] || '' : '',
+    lastLoginAt: hdr['LastLoginAt'] != null ? row[hdr['LastLoginAt']] || '' : '',
+    approvedBy: hdr['ApprovedBy'] != null ? row[hdr['ApprovedBy']] || '' : '',
+    approvedAt: hdr['ApprovedAt'] != null ? row[hdr['ApprovedAt']] || '' : '',
+    notes: hdr['Notes'] != null ? row[hdr['Notes']] || '' : '',
+  };
+  const rawStatus = hdr['Status'] != null ? row[hdr['Status']] : '';
+  const normalizedStatus = _normalizeUserStatus(rawStatus || (record.isActive ? 'active' : ''));
+  record.status = normalizedStatus;
+  return record;
+}
+
+function _getHeaderValue(headers, name) {
+  if (!headers || !name) return '';
+  const target = String(name).toLowerCase();
+  const keys = Object.keys(headers);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (String(key || '').toLowerCase() === target) {
+      const value = headers[key];
+      if (value == null) return '';
+      if (Array.isArray(value)) {
+        return value.length ? String(value[0] || '') : '';
+      }
+      return String(value || '');
+    }
+  }
+  return '';
+}
+
+function _assertRequiredConfig() {
+  if (!GOOGLE_OAUTH_CLIENT_ID) {
+    throw _createHttpError(
+      500,
+      'GOOGLE_OAUTH_CLIENT_ID is not configured in Script Properties.'
+    );
+  }
+  if (!SHARED_SECRET) {
+    throw _createHttpError(
+      500,
+      'SHIFT_FLOW_SHARED_SECRET is not configured in Script Properties.'
+    );
+  }
+}
+
+function _verifySharedSecret(secretValue) {
+  _assertRequiredConfig();
+  return String(secretValue || '').trim() === SHARED_SECRET;
+}
+
+function _verifyIdToken(idToken) {
+  if (!idToken) {
+    throw _createHttpError(401, 'Missing Authorization bearer token.');
+  }
+  _assertRequiredConfig();
+  const url = GOOGLE_TOKENINFO_ENDPOINT + '?id_token=' + encodeURIComponent(idToken);
+  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  const status = response.getResponseCode();
+  let payload = {};
+  try {
+    payload = JSON.parse(response.getContentText() || '{}');
+  } catch (_err) {
+    throw _createHttpError(401, 'Token verification returned an invalid payload.');
+  }
+  if (status !== 200) {
+    const detail = payload && payload.error_description ? payload.error_description : payload.error;
+    throw _createHttpError(401, 'Failed to verify ID token.', detail);
+  }
+  if (!payload || payload.aud !== GOOGLE_OAUTH_CLIENT_ID) {
+    throw _createHttpError(401, 'ID token audience mismatch.');
+  }
+  if (GOOGLE_ISSUERS.indexOf(String(payload.iss || '')) === -1) {
+    throw _createHttpError(401, 'ID token issuer mismatch.');
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expSeconds = Number(payload.exp || 0);
+  if (expSeconds && nowSeconds >= expSeconds) {
+    throw _createHttpError(401, 'ID token has expired.');
+  }
+  const sub = String(payload.sub || '').trim();
+  if (!sub) {
+    throw _createHttpError(401, 'ID token is missing subject (sub).');
+  }
+  const email = String(payload.email || '').trim();
+  if (!email) {
+    throw _createHttpError(401, 'ID token is missing email.');
+  }
+  const emailVerifiedRaw = payload.email_verified;
+  const emailVerified =
+    emailVerifiedRaw === true ||
+    emailVerifiedRaw === 'true' ||
+    emailVerifiedRaw === 1 ||
+    emailVerifiedRaw === '1';
+  return {
+    rawToken: idToken,
+    sub: sub,
+    email: email,
+    emailVerified: emailVerified,
+    name: payload.name || payload.given_name || '',
+    picture: payload.picture || '',
+    hd: payload.hd || '',
+    iat: Number(payload.iat || 0),
+    exp: expSeconds,
+  };
+}
+
+function _buildRequestContext(e, route, body) {
+  const headers = (e && e.headers) || {};
+  const secret = _getHeaderValue(headers, 'X-ShiftFlow-Secret');
+  if (!_verifySharedSecret(secret)) {
+    throw _createHttpError(403, 'Shared secret mismatch.');
+  }
+  const authHeader = _getHeaderValue(headers, 'Authorization');
+  const token =
+    authHeader && authHeader.indexOf('Bearer ') === 0 ? authHeader.slice('Bearer '.length).trim() : '';
+  const tokenClaims = _verifyIdToken(token);
+  if (!tokenClaims.emailVerified) {
+    throw _createHttpError(403, 'Google アカウントのメールアドレスが未確認です。');
+  }
+  const requestId = _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') || Utilities.getUuid();
+  const clientIp =
+    _getHeaderValue(headers, 'X-ShiftFlow-Client-IP') ||
+    _getHeaderValue(headers, 'X-Forwarded-For');
+  const userAgent = _getHeaderValue(headers, 'X-ShiftFlow-User-Agent');
+  const headerName = _getHeaderValue(headers, 'X-ShiftFlow-Name');
+  const headerEmail = _getHeaderValue(headers, 'X-ShiftFlow-Email');
+  if (
+    headerEmail &&
+    _normalizeEmail(headerEmail) &&
+    _normalizeEmail(headerEmail) !== _normalizeEmail(tokenClaims.email)
+  ) {
+    throw _createHttpError(403, 'Email header mismatch.');
+  }
+  const headerSub = _getHeaderValue(headers, 'X-ShiftFlow-Sub');
+  if (headerSub && String(headerSub).trim() !== tokenClaims.sub) {
+    throw _createHttpError(403, 'Subject header mismatch.');
+  }
+
+  __CURRENT_REQUEST_EMAIL = tokenClaims.email;
+  __CURRENT_REQUEST_NAME = headerName || tokenClaims.name || tokenClaims.email;
+  __CURRENT_ACCESS_CONTEXT = null;
+
+  return {
+    route: route,
+    headers: headers,
+    body: body,
+    args: Array.isArray(body && body.args) ? body.args : [],
+    requestId: requestId,
+    authorizationToken: token,
+    tokenClaims: tokenClaims,
+    email: tokenClaims.email,
+    sub: tokenClaims.sub,
+    name: __CURRENT_REQUEST_NAME,
+    domain: tokenClaims.hd || '',
+    clientIp: clientIp || '',
+    userAgent: userAgent || '',
+  };
+}
+
+function _resolveAccessContextInternal(ctx, options) {
+  const opts = options || {};
+  const userRecord =
+    _ensureUserRecord_({
+      email: ctx.email,
+      displayName: ctx.name,
+      sub: ctx.sub,
+      initialStatus: 'pending',
+      initialRole: 'member',
+    }) || {
+      role: 'guest',
+      status: 'pending',
+      isActive: false,
+      userId: '',
+      authSubject: '',
+    };
+
+  let status = _normalizeUserStatus(userRecord.status || (userRecord.isActive ? 'active' : ''));
+  if (!status && userRecord.isActive) status = 'active';
+  let allowed = status === 'active';
+  let reason = '';
+  if (!allowed) {
+    if (status === 'pending') {
+      reason = '承認待ちです。管理者の承認をお待ちください。';
+    } else if (status === 'suspended') {
+      reason = '利用が停止されています。管理者にお問い合わせください。';
+    } else if (status === 'revoked') {
+      reason = 'アクセス権が取り消されています。';
+    } else {
+      reason = 'アクセスが制限されています。';
+    }
+  }
+
+  if (opts.updateLastLogin && allowed) {
+    _ensureUserRecord_({
+      email: ctx.email,
+      sub: ctx.sub,
+      updateLastLogin: true,
+    });
+  }
+
+  if (opts.logAttempt) {
+    _logLoginAttempt({
+      status: allowed ? 'success' : status || 'denied',
+      reason: reason,
+      email: ctx.email,
+      sub: ctx.sub,
+      requestId: ctx.requestId,
+      tokenIat: ctx.tokenClaims && ctx.tokenClaims.iat ? String(ctx.tokenClaims.iat) : '',
+      clientIp: ctx.clientIp,
+      userAgent: ctx.userAgent,
+      role: userRecord.role || 'guest',
+    });
+  }
+
+  const accessContext = {
+    allowed: allowed,
+    status: status,
+    role: userRecord.role || 'guest',
+    email: ctx.email,
+    displayName: ctx.name,
+    reason: reason,
+    userId: userRecord.userId || '',
+    authSubject: userRecord.authSubject || '',
+  };
+  __CURRENT_ACCESS_CONTEXT = accessContext;
+  return accessContext;
+}
+
+function _authorizeRouteAccess(route, ctx) {
+  const accessContext = _resolveAccessContextInternal(ctx, {
+    logAttempt: false,
+    updateLastLogin: true,
+  });
+  if (!accessContext.allowed || accessContext.status !== 'active') {
+    throw _createHttpError(
+      403,
+      'アクセスが許可されていません。',
+      accessContext.reason || '承認待ち、または利用停止の可能性があります。'
+    );
+  }
+  if (!_isRoleAllowedForRoute(route, accessContext.role)) {
+    throw _createHttpError(403, '権限がありません。');
+  }
+  return accessContext;
+}
+
+function _respondWithError(err, route) {
+  if (!err) {
+    return jsonResponse({ ok: false, error: 'Unknown error' }, 500);
+  }
+  const status = err && err.httpStatus ? Number(err.httpStatus) || 500 : 500;
+  const payload = {
+    ok: false,
+    error: err && err.message ? err.message : 'Internal Server Error',
+  };
+  if (err && err.detail) {
+    payload.detail = err.detail;
+    payload.reason = err.detail;
+  }
+  if (route) payload.route = route;
+  return jsonResponse(payload, status);
+}
 // ====== ユーザー情報 ======
 function _resolveProfileImageInfo(profileValue, email) {
   const raw = String(profileValue || '').trim();
@@ -735,7 +1217,7 @@ function getLoggedInUserInfo() {
     return {
       name: 'ゲスト',
       imageUrl: PROFILE_PLACEHOLDER_URL,
-      role: '一般',
+      role: 'guest',
       email: email,
       theme: 'light',
     };
@@ -767,7 +1249,7 @@ function getLoggedInUserInfo() {
     name: 'ゲスト',
     imageUrl: PROFILE_PLACEHOLDER_URL,
     imageName: '',
-    role: '一般',
+    role: 'guest',
     email: email,
     theme: 'light',
   };
@@ -778,11 +1260,12 @@ function getLoggedInUserInfo() {
       const row = values[i];
       if (_normalizeEmail(row[EMAIL_COL]) !== normalizedEmail) continue;
       const profileMeta = _resolveProfileImageInfo(IMAGE_COL != null ? row[IMAGE_COL] : '', email);
+      const rawRole = ROLE_COL != null ? row[ROLE_COL] : '';
       info = {
         name: (DISPLAY_COL != null ? row[DISPLAY_COL] : '') || 'ユーザー',
         imageUrl: profileMeta.imageUrl,
         imageName: profileMeta.imageName,
-        role: (ROLE_COL != null ? row[ROLE_COL] : '') || '一般',
+        role: _normalizeRole(rawRole),
         email: email,
         theme: THEME_COL != null ? row[THEME_COL] || 'light' : 'light',
       };
@@ -904,10 +1387,11 @@ function listActiveUsers() {
             .trim()
             .toUpperCase() === 'TRUE';
         if (!isActive) continue;
+        const rawRole = ROLE_COL != null ? row[ROLE_COL] : '';
         res.push({
           email: row[EMAIL_COL],
           name: DISPLAY_COL != null ? row[DISPLAY_COL] : '',
-          role: ROLE_COL != null ? row[ROLE_COL] || '一般' : '一般',
+          role: _normalizeRole(rawRole),
         });
       }
       if (res.length === 0) {
@@ -1659,7 +2143,7 @@ function listAllTasks(filter) {
         managerOnly: true,
         userRole: roleRaw,
         normalizedRole: normalizedRole,
-        reason: '管理者権限が必要です。',
+        reason: '権限がありません。',
       },
     };
   }
@@ -2189,19 +2673,22 @@ function saveUserSettings(payload) {
 // ====== ユーザーRole更新（adminのみ） ======
 function updateUserRole(arg) {
   try {
-    if (!isManagerUser())
-      return { success: false, message: '権限がありません（adminまたは管理職のみ）。' };
+    if (!isManagerUser()) return { success: false, message: '権限がありません。' };
+    const nextRole = _normalizeRole(arg && arg.role ? arg.role : '');
+    if (!nextRole || ['admin', 'manager', 'member', 'guest'].indexOf(nextRole) === -1) {
+      return { success: false, message: '無効なロールです。' };
+    }
     const sh = _openSheet('M_Users');
     const hdr = _ensureColumns(sh, USER_SHEET_COLUMNS);
     const v = sh.getDataRange().getValues();
     for (let i = 1; i < v.length; i++) {
       if (v[i][hdr['Email']] === arg.email) {
         const rowValues = v[i].slice();
-        rowValues[hdr['Role']] = arg.role || '一般';
+        rowValues[hdr['Role']] = nextRole;
         _writeRow(sh, i + 1, rowValues);
         _invalidateUserInfoCache(arg.email);
         _invalidateCacheGroup('ACTIVE_USERS');
-        _audit('admin', arg.email, 'role_update', { to: arg.role || '一般' });
+        _audit('admin', arg.email, 'role_update', { to: nextRole });
         return { success: true, message: 'Roleを更新しました。' };
       }
     }
@@ -2334,20 +2821,6 @@ function doPost(e) {
       );
     }
   }
-  const emailParam =
-    e && e.parameter && e.parameter.__userEmail ? String(e.parameter.__userEmail || '').trim() : '';
-  const nameParam =
-    e && e.parameter && e.parameter.__userName ? String(e.parameter.__userName || '').trim() : '';
-  const headerEmail =
-    e && e.headers && e.headers['x-shiftflow-email']
-      ? String(e.headers['x-shiftflow-email'] || '').trim()
-      : '';
-  const headerName =
-    e && e.headers && e.headers['x-shiftflow-name']
-      ? String(e.headers['x-shiftflow-name'] || '').trim()
-      : '';
-  __CURRENT_REQUEST_EMAIL = emailParam || headerEmail;
-  __CURRENT_REQUEST_NAME = nameParam || headerName;
   const routeParam =
     (body && body.route) ||
     (body && body.method) ||
@@ -2364,6 +2837,41 @@ function doPost(e) {
       400
     );
   }
+
+  if (route === 'resolveAccessContext') {
+    try {
+      const ctx = _buildRequestContext(e, route, body);
+      const access = _resolveAccessContextInternal(ctx, {
+        logAttempt: true,
+        updateLastLogin: false,
+      });
+      _audit(
+        'api',
+        route,
+        access.allowed ? 'allow' : 'deny',
+        {
+          requestId: ctx.requestId,
+          role: access.role,
+          status: access.status,
+          email: ctx.email,
+          sub: ctx.sub,
+        }
+      );
+      return jsonResponse({
+        ok: true,
+        result: access,
+      });
+    } catch (err) {
+      Logger.log(err);
+      return _respondWithError(err, route);
+    } finally {
+      __CURRENT_REQUEST_EMAIL = '';
+      __CURRENT_REQUEST_NAME = '';
+      __CURRENT_ACCESS_CONTEXT = null;
+      _clearRequestCache();
+    }
+  }
+
   const handler = Object.prototype.hasOwnProperty.call(API_METHODS, route)
     ? API_METHODS[route]
     : null;
@@ -2376,32 +2884,53 @@ function doPost(e) {
       404
     );
   }
-  const args = Array.isArray(body && body.args) ? body.args : [];
+
+  let ctx;
   try {
-    if (__CURRENT_REQUEST_EMAIL) {
-      _ensureUserRecord_();
-    }
+    ctx = _buildRequestContext(e, route, body);
+  } catch (err) {
+    Logger.log(err);
+    return _respondWithError(err, route);
+  }
+
+  const args = ctx.args;
+  let access = null;
+  try {
+    access = _authorizeRouteAccess(route, ctx);
+    __CURRENT_ACCESS_CONTEXT = access;
     const result = handler.apply(null, args);
+    _audit('api', route, 'allow', {
+      requestId: ctx.requestId,
+      role: access.role,
+      status: access.status,
+      email: ctx.email,
+      sub: ctx.sub,
+    });
     return jsonResponse({
       ok: true,
       result: result === undefined ? null : result,
     });
   } catch (err) {
+    const action = err && err.httpStatus === 403 ? 'deny' : 'error';
+    const meta = {
+      requestId: ctx.requestId,
+      route: route,
+      email: ctx.email,
+      sub: ctx.sub,
+    };
+    if (access && access.role) meta.role = access.role;
+    if (access && access.status) meta.status = access.status;
+    _audit('api', route, action, meta);
     Logger.log(err);
-    return jsonResponse(
-      {
-        ok: false,
-        error: err && err.message ? err.message : String(err || 'Unknown error'),
-        detail: err && err.stack ? err.stack : '',
-        route: route,
-      },
-      500
-    );
+    return _respondWithError(err, route);
   } finally {
     __CURRENT_REQUEST_EMAIL = '';
     __CURRENT_REQUEST_NAME = '';
+    __CURRENT_ACCESS_CONTEXT = null;
     _clearRequestCache();
   }
 }
 
-// TODO: CORS設定を本番オリジンで固定する
+function doOptions() {
+  return ContentService.createTextOutput('');
+}

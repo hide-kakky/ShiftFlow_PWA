@@ -3414,19 +3414,25 @@
         }
 
         function deliverFailure(handler, error, userObject) {
-          if (typeof handler === 'function') {
-            deliver(handler, error, userObject);
-            return;
-          }
-          if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
-            console.info('[ShiftFlow] auth required, prompting sign-in.');
-            clearAuthToken();
-            showAuthOverlay('再度サインインしてください。');
-            initGoogleSignIn();
-            return;
-          }
-          console.error('[ShiftFlow] backend request failed', error);
+        if (typeof handler === 'function') {
+          deliver(handler, error, userObject);
+          return;
         }
+        if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
+          console.info('[ShiftFlow] auth required, prompting sign-in.');
+          clearAuthToken();
+          var overlayMessage = '再度サインインしてください。';
+          if (error && error.response && error.response.reason) {
+            overlayMessage = String(error.response.reason);
+          } else if (error && error.response && error.response.error) {
+            overlayMessage = String(error.response.error);
+          }
+          showAuthOverlay(overlayMessage);
+          initGoogleSignIn();
+          return;
+        }
+        console.error('[ShiftFlow] backend request failed', error);
+      }
 
         function createError(message, extra) {
           var err = new Error(message || 'Request failed');
@@ -3452,6 +3458,20 @@
               args: argsSnapshot,
             }),
           };
+          if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
+            var missingErr = createError('Auth token missing', { authRequired: true });
+            deliverFailure(handlers.failure, missingErr, handlers.userObject);
+            return;
+          }
+          if (AUTH_TOKEN_PAYLOAD && AUTH_TOKEN_PAYLOAD.exp) {
+            var expMs = Number(AUTH_TOKEN_PAYLOAD.exp) * 1000;
+            if (expMs && Date.now() >= expMs - 30 * 1000) {
+              clearAuthToken();
+              var expiredErr = createError('Auth token expired', { authRequired: true });
+              deliverFailure(handlers.failure, expiredErr, handlers.userObject);
+              return;
+            }
+          }
           if (window.__SHIFT_FLOW_AUTH_TOKEN__) {
             init.headers.Authorization = 'Bearer ' + window.__SHIFT_FLOW_AUTH_TOKEN__;
           }
@@ -3798,8 +3818,6 @@
         if (info.userRecord) {
           parts.push(
             '<li>ユーザー登録: ' +
-              esc(info.userRecord.role || '一般') +
-              ' / ' +
               (info.userRecord.isActive
                 ? 'アクティブ'
                 : '<span class="text-danger">停止中</span>') +
@@ -4027,9 +4045,7 @@
       }
       function managerRequiredCard(info) {
         info = info || {};
-        var role = esc(info.userRole || '（不明）');
-        var normalized = esc(info.normalizedRole || '（不明）');
-        var reason = esc(info.reason || '管理者権限が確認できません。');
+        var reason = esc(info.reason || '権限がありません。');
         var stats = '';
         if (typeof info.totalRows === 'number' || typeof info.returned === 'number') {
           var total = typeof info.totalRows === 'number' ? info.totalRows : '—';
@@ -4045,12 +4061,6 @@
           '<div class="card border-warning"><div class="card-body">' +
           '<p class="mb-2 text-warning"><span class="material-icons align-middle me-1">admin_panel_settings</span>' +
           reason +
-          '</p>' +
-          '<p class="mb-1 small text-muted">ロール: ' +
-          role +
-          '</p>' +
-          '<p class="mb-2 small text-muted">評価ロール: ' +
-          normalized +
           '</p>' +
           stats +
           '</div></div>'
