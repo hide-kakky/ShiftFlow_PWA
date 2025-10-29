@@ -276,7 +276,12 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   try {
     payload = JSON.parse(text);
   } catch (_err) {
-    throw new Error('resolveAccessContext returned a non-JSON payload.');
+    const snippet = typeof text === 'string' ? text.slice(0, 512) : '';
+    const error = new Error('resolveAccessContext returned a non-JSON payload.');
+    error.httpStatus = response.status;
+    error.rawResponseSnippet = snippet;
+    error.responseHeaders = Object.fromEntries(response.headers.entries());
+    throw error;
   }
 
   if (!response.ok) {
@@ -284,7 +289,12 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
       payload && payload.error
         ? `${payload.error}${payload.detail ? `: ${payload.detail}` : ''}`
         : `HTTP ${response.status}`;
-    throw new Error(`resolveAccessContext failed (${detail})`);
+    const error = new Error(`resolveAccessContext failed (${detail})`);
+    error.httpStatus = response.status;
+    error.rawResponseSnippet =
+      payload && typeof payload === 'object' ? JSON.stringify(payload).slice(0, 512) : '';
+    error.responseHeaders = Object.fromEntries(response.headers.entries());
+    throw error;
   }
   if (!payload || payload.ok === false) {
     const reason =
@@ -468,6 +478,9 @@ export async function onRequest(context) {
       detail: err && err.message ? err.message : String(err),
       clientIp: clientMeta.ip,
       userAgent: clientMeta.userAgent,
+      httpStatus: err && err.httpStatus ? err.httpStatus : '',
+      rawResponseSnippet: err && err.rawResponseSnippet ? err.rawResponseSnippet : '',
+      responseHeaders: err && err.responseHeaders ? err.responseHeaders : {},
       cfRay: clientMeta.cfRay,
     });
     return jsonResponse(
