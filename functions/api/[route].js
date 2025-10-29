@@ -132,8 +132,17 @@ function createDiagnosticsPayload(level, message, meta) {
   return payload;
 }
 
+let DIAGNOSTICS_WARNED_NO_SECRET = false;
+
 async function sendDiagnostics(config, payload) {
-  if (!config || !config.gasUrl || !config.sharedSecret) {
+  if (!config || !config.gasUrl) {
+    return;
+  }
+  if (!config.sharedSecret) {
+    if (!DIAGNOSTICS_WARNED_NO_SECRET) {
+      DIAGNOSTICS_WARNED_NO_SECRET = true;
+      console.warn('[ShiftFlow][Auth] Diagnostics skipped: shared secret is not configured.');
+    }
     return;
   }
   const headers = new Headers({
