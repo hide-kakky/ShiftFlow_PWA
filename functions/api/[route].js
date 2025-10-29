@@ -88,6 +88,20 @@ function stripXssiPrefix(text) {
   return text;
 }
 
+function isLikelyHtmlDocument(text) {
+  if (typeof text !== 'string') return false;
+  const sample = text.trim().slice(0, 200).toLowerCase();
+  if (!sample) return false;
+  return (
+    sample.startsWith('<!doctype html') ||
+    sample.startsWith('<html') ||
+    sample.includes('<body') ||
+    sample.includes('<head') ||
+    sample.includes('<meta') ||
+    sample.includes('<title')
+  );
+}
+
 async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
   let url = originalUrl;
   const baseHeaders = originalInit && originalInit.headers ? originalInit.headers : undefined;
@@ -349,10 +363,18 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   const text = await response.text();
   let payload;
   try {
+    if (isLikelyHtmlDocument(text)) {
+      const error = new Error('resolveAccessContext returned HTML content.');
+      error.httpStatus = response.status;
+      error.rawResponseSnippet = text.slice(0, 512);
+      error.responseHeaders = Object.fromEntries(response.headers.entries());
+      error.isHtml = true;
+      throw error;
+    }
     payload = JSON.parse(stripXssiPrefix(text));
   } catch (_err) {
     const snippet = typeof text === 'string' ? text.slice(0, 512) : '';
-    const error = new Error('resolveAccessContext returned a non-JSON payload.');
+    const error = _err instanceof Error ? _err : new Error('resolveAccessContext returned a non-JSON payload.');
     error.httpStatus = response.status;
     error.rawResponseSnippet = snippet;
     error.responseHeaders = Object.fromEntries(response.headers.entries());
@@ -546,12 +568,18 @@ export async function onRequest(context) {
       email: tokenDetails.email || '',
       rawSample: err && err.rawResponseSnippet ? err.rawResponseSnippet.slice(0, 200) : '',
     });
+    const detailMessage =
+      err && err.isHtml
+        ? 'Apps Script が HTML を返しました。GAS_EXEC_URL をブラウザで開いて Google アカウントの承認を完了してください。'
+        : err && err.message
+        ? err.message
+        : String(err || 'resolveAccessContext failed');
     captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
       event: 'resolve_access_context_failed',
       requestId,
       route,
       email: tokenDetails.email || '',
-      detail: err && err.message ? err.message : String(err),
+      detail: detailMessage,
       clientIp: clientMeta.ip,
       userAgent: clientMeta.userAgent,
       httpStatus: err && err.httpStatus ? err.httpStatus : '',
@@ -564,7 +592,7 @@ export async function onRequest(context) {
       {
         ok: false,
         error: 'アクセス権を確認できませんでした。',
-        detail: err && err.message ? err.message : String(err || 'resolveAccessContext failed'),
+        detail: detailMessage,
       },
       allowedOrigin || config.allowedOrigins[0] || '*',
       { 'X-ShiftFlow-Request-Id': requestId }
