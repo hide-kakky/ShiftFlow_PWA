@@ -1009,6 +1009,44 @@ function _getHeaderValue(headers, name) {
   return '';
 }
 
+function _extractBearerToken(value) {
+  if (value == null) return '';
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^bearer\s+/i);
+  if (match && match[0]) {
+    return raw.slice(match[0].length).trim();
+  }
+  return raw;
+}
+
+function _getBodyAuthorization(body) {
+  if (!body || typeof body !== 'object') return '';
+  const candidates = [
+    body.authorization,
+    body.Authorization,
+    body.authToken,
+    body.auth_token,
+    body.token,
+    body.idToken,
+    body.id_token,
+    body.bearerToken,
+    body.bearer_token,
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    if (candidate != null && String(candidate).trim()) {
+      return String(candidate);
+    }
+  }
+  const nestedHeaders = body.headers;
+  if (nestedHeaders && typeof nestedHeaders === 'object') {
+    const nestedAuth = _getHeaderValue(nestedHeaders, 'Authorization');
+    if (nestedAuth) return nestedAuth;
+  }
+  return '';
+}
+
 function _assertRequiredConfig() {
   if (!GOOGLE_OAUTH_CLIENT_ID) {
     throw _createHttpError(
@@ -1105,8 +1143,18 @@ function _buildRequestContext(e, route, body) {
     throw _createHttpError(403, 'Shared secret mismatch.', 'shared_secret_mismatch');
   }
   const authHeader = _getHeaderValue(headers, 'Authorization');
-  const token =
-    authHeader && authHeader.indexOf('Bearer ') === 0 ? authHeader.slice('Bearer '.length).trim() : '';
+  let token = _extractBearerToken(authHeader);
+  if (!token) {
+    const bodyAuthorization = _getBodyAuthorization(body);
+    token = _extractBearerToken(bodyAuthorization);
+    if (token) {
+      Logger.log(
+        '[ShiftFlow][Auth] Authorization header missing; using token from body. requestId=%s route=%s',
+        requestId,
+        route || ''
+      );
+    }
+  }
   let tokenClaims;
   try {
     tokenClaims = _verifyIdToken(token);
