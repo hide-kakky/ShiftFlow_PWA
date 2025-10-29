@@ -78,7 +78,7 @@ function normalizeRedirectUrl(currentUrl, locationHeader) {
   }
 }
 
-async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4) {
+async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
   let url = originalUrl;
   const baseHeaders = originalInit && originalInit.headers ? originalInit.headers : undefined;
   const baseBody =
@@ -95,6 +95,14 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4) 
     if (!location) {
       return response;
     }
+    captureDiagnostics(meta.config, 'info', 'upstream_redirect', {
+      event: 'upstream_redirect',
+      requestId: meta.requestId || '',
+      route: meta.route || '',
+      step: attempt + 1,
+      status: response.status,
+      location: location,
+    });
     url = location;
     const nextInit = { ...init };
     nextInit.headers = baseHeaders;
@@ -109,6 +117,12 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4) 
     }
     init = { ...nextInit, redirect: 'manual' };
   }
+  captureDiagnostics(meta.config, 'error', 'upstream_redirect_loop', {
+    event: 'upstream_redirect_loop',
+    requestId: meta.requestId || '',
+    route: meta.route || '',
+    maxRedirects,
+  });
   throw new Error('Too many redirects while contacting upstream.');
 }
 
@@ -325,7 +339,8 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
       headers,
       body,
     },
-    4
+    4,
+    { config, requestId, route: 'resolveAccessContext' }
   );
 
   const text = await response.text();
@@ -656,7 +671,11 @@ export async function onRequest(context) {
 
   let upstreamResponse;
   try {
-    upstreamResponse = await fetchPreservingAuth(upstreamUrl.toString(), init, 4);
+    upstreamResponse = await fetchPreservingAuth(upstreamUrl.toString(), init, 4, {
+      config,
+      requestId,
+      route,
+    });
   } catch (err) {
     logAuthError('Failed to reach GAS', {
       requestId,

@@ -1657,15 +1657,14 @@ function doGet(e) {
       return serveManifest();
     }
 
-    try {
-      _ensureUserRecord_();
-    } catch (err) {
-      Logger.log('[ShiftFlow] ensureUserRecord failed: ' + err);
-    }
-
-    return HtmlService.createHtmlOutputFromFile('signin')
-      .setTitle('ShiftFlow Sign-In')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Direct access is not supported.',
+        detail: 'ShiftFlow API is available via the Cloudflare proxy.',
+      },
+      200
+    );
   } finally {
     _clearRequestCache();
   }
@@ -2971,6 +2970,14 @@ function doPost(e) {
       400
     );
   }
+
+  Logger.log(
+    '[ShiftFlow][Auth] Incoming route=%s requestId=%s origin=%s method=%s',
+    route,
+    _getHeaderValue(e && e.headers, 'X-ShiftFlow-Request-Id') || '',
+    e && e.parameter ? JSON.stringify(e.parameter) : '{}',
+    e && e.postData ? e.postData.type : ''
+  );
 
   if (route === 'logAuthProxyEvent') {
     try {
