@@ -630,6 +630,9 @@ export async function onRequest(context) {
   }
 
   const upstreamUrl = new URL(config.gasUrl);
+  upstreamUrl.searchParams.delete('route');
+  upstreamUrl.searchParams.delete('method');
+  upstreamUrl.searchParams.delete('page');
   const originalUrl = new URL(request.url);
   originalUrl.searchParams.forEach((value, key) => {
     if (key !== 'route') {
