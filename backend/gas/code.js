@@ -2936,16 +2936,215 @@ const API_METHODS = {
 
 function doPost(e) {
   try {
-    const serialized = JSON.stringify(e || {});
-    const message = '[doPost DEBUG] ' + serialized;
+    const headers = (e && e.headers) || {};
+    const requestId = _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') || 'UNKNOWN';
+    const payload =
+      e && e.postData && typeof e.postData.contents === 'string' && e.postData.contents.length
+        ? e.postData.contents
+        : 'NONE';
+    const serialized = (function (value) {
+      try {
+        return JSON.stringify(value || {});
+      } catch (jsonErr) {
+        return '<<UNSERIALIZABLE EVENT>> ' + jsonErr;
+      }
+    })(e);
+    const message = '[doPost START] RequestID=' + requestId + ' Payload=' + payload;
     Logger.log(message);
+    Logger.log('[doPost DEBUG EVENT] ' + serialized);
     if (typeof console !== 'undefined' && typeof console.log === 'function') {
       console.log(message);
+      console.log('[doPost DEBUG EVENT] ' + serialized);
     }
-  } catch (err) {
-    Logger.log('[doPost DEBUG LOG ERROR] ' + err);
+  } catch (logErr) {
+    Logger.log('[doPost LOGGING ERROR] ' + logErr);
   }
-  return ContentService.createTextOutput('OK');
+  _clearRequestCache();
+  let body = {};
+  if (e && e.postData && e.postData.contents) {
+    try {
+      body = JSON.parse(e.postData.contents);
+    } catch (err) {
+      return jsonResponse(
+        {
+          ok: false,
+          error: 'Invalid JSON payload',
+          detail: String(err && err.message ? err.message : err),
+        },
+        400
+      );
+    }
+  }
+  const routeParam =
+    (body && body.route) ||
+    (body && body.method) ||
+    (e && e.parameter && e.parameter.route) ||
+    (e && e.parameter && e.parameter.method) ||
+    '';
+  const route = String(routeParam || '').trim();
+  if (!route) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Missing route parameter',
+      },
+      400
+    );
+  }
+
+  if (route === 'logAuthProxyEvent') {
+    try {
+      const headers = (e && e.headers) || {};
+      const secret = _getHeaderValue(headers, 'X-ShiftFlow-Secret');
+      if (!_verifySharedSecret(secret)) {
+        throw _createHttpError(403, 'Shared secret mismatch.', 'shared_secret_mismatch');
+      }
+      const payload =
+        Array.isArray(body && body.args) && body.args.length
+          ? body.args[0]
+          : body && body.payload
+          ? body.payload
+          : {};
+      const normalized = payload && typeof payload === 'object' ? payload : {};
+      let metaValue = normalized.meta || normalized.Meta || {};
+      if (typeof metaValue === 'string') {
+        try {
+          metaValue = JSON.parse(metaValue);
+        } catch (_ignore) {
+          metaValue = { raw: metaValue };
+        }
+      }
+      const logEntry = {
+        id: normalized.id || normalized.logId || '',
+        level: normalized.level || normalized.Level || '',
+        event: normalized.event || normalized.Event || '',
+        message: normalized.message || normalized.Message || '',
+        requestId:
+          normalized.requestId ||
+          normalized.RequestID ||
+          _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') ||
+          '',
+        route: normalized.route || normalized.Route || '',
+        email: normalized.email || normalized.Email || '',
+        status: normalized.status || normalized.Status || '',
+        meta: metaValue,
+        source: normalized.source || 'cloudflare',
+        clientIp: normalized.clientIp || normalized.ClientIp || '',
+        userAgent: normalized.userAgent || normalized.UserAgent || '',
+        cfRay: normalized.cfRay || normalized.CfRay || '',
+      };
+      const logId = _appendProxyLog(logEntry, headers);
+      return jsonResponse(
+        {
+          ok: true,
+          result: {
+            logId: logId || '',
+          },
+        },
+        200
+      );
+    } catch (err) {
+      Logger.log(err);
+      return _respondWithError(err, route);
+    } finally {
+      __CURRENT_REQUEST_EMAIL = '';
+      __CURRENT_REQUEST_NAME = '';
+      __CURRENT_ACCESS_CONTEXT = null;
+      _clearRequestCache();
+    }
+  }
+
+  if (route === 'resolveAccessContext') {
+    try {
+      const ctx = _buildRequestContext(e, route, body);
+      const access = _resolveAccessContextInternal(ctx, {
+        logAttempt: true,
+        updateLastLogin: false,
+      });
+      _audit(
+        'api',
+        route,
+        access.allowed ? 'allow' : 'deny',
+        {
+          requestId: ctx.requestId,
+          role: access.role,
+          status: access.status,
+          email: ctx.email,
+          sub: ctx.sub,
+        }
+      );
+      return jsonResponse({
+        ok: true,
+        result: access,
+      });
+    } catch (err) {
+      Logger.log(err);
+      return _respondWithError(err, route);
+    } finally {
+      __CURRENT_REQUEST_EMAIL = '';
+      __CURRENT_REQUEST_NAME = '';
+      __CURRENT_ACCESS_CONTEXT = null;
+      _clearRequestCache();
+    }
+  }
+
+  const handler = Object.prototype.hasOwnProperty.call(API_METHODS, route)
+    ? API_METHODS[route]
+    : null;
+  if (typeof handler !== 'function') {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'Unknown route: ' + route,
+      },
+      404
+    );
+  }
+
+  let ctx;
+  try {
+    ctx = _buildRequestContext(e, route, body);
+  } catch (err) {
+    Logger.log(err);
+    return _respondWithError(err, route);
+  }
+
+  const args = ctx.args;
+  let access = null;
+  try {
+    access = _authorizeRouteAccess(route, ctx);
+    __CURRENT_ACCESS_CONTEXT = access;
+    const result = handler.apply(null, args);
+    _audit('api', route, 'allow', {
+      requestId: ctx.requestId,
+      role: access.role,
+      status: access.status,
+      email: ctx.email,
+      sub: ctx.sub,
+    });
+    return jsonResponse({
+      ok: true,
+      result: result === undefined ? null : result,
+    });
+  } catch (err) {
+    const action = err && err.httpStatus === 403 ? 'deny' : 'error';
+    const meta = {
+      requestId: ctx.requestId,
+      route: route,
+      email: ctx.email,
+      sub: ctx.sub,
+    };
+    if (access && access.role) meta.role = access.role;
+    if (access && access.status) meta.status = access.status;
+    _audit('api', route, action, meta);
+    Logger.log(err);
+    return _respondWithError(err, route);
+  } finally {
+    __CURRENT_REQUEST_EMAIL = '';
+    __CURRENT_REQUEST_NAME = '';
+    __CURRENT_ACCESS_CONTEXT = null;
+    _clearRequestCache();
+  }
 }
 
 function doOptions() {
