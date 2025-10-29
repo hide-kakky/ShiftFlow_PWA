@@ -175,7 +175,20 @@ async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects
       originHost,
       locationHost,
     });
-    return fetchPreservingAuth(location, originalInit, remainingRedirects - 1, meta);
+    const nextInit = { ...init };
+    delete nextInit.redirect;
+    const originalMethod = (nextInit.method || 'GET').toString().toUpperCase();
+    const shouldResetMethod =
+      response.status === 303 ||
+      ((response.status === 301 || response.status === 302) &&
+        originalMethod !== 'GET' &&
+        originalMethod !== 'HEAD');
+    if (shouldResetMethod) {
+      nextInit.method = 'GET';
+      delete nextInit.body;
+    }
+    nextInit.redirect = 'manual';
+    return fetchPreservingAuth(location, nextInit, remainingRedirects - 1, meta);
   }
 
   logAuthInfo('Blocked upstream redirect', {
