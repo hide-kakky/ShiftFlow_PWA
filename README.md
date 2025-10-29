@@ -1,61 +1,120 @@
 # ShiftFlow PWA
 
-## Frontend (Cloudflare Pages)
-- Static assets served by Cloudflare Pages live in `frontend/public`.
-- Set the Cloudflare Pages **Build Output Directory** to `frontend/public`.
+クラウドワークフロー管理ツール ShiftFlow のアーキテクチャとデプロイ手順をまとめた最新版ドキュメントです。フロントエンドは Cloudflare Pages、バックエンドは Google Apps Script (GAS) で構成され、Cloudflare Pages Functions が API プロキシとして両者を橋渡しします。
 
-## Backend (Apps Script API)
-- Google Apps Script source is isolated in `backend/gas`.
-- Managed through clasp; deploy independently from the frontend.
-- Cloudflare Functions proxy (planned) should live under `functions/api/proxy` when switching away from direct redirects.
+---
 
-## Cloudflare Pages 設定手順
-1. Pages プロジェクト設定の **Build output directory** を `frontend/public` に指定します。
-2. デプロイトリガーは `main` ブランチに設定するのが一般的です（必要に応じて変更してください）。
-3. 環境変数を Production / Preview ともに設定します。
-   - `CF_ORIGIN`: Cloudflare Pages の公開 URL（例 `https://shiftflow.pages.dev`）。複数許可する場合はカンマ区切り。
-   - `GAS_EXEC_URL`: Apps Script 公開デプロイの `/exec` URL。
-   - `GOOGLE_OAUTH_CLIENT_ID`: Google Identity Services の OAuth クライアント ID。
-   - `SHIFT_FLOW_SHARED_SECRET`: Cloudflare ⇔ Apps Script 間で共有するシークレット文字列（任意のランダム値）。
-4. `_redirects` で直接 Apps Script へリダイレクトしていた箇所は不要です。Functions から `GAS_EXEC_URL` へプロキシされます。
-5. カスタムドメインはあとで追加できます。初期構築ではデフォルトの `*.pages.dev` を利用します。
+## 全体構成
 
-## API プロキシ (Cloudflare Functions)
-- Cloudflare Pages の Functions で `/api/*` を `functions/api/[route].js` が受け取り、Apps Script Web App へプロキシします。
-- ルートパラメータは `route` クエリに渡されるため、GAS 側では `e.parameter.route` でハンドリングできます。
-- 追加のクエリ・POST ボディもそのまま転送され、レスポンスには CORS ヘッダーが付与されます。
+| 層 | 役割 | ソース配置 |
+| --- | --- | --- |
+| フロントエンド | React/静的アセット配信 | `frontend/public`
+| API プロキシ | Cloudflare Pages Functions ( `/api/*` ) | `functions/api/[route].js`
+| バックエンド | Google Apps Script Web App | `backend/gas`
 
-## Apps Script 設定
-1. `backend/gas/appsscript.json` の `webapp.executeAs` は `USER_DEPLOYING` のままを維持します（すべての処理は Apps Script オーナー権限で実行されます）。
-2. スクリプト プロパティに以下を登録してください。
+- Functions がブラウザから送られる Google ID トークンを検証し、Apps Script へ JSON でリクエストを転送します。
+- `resolveAccessContext` ルートで RBAC 判定を行い、シート上のユーザー情報を元にアクセス制御します。
+- GAS が返す 302 を Functions が追跡し、メソッド・ボディを適切に調整して最終レスポンスを JSON で取得します。
+
+---
+
+## 前提環境
+
+- Node.js 18+
+- `wrangler` 4.x
+- `clasp` 最新版
+- Google Workspace (Drive / Spreadsheet API 利用権限)
+
+---
+
+## Cloudflare Pages 設定
+
+1. Pages プロジェクトの **Build output directory** を `frontend/public` に設定。
+2. デプロイブランチは `main` を想定（必要に応じて変更可）。
+3. Production / Preview 共通の環境変数を設定。
+   - `CF_ORIGIN`: 許可するオリジン（カンマ区切り可）。
+   - `GAS_EXEC_URL`: Apps Script デプロイの `/exec` URL。
    - `GOOGLE_OAUTH_CLIENT_ID`: Google Identity Services のクライアント ID。
-   - `SHIFT_FLOW_SHARED_SECRET`: Cloudflare Pages と共有するシークレット文字列（Cloudflare 側と同じ値）。
-   - 既存の `PROFILE_IMAGE_FOLDER_ID` や `MESSAGE_ATTACHMENT_FOLDER_ID` などもこれまでどおり利用します。
-3. `M_Users` シートには以下の列を追加済みであることを確認してください。
-   - 追加列: `AuthSubject`, `Status`, `FirstLoginAt`, `LastLoginAt`, `ApprovedBy`, `ApprovedAt`, `Notes`
-   - 既存列 (Email / Role など) と併せて `_ensureColumns` が自動補完します。
-   - 新規ユーザーは `Status=pending` として仮登録されるため、管理者が `Status=active` (`IsActive=TRUE`) に変更してから利用を開始します。
-4. `T_LoginAudit` シートを新規作成し、`LoginID,UserEmail,UserSub,Status,Reason,RequestID,TokenIat,AttemptedAt,ClientIp,UserAgent,Role` のヘッダーを設定してください。Apps Script がログイン試行を追記します。Cloudflare Functions 側で発生した認証エラーは `T_AuthProxyLogs` シートに自動追記されます（シートが存在しない場合は初回ログ出力時に自動作成されます）。共通シークレットの照合を無効化したい場合は Script Properties に `SHIFT_FLOW_SECRET_OPTIONAL=true` を設定してください（セキュリティより利便性を優先する運用向け）。
-5. 変更後は `clasp push` → `clasp deploy` で Apps Script を更新してください。
+   - `SHIFT_FLOW_SHARED_SECRET`: Functions ↔ GAS 間で共有するシークレット。
+4. `_redirects` で直接 GAS を指す設定は不要。Functions がプロキシを担当します。
+5. カスタムドメインは後から追加可能。初期は `*.pages.dev` のみで構いません。
 
-## RBAC の挙動と承認フロー
-- Cloudflare Functions で Google ID トークンを `tokeninfo` で検証し、`resolveAccessContext` ルートを通じて Apps Script 側の RBAC 判定を取得します。
-- `M_Users` の `Status` が `active` のユーザーのみ API 実行が許可されます。`pending` や `suspended` の場合は 403 が返り、「承認待ちです」などのメッセージがサインイン画面に表示されます。
-- ルートごとの必要ロールは `functions/api/config.js` / `backend/gas/code.js` の `ROUTE_PERMISSIONS` で一元管理しています（例: `deleteTaskById` は `admin / manager / member`）。
-- すべての API リクエストは `T_Audit` に `api` エントリとして記録されます（`allow/deny/error` + `requestId` 等）。ログイン試行は `T_LoginAudit` に記録され、手動承認の判断材料として利用できます。
+---
 
-## テスト観点
-1. 未承認ユーザーでサインイン → API 呼び出しが 403 となり `T_LoginAudit` に `pending` が残ることを確認。
-2. `M_Users` の `Status` を `active` に変更 → 同ユーザーが API 実行でき、`T_Audit` に `allow` が追加されることを確認。
-3. ロールごとの権限制御
-   - `member` ユーザーでメッセージ投稿・自身のメッセージ削除が成功すること。
-   - `guest` ユーザーで更新系 API が 403 になること。
-   - `manager` / `admin` のみ実行可能なルート（例: `getAuditLogs`）が一般ユーザーでは弾かれること。
-4. CORS: Cloudflare Pages 以外のオリジンから `fetch` すると 403 が返ること。
-5. トークン失効: ブラウザのシークレットウィンドウでサインイン後、トークン有効期限切れで再サインインが要求されることを確認。
+## Cloudflare Functions (`functions/api/[route].js`)
 
-テスト時は `functions/api/[route].js` の `CF_ORIGIN` が本番ドメインのみ許可されている点に注意し、必要に応じて Preview 用のオリジンを環境変数に追加してください。
+### 概要
+- `/api/<route>` を受け取り、ID トークンを `tokeninfo` で検証したうえで Apps Script にルーティング。
+- `resolveAccessContext` を呼び出してロール・ステータスを確認し、必要なら 302/403 を返します。
+- Apps Script が返す `script.googleusercontent.com` 向けの 302 を追跡し、POST → GET への変換や `Content-Type` / ボディのリセットを実施。
+- Authorization がヘッダーで落ちた場合でも、JSON ボディ `authorization` / `headers.Authorization` に付与して再送することで GAS 側で復元可能にしています。
+- 重要ログは `captureDiagnostics` を通じて Apps Script 側に転送し、`T_AuthProxyLogs` シートへ記録。
+
+### 注意点
+- `CF_ORIGIN` に Preview 用ドメインを忘れず追加する。
+- リダイレクト追跡は 4 回まで。上限超過時は 401 もしくは 403 を返します。
+- Functions 側でもルート毎のロールチェックを実施します（`getAuditLogs` は admin/manager のみ等）。
+
+---
+
+## Apps Script (`backend/gas`)
+
+1. `appsscript.json` は `webapp.executeAs: USER_DEPLOYING` を維持（スクリプト所有者権限で実行）。
+2. Script Properties に以下を設定。
+   - `GOOGLE_OAUTH_CLIENT_ID`
+   - `SHIFT_FLOW_SHARED_SECRET`
+   - `SHIFT_FLOW_SECRET_OPTIONAL`（必要に応じて `true`）
+   - `PROFILE_IMAGE_FOLDER_ID` / `MESSAGE_ATTACHMENT_FOLDER_ID` など既存値
+3. スプレッドシート設定
+   - `M_Users`: `AuthSubject`, `Status`, `FirstLoginAt`, `LastLoginAt`, `ApprovedBy`, `ApprovedAt`, `Notes` 列を追加。`Status=active` のユーザーが API 許可対象。
+   - `T_LoginAudit`: `LoginID,UserEmail,UserSub,Status,Reason,RequestID,TokenIat,AttemptedAt,ClientIp,UserAgent,Role`
+   - `T_AuthProxyLogs`: Functions からのログ置き場（初回アクセスで自動生成）。
+4. `backend/gas/code.js` の `doPost` は `authorization` や `headers.Authorization` をボディから読み込み、ヘッダー欠損時でもトークン検証可能。
+5. デプロイ: `clasp push` → `clasp deploy` で公開バージョン更新。公開後は `/exec` URL を `GAS_EXEC_URL` に反映。
+
+---
+
+## 認証フローと RBAC
+
+1. ブラウザは Cloudflare Pages に ID トークンを送信。
+2. Functions がトークン検証 → `resolveAccessContext` へ委譲。
+3. GAS が `M_Users` を参照し、`Status=active` かつロールが許可されていれば `ok: true` を返す。
+4. 以降の API 呼び出し (`getBootstrapData` など) は同一トークンで処理し、`T_Audit` に記録。
+5. `pending` / `suspended` ユーザーは 403 とメッセージを返す。ログは `T_LoginAudit` と `T_Audit` に残る。
+
+---
+
+## ログと監視
+
+- `wrangler tail` で Functions のリアルタイムログを確認。
+- Apps Script の実行ログでは `doPost` のリクエスト ID・ボディを確認可能。
+- `captureDiagnostics` の結果は `T_AuthProxyLogs` に書き込まれ、Cloudflare ↔ GAS でのエラーや 302 追跡状況を追跡できる。
+
+---
+
+## テストチェックリスト
+
+1. `Status=pending` のユーザーでサインイン→403 & `T_LoginAudit` に `pending` エントリ。
+2. `Status=active` に変更後、同ユーザーで API が成功し `T_Audit` に `allow` ログ。
+3. ロール制限: `member` で更新系 API が成功、`guest` は 403、`admin`/`manager` のみのルートが一般ユーザーで拒否される。
+4. トークン期限切れ時に再ログインが誘導される。
+5. 許可外オリジンからのリクエストが 403 (CORS) になる。
+
+---
 
 ## デプロイ前チェック
-- ローカルで `node scripts/predeploy-scan.js` を実行し、リポジトリ直下に `.clasp.json` や `appsscript.json` などの公開非推奨ファイルがないか確認します（警告が出た場合は `backend/gas` へ移動するなどで対応）。
-- VSCode のタスク化も可能です。必要に応じて `.vscode/tasks.json` へ追加してください。
+
+- `frontend/public` が最新ビルドになっているか。
+- Functions の環境変数 (`GAS_EXEC_URL` 等) が本番値に更新済みか。
+- Apps Script デプロイで最新バージョンが本番に適用されているか。
+- `wrangler deploy` または Git 連携による Pages デプロイが成功しているか。
+- Apps Script の実行ログにエラーがないか。
+
+---
+
+## 開発 Tips
+
+- `wrangler dev --remote` で実環境に近い挙動を確認可能。
+- `requestId` をログ間で突き合わせると、Functions ⇔ GAS 双方の処理を追跡しやすい。
+- 認証回りの改修後は `resolveAccessContext` → `getBootstrapData` の 302/200 ログが順番通り出ることを必ず確認する。
+
