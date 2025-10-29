@@ -186,6 +186,14 @@ async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects
     if (shouldResetMethod) {
       nextInit.method = 'GET';
       delete nextInit.body;
+      if (nextInit.headers && typeof nextInit.headers === 'object') {
+        if (typeof nextInit.headers.delete === 'function') {
+          nextInit.headers.delete('Content-Type');
+        } else {
+          delete nextInit.headers['Content-Type'];
+          delete nextInit.headers['content-type'];
+        }
+      }
     }
     nextInit.redirect = 'manual';
     return fetchPreservingAuth(location, nextInit, remainingRedirects - 1, meta);
@@ -790,11 +798,14 @@ export async function onRequest(context) {
     upstreamUrl.searchParams.set('__userName', tokenDetails.name);
   }
 
+  const rawBearerToken =
+    typeof tokenDetails.rawToken === 'string' ? tokenDetails.rawToken.trim() : '';
+  const authorizationHeader = rawBearerToken ? `Bearer ${rawBearerToken}` : '';
+
   const init = {
     method: request.method,
     redirect: 'follow',
     headers: {
-      Authorization: `Bearer ${tokenDetails.rawToken}`,
       'X-ShiftFlow-Email': tokenDetails.email,
       'X-ShiftFlow-Sub': tokenDetails.sub,
       'X-ShiftFlow-Role': accessContext.role,
@@ -802,6 +813,9 @@ export async function onRequest(context) {
       'X-ShiftFlow-Request-Id': requestId,
     },
   };
+  if (authorizationHeader) {
+    init.headers.Authorization = authorizationHeader;
+  }
   if (config.sharedSecret) init.headers['X-ShiftFlow-Secret'] = config.sharedSecret;
   if (tokenDetails.name) {
     init.headers['X-ShiftFlow-Name'] = tokenDetails.name;
@@ -814,10 +828,34 @@ export async function onRequest(context) {
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const contentType = request.headers.get('content-type');
-    if (contentType) {
-      init.headers['Content-Type'] = contentType;
+    const originalContentType = contentType || '';
+    if (originalContentType) {
+      init.headers['Content-Type'] = originalContentType;
     }
-    init.body = await request.text();
+    let rawBody = await request.text();
+    if (rawBody && originalContentType.includes('application/json')) {
+      try {
+        const parsedBody = JSON.parse(rawBody);
+        if (authorizationHeader) {
+          if (parsedBody && typeof parsedBody === 'object') {
+            if (!parsedBody.authorization) {
+              parsedBody.authorization = authorizationHeader;
+            }
+            if (!parsedBody.headers || typeof parsedBody.headers !== 'object') {
+              parsedBody.headers = {};
+            }
+            if (!parsedBody.headers.Authorization) {
+              parsedBody.headers.Authorization = authorizationHeader;
+            }
+          }
+        }
+        rawBody = JSON.stringify(parsedBody);
+        init.headers['Content-Type'] = 'application/json';
+      } catch (_err) {
+        // Leave body as-is if JSON parsing fails.
+      }
+    }
+    init.body = rawBody;
   }
 
   let upstreamResponse;
