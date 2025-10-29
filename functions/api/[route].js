@@ -159,7 +159,7 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, 
     }
 
     url = location;
-    if (response.status === 303 || response.status === 301 || response.status === 302) {
+    if (response.status === 303) {
       baseInit.method = 'GET';
       delete baseInit.body;
       preserveBody = false;
