@@ -12,6 +12,22 @@ export function loadConfig(env) {
       'GAS_EXEC_URL is not configured. Set it in Cloudflare Pages environment variables.'
     );
   }
+  try {
+    const parsedGasUrl = new URL(gasUrl);
+    if (
+      parsedGasUrl.hostname.endsWith('googleusercontent.com') &&
+      parsedGasUrl.pathname.includes('/macros/echo')
+    ) {
+      throw new Error(
+        'GAS_EXEC_URL が macros/echo エンドポイントを指しています。Apps Script の Web アプリ (/exec) URL を指定してください。'
+      );
+    }
+  } catch (err) {
+    if (!(err instanceof TypeError)) {
+      throw err;
+    }
+    throw new Error('GAS_EXEC_URL に有効な URL を指定してください。');
+  }
   if (!googleClientId) {
     throw new Error(
       'GOOGLE_OAUTH_CLIENT_ID is not configured. Set it in Cloudflare Pages environment variables.'

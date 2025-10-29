@@ -112,52 +112,38 @@ function isLikelyHtmlDocument(text) {
   );
 }
 
-async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
-  let url = originalUrl;
-  const baseHeaders = originalInit && originalInit.headers ? originalInit.headers : undefined;
-  const baseBody =
-    originalInit && Object.prototype.hasOwnProperty.call(originalInit, 'body')
-      ? originalInit.body
-      : undefined;
-  let init = { ...originalInit, redirect: 'manual' };
-  for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
-    const response = await fetch(url, init);
-    if (!REDIRECT_STATUSES.has(response.status)) {
-      return response;
-    }
-    const location = normalizeRedirectUrl(url, response.headers.get('Location'));
-    if (!location) {
-      return response;
-    }
-    captureDiagnostics(meta.config, 'info', 'upstream_redirect', {
-      event: 'upstream_redirect',
+async function fetchPreservingAuth(originalUrl, originalInit, maxRedirectsOrMeta = {}, maybeMeta) {
+  const meta =
+    typeof maxRedirectsOrMeta === 'object' && maxRedirectsOrMeta !== null
+      ? maxRedirectsOrMeta
+      : typeof maybeMeta === 'object' && maybeMeta !== null
+      ? maybeMeta
+      : {};
+  const init = { ...(originalInit || {}), redirect: 'manual' };
+  const response = await fetch(originalUrl, init);
+  if (REDIRECT_STATUSES.has(response.status)) {
+    const location = normalizeRedirectUrl(originalUrl, response.headers.get('Location'));
+    logAuthInfo('Blocked upstream redirect', {
       requestId: meta.requestId || '',
       route: meta.route || '',
-      step: attempt + 1,
       status: response.status,
-      location: location,
+      location: location || '',
     });
-    url = location;
-    const nextInit = { ...init };
-    nextInit.headers = baseHeaders;
-    if (baseBody !== undefined) {
-      nextInit.body = baseBody;
-    } else {
-      delete nextInit.body;
-    }
-    if (response.status === 303) {
-      nextInit.method = 'GET';
-      delete nextInit.body;
-    }
-    init = { ...nextInit, redirect: 'manual' };
+    captureDiagnostics(meta.config, 'warn', 'upstream_redirect_blocked', {
+      event: 'upstream_redirect_blocked',
+      requestId: meta.requestId || '',
+      route: meta.route || '',
+      status: response.status,
+      location: location || '',
+    });
+    const error = new Error('Upstream responded with a redirect.');
+    error.httpStatus = response.status;
+    error.redirectLocation = location || '';
+    error.responseHeaders = Object.fromEntries(response.headers.entries());
+    error.isRedirect = true;
+    throw error;
   }
-  captureDiagnostics(meta.config, 'error', 'upstream_redirect_loop', {
-    event: 'upstream_redirect_loop',
-    requestId: meta.requestId || '',
-    route: meta.route || '',
-    maxRedirects,
-  });
-  throw new Error('Too many redirects while contacting upstream.');
+  return response;
 }
 
 function sanitizeDiagnosticsValue(value) {
@@ -359,17 +345,46 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   if (clientMeta.ip) headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
   if (clientMeta.userAgent) headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
 
-  const response = await fetchPreservingAuth(
-    url.toString(),
-    {
-      method: 'POST',
-      headers,
-      body,
-    },
-    4,
-    { config, requestId, route: 'resolveAccessContext' }
-  );
-
+  logAuthInfo('Calling resolveAccessContext upstream', {
+    requestId,
+    route: 'resolveAccessContext',
+    gasHost: url.host,
+    gasPath: url.pathname,
+    email: tokenDetails.email || '',
+    hasAuthorization: !!headers.Authorization,
+  });
+  let response;
+  try {
+    response = await fetchPreservingAuth(
+      url.toString(),
+      {
+        method: 'POST',
+        headers,
+        body,
+      },
+      4,
+      { config, requestId, route: 'resolveAccessContext' }
+    );
+  } catch (err) {
+    if (err && err.isRedirect) {
+      const redirectError = new Error(
+        'resolveAccessContext received a redirect instead of JSON. Authentication may be required.'
+      );
+      redirectError.httpStatus = err.httpStatus;
+      redirectError.redirectLocation = err.redirectLocation;
+      redirectError.isRedirect = true;
+      redirectError.responseHeaders = err.responseHeaders || {};
+      throw redirectError;
+    }
+    throw err;
+  }
+  logAuthInfo('resolveAccessContext upstream status', {
+    requestId,
+    route: 'resolveAccessContext',
+    status: response.status,
+    contentType: response.headers.get('Content-Type') || '',
+    location: response.headers.get('Location') || '',
+  });
   const text = await response.text();
   let payload;
   try {
@@ -515,6 +530,12 @@ export async function onRequest(context) {
   const authHeader = request.headers.get('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   let tokenDetails;
+  logAuthInfo('Handling authenticated route request', {
+    requestId,
+    route,
+    hasAuthorizationHeader: !!token,
+    origin: originHeader || '',
+  });
   try {
     tokenDetails = await fetchTokenInfo(token, config);
   } catch (err) {
@@ -577,13 +598,18 @@ export async function onRequest(context) {
       message: err && err.message ? err.message : String(err),
       email: tokenDetails.email || '',
       rawSample: err && err.rawResponseSnippet ? err.rawResponseSnippet.slice(0, 200) : '',
+      rawHtml: err && err.isHtml ? (err.rawResponseSnippet || '').slice(0, 200) : '',
+      redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
     const detailMessage =
-      err && err.isHtml
+      err && err.isRedirect
+        ? 'Apps Script が認証リダイレクトを返しました。GAS_EXEC_URL が Web アプリの /exec URL になっているか確認し、必要であれば Apps Script で認証を完了してください。'
+        : err && err.isHtml
         ? 'Apps Script が HTML を返しました。GAS_EXEC_URL をブラウザで開いて Google アカウントの承認を完了してください。'
         : err && err.message
         ? err.message
         : String(err || 'resolveAccessContext failed');
+    const statusCode = err && err.isRedirect ? 401 : 403;
     captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
       event: 'resolve_access_context_failed',
       requestId,
@@ -596,9 +622,10 @@ export async function onRequest(context) {
       rawResponseSnippet: err && err.rawResponseSnippet ? err.rawResponseSnippet : '',
       responseHeaders: err && err.responseHeaders ? err.responseHeaders : {},
       cfRay: clientMeta.cfRay,
+      redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
     return jsonResponse(
-      403,
+      statusCode,
       {
         ok: false,
         error: 'アクセス権を確認できませんでした。',
@@ -722,6 +749,36 @@ export async function onRequest(context) {
       route,
     });
   } catch (err) {
+    if (err && err.isRedirect) {
+      logAuthError('GAS returned redirect', {
+        requestId,
+        route,
+        email: tokenDetails.email || '',
+        status: err.httpStatus || '',
+        location: err.redirectLocation || '',
+      });
+      captureDiagnostics(config, 'error', 'gas_redirected', {
+        event: 'gas_redirected',
+        requestId,
+        route,
+        email: tokenDetails.email || '',
+        status: err.httpStatus || '',
+        location: err.redirectLocation || '',
+        clientIp: clientMeta.ip,
+        cfRay: clientMeta.cfRay,
+      });
+      return jsonResponse(
+        401,
+        {
+          ok: false,
+          error: 'Google アカウントの認証が必要です。',
+          detail:
+            'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
+        },
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        { 'X-ShiftFlow-Request-Id': requestId }
+      );
+    }
     logAuthError('Failed to reach GAS', {
       requestId,
       route,
