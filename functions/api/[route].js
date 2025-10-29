@@ -116,14 +116,14 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, 
   let url = originalUrl;
   const baseInit = { ...(originalInit || {}) };
   const baseHeaders = baseInit.headers ? { ...baseInit.headers } : undefined;
-  const hasBody = Object.prototype.hasOwnProperty.call(baseInit, 'body');
-  const originalBody = hasBody ? baseInit.body : undefined;
+  let preserveBody = Object.prototype.hasOwnProperty.call(baseInit, 'body');
+  const originalBody = preserveBody ? baseInit.body : undefined;
 
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
     const init = { ...baseInit, redirect: 'manual' };
     if (attempt > 0) {
       init.headers = baseHeaders ? { ...baseHeaders } : undefined;
-      if (hasBody) {
+      if (preserveBody) {
         init.body = originalBody;
       } else {
         delete init.body;
@@ -162,6 +162,7 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, 
     if (response.status === 303 || response.status === 301 || response.status === 302) {
       baseInit.method = 'GET';
       delete baseInit.body;
+      preserveBody = false;
     }
   }
 
