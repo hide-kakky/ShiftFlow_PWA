@@ -115,26 +115,45 @@ function isLikelyHtmlDocument(text) {
 async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
   let url = originalUrl;
   const baseInit = { ...(originalInit || {}) };
-  const baseHeaders = baseInit.headers ? { ...baseInit.headers } : undefined;
-  let preserveBody = Object.prototype.hasOwnProperty.call(baseInit, 'body');
-  const originalBody = preserveBody ? baseInit.body : undefined;
+  const originalMethod = (baseInit.method || 'GET').toUpperCase();
+  let currentMethod = originalMethod;
+
+  const originalHeaders = new Headers(baseInit.headers || {});
+  let sendBody = Object.prototype.hasOwnProperty.call(baseInit, 'body');
+  const originalBody = sendBody ? baseInit.body : undefined;
 
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
-    const init = { ...baseInit, redirect: 'manual' };
-    if (attempt > 0) {
-      init.headers = baseHeaders ? { ...baseHeaders } : undefined;
-      if (preserveBody) {
-        init.body = originalBody;
-      } else {
-        delete init.body;
+    const init = {
+      ...baseInit,
+      method: currentMethod,
+      redirect: 'manual',
+    };
+    const headers = new Headers();
+    originalHeaders.forEach((value, key) => {
+      if (
+        !value ||
+        (currentMethod === 'GET' && key.toLowerCase() === 'content-type' && !sendBody) ||
+        (currentMethod === 'GET' && key.toLowerCase() === 'content-length')
+      ) {
+        return;
       }
+      headers.set(key, value);
+    });
+    init.headers = headers;
+    if (sendBody) {
+      init.body = originalBody;
+    } else {
+      delete init.body;
     }
+
     const response = await fetch(url, init);
     if (!REDIRECT_STATUSES.has(response.status)) {
       return response;
     }
+
     const locationHeader = response.headers.get('Location');
     const location = normalizeRedirectUrl(url, locationHeader);
+
     logAuthInfo('Following upstream redirect', {
       requestId: meta.requestId || '',
       route: meta.route || '',
@@ -158,12 +177,55 @@ async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, 
       throw error;
     }
 
-    url = location;
+    // Scripts that redirect to googleusercontent.com already processed the original request.
+    // Subsequent fetch should mimic browser behaviour: GET without auth headers or body.
+    let nextMethod = currentMethod;
+    let nextSendBody = sendBody;
+
     if (response.status === 303) {
-      baseInit.method = 'GET';
-      delete baseInit.body;
-      preserveBody = false;
+      nextMethod = 'GET';
+      nextSendBody = false;
+    } else if (response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
+      // Web Apps often return 302 to script.googleusercontent.com; switch to GET to retrieve cached content.
+      const locationHost = (() => {
+        try {
+          return new URL(location).hostname;
+        } catch (_err) {
+          return '';
+        }
+      })();
+      if (
+        currentMethod !== 'GET' &&
+        locationHost.endsWith('googleusercontent.com')
+      ) {
+        nextMethod = 'GET';
+        nextSendBody = false;
+      }
     }
+
+    if (nextMethod === 'GET') {
+      originalHeaders.delete('Content-Type');
+      originalHeaders.delete('content-type');
+      originalHeaders.delete('Content-Length');
+      originalHeaders.delete('content-length');
+    }
+
+    const locationHost = (() => {
+      try {
+        return new URL(location).hostname;
+      } catch (_err) {
+        return '';
+      }
+    })();
+    if (locationHost && locationHost !== new URL(url).hostname) {
+      // Drop Authorization when crossing origin to avoid leaking tokens.
+      originalHeaders.delete('Authorization');
+      originalHeaders.delete('authorization');
+    }
+
+    url = location;
+    currentMethod = nextMethod;
+    sendBody = nextSendBody;
   }
 
   captureDiagnostics(meta.config, 'error', 'upstream_redirect_loop', {
