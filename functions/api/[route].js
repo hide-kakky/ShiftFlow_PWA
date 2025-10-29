@@ -4,6 +4,22 @@ const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.
 const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const ACCESS_CACHE = new Map();
 
+function logAuthInfo(message, meta) {
+  if (meta) {
+    console.info('[ShiftFlow][Auth]', message, meta);
+  } else {
+    console.info('[ShiftFlow][Auth]', message);
+  }
+}
+
+function logAuthError(message, meta) {
+  if (meta) {
+    console.error('[ShiftFlow][Auth]', message, meta);
+  } else {
+    console.error('[ShiftFlow][Auth]', message);
+  }
+}
+
 function pickAllowedOrigin(allowedOrigins, originHeader) {
   if (!allowedOrigins || !allowedOrigins.length) {
     return '*';
@@ -198,6 +214,10 @@ export async function onRequest(context) {
 
   if (request.method === 'OPTIONS') {
     if (originHeader && !allowedOrigin) {
+      logAuthInfo('Blocked preflight from disallowed origin', {
+        requestId,
+        origin: originHeader,
+      });
       return jsonResponse(
         403,
         { ok: false, error: 'Origin is not allowed.' },
@@ -215,6 +235,10 @@ export async function onRequest(context) {
   }
 
   if (originHeader && !allowedOrigin) {
+    logAuthInfo('Blocked request from disallowed origin', {
+      requestId,
+      origin: originHeader,
+    });
     return jsonResponse(
       403,
       { ok: false, error: 'Origin is not allowed.' },
@@ -245,6 +269,11 @@ export async function onRequest(context) {
   try {
     tokenDetails = await fetchTokenInfo(token, config);
   } catch (err) {
+    logAuthError('Token verification failed', {
+      requestId,
+      message: err && err.message ? err.message : String(err),
+      route,
+    });
     return jsonResponse(
       401,
       {
@@ -257,6 +286,11 @@ export async function onRequest(context) {
     );
   }
   if (!tokenDetails.emailVerified) {
+    logAuthInfo('Email not verified', {
+      requestId,
+      email: tokenDetails.email || '',
+      route,
+    });
     return jsonResponse(
       403,
       { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
@@ -277,6 +311,12 @@ export async function onRequest(context) {
   try {
     accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta);
   } catch (err) {
+    logAuthError('resolveAccessContext failed', {
+      requestId,
+      route,
+      message: err && err.message ? err.message : String(err),
+      email: tokenDetails.email || '',
+    });
     return jsonResponse(
       403,
       {
@@ -289,6 +329,13 @@ export async function onRequest(context) {
     );
   }
   if (!accessContext.allowed || accessContext.status !== 'active') {
+    logAuthInfo('Access denied by GAS context', {
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      status: accessContext.status,
+      reason: accessContext.reason || '',
+    });
     return jsonResponse(
       403,
       {
@@ -305,6 +352,13 @@ export async function onRequest(context) {
   const routePermissions = getRoutePermissions(route);
   if (Array.isArray(routePermissions) && routePermissions.length > 0) {
     if (!routePermissions.includes(accessContext.role)) {
+      logAuthInfo('Route denied due to role mismatch', {
+        requestId,
+        route,
+        required: routePermissions,
+        role: accessContext.role,
+        email: tokenDetails.email || '',
+      });
       return jsonResponse(
         403,
         { ok: false, error: '権限がありません。' },
@@ -361,6 +415,12 @@ export async function onRequest(context) {
   try {
     upstreamResponse = await fetch(upstreamUrl.toString(), init);
   } catch (err) {
+    logAuthError('Failed to reach GAS', {
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      message: err && err.message ? err.message : String(err),
+    });
     return jsonResponse(
       502,
       {

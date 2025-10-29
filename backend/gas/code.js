@@ -1008,34 +1008,68 @@ function _verifyIdToken(idToken) {
 
 function _buildRequestContext(e, route, body) {
   const headers = (e && e.headers) || {};
-  const secret = _getHeaderValue(headers, 'X-ShiftFlow-Secret');
-  if (!_verifySharedSecret(secret)) {
-    throw _createHttpError(403, 'Shared secret mismatch.');
-  }
-  const authHeader = _getHeaderValue(headers, 'Authorization');
-  const token =
-    authHeader && authHeader.indexOf('Bearer ') === 0 ? authHeader.slice('Bearer '.length).trim() : '';
-  const tokenClaims = _verifyIdToken(token);
-  if (!tokenClaims.emailVerified) {
-    throw _createHttpError(403, 'Google アカウントのメールアドレスが未確認です。');
-  }
   const requestId = _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') || Utilities.getUuid();
   const clientIp =
     _getHeaderValue(headers, 'X-ShiftFlow-Client-IP') ||
     _getHeaderValue(headers, 'X-Forwarded-For');
   const userAgent = _getHeaderValue(headers, 'X-ShiftFlow-User-Agent');
-  const headerName = _getHeaderValue(headers, 'X-ShiftFlow-Name');
   const headerEmail = _getHeaderValue(headers, 'X-ShiftFlow-Email');
+  const headerName = _getHeaderValue(headers, 'X-ShiftFlow-Name');
+  const secret = _getHeaderValue(headers, 'X-ShiftFlow-Secret');
+  if (!_verifySharedSecret(secret)) {
+    Logger.log(
+      '[ShiftFlow][Auth] Shared secret mismatch. requestId=%s emailHeader=%s ip=%s',
+      requestId,
+      headerEmail || '',
+      clientIp || ''
+    );
+    throw _createHttpError(403, 'Shared secret mismatch.', 'shared_secret_mismatch');
+  }
+  const authHeader = _getHeaderValue(headers, 'Authorization');
+  const token =
+    authHeader && authHeader.indexOf('Bearer ') === 0 ? authHeader.slice('Bearer '.length).trim() : '';
+  let tokenClaims;
+  try {
+    tokenClaims = _verifyIdToken(token);
+  } catch (err) {
+    Logger.log(
+      '[ShiftFlow][Auth] ID token verification error. requestId=%s emailHeader=%s detail=%s',
+      requestId,
+      headerEmail || '',
+      err && err.message ? err.message : String(err)
+    );
+    throw err;
+  }
+  if (!tokenClaims.emailVerified) {
+    Logger.log(
+      '[ShiftFlow][Auth] Email not verified. requestId=%s email=%s',
+      requestId,
+      tokenClaims.email || ''
+    );
+    throw _createHttpError(403, 'Google アカウントのメールアドレスが未確認です。', 'email_not_verified');
+  }
   if (
     headerEmail &&
     _normalizeEmail(headerEmail) &&
     _normalizeEmail(headerEmail) !== _normalizeEmail(tokenClaims.email)
   ) {
-    throw _createHttpError(403, 'Email header mismatch.');
+    Logger.log(
+      '[ShiftFlow][Auth] Email header mismatch. requestId=%s header=%s token=%s',
+      requestId,
+      headerEmail || '',
+      tokenClaims.email || ''
+    );
+    throw _createHttpError(403, 'Email header mismatch.', 'email_mismatch');
   }
   const headerSub = _getHeaderValue(headers, 'X-ShiftFlow-Sub');
   if (headerSub && String(headerSub).trim() !== tokenClaims.sub) {
-    throw _createHttpError(403, 'Subject header mismatch.');
+    Logger.log(
+      '[ShiftFlow][Auth] Subject header mismatch. requestId=%s header=%s token=%s',
+      requestId,
+      headerSub || '',
+      tokenClaims.sub || ''
+    );
+    throw _createHttpError(403, 'Subject header mismatch.', 'subject_mismatch');
   }
 
   __CURRENT_REQUEST_EMAIL = tokenClaims.email;
@@ -1081,6 +1115,13 @@ function _resolveAccessContextInternal(ctx, options) {
   let allowed = status === 'active';
   let reason = '';
   if (!allowed) {
+    Logger.log(
+      '[ShiftFlow][Auth] Access denied at context check. email=%s status=%s requestId=%s route=%s',
+      ctx.email || '',
+      status || '',
+      ctx.requestId || '',
+      ctx.route || ''
+    );
     if (status === 'pending') {
       reason = '承認待ちです。管理者の承認をお待ちください。';
     } else if (status === 'suspended') {
@@ -1141,6 +1182,13 @@ function _authorizeRouteAccess(route, ctx) {
     );
   }
   if (!_isRoleAllowedForRoute(route, accessContext.role)) {
+    Logger.log(
+      '[ShiftFlow][Auth] Route denied due to role. route=%s role=%s requestId=%s email=%s',
+      route,
+      accessContext.role || '',
+      ctx.requestId || '',
+      ctx.email || ''
+    );
     throw _createHttpError(403, '権限がありません。');
   }
   return accessContext;
@@ -1151,6 +1199,13 @@ function _respondWithError(err, route) {
     return jsonResponse({ ok: false, error: 'Unknown error' }, 500);
   }
   const status = err && err.httpStatus ? Number(err.httpStatus) || 500 : 500;
+  Logger.log(
+    '[ShiftFlow][Auth] Responding with error. status=%s route=%s message=%s detail=%s',
+    status,
+    route || '',
+    err && err.message ? err.message : 'Unknown error',
+    err && err.detail ? err.detail : ''
+  );
   const payload = {
     ok: false,
     error: err && err.message ? err.message : 'Internal Server Error',
