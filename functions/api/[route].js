@@ -5,6 +5,7 @@ const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
 const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function logAuthInfo(message, meta) {
   if (meta) {
@@ -66,6 +67,49 @@ function createRequestId() {
     return crypto.randomUUID();
   }
   return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+function normalizeRedirectUrl(currentUrl, locationHeader) {
+  if (!locationHeader) return null;
+  try {
+    return new URL(locationHeader, currentUrl).toString();
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4) {
+  let url = originalUrl;
+  const baseHeaders = originalInit && originalInit.headers ? originalInit.headers : undefined;
+  const baseBody =
+    originalInit && Object.prototype.hasOwnProperty.call(originalInit, 'body')
+      ? originalInit.body
+      : undefined;
+  let init = { ...originalInit, redirect: 'manual' };
+  for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
+    const response = await fetch(url, init);
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response;
+    }
+    const location = normalizeRedirectUrl(url, response.headers.get('Location'));
+    if (!location) {
+      return response;
+    }
+    url = location;
+    const nextInit = { ...init };
+    nextInit.headers = baseHeaders;
+    if (baseBody !== undefined) {
+      nextInit.body = baseBody;
+    } else {
+      delete nextInit.body;
+    }
+    if (response.status === 303) {
+      nextInit.method = 'GET';
+      delete nextInit.body;
+    }
+    init = { ...nextInit, redirect: 'manual' };
+  }
+  throw new Error('Too many redirects while contacting upstream.');
 }
 
 function sanitizeDiagnosticsValue(value) {
@@ -274,11 +318,15 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   if (clientMeta.ip) headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
   if (clientMeta.userAgent) headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers,
-    body,
-  });
+  const response = await fetchPreservingAuth(
+    url.toString(),
+    {
+      method: 'POST',
+      headers,
+      body,
+    },
+    4
+  );
 
   const text = await response.text();
   let payload;
@@ -608,7 +656,7 @@ export async function onRequest(context) {
 
   let upstreamResponse;
   try {
-    upstreamResponse = await fetch(upstreamUrl.toString(), init);
+    upstreamResponse = await fetchPreservingAuth(upstreamUrl.toString(), init, 4);
   } catch (err) {
     logAuthError('Failed to reach GAS', {
       requestId,
