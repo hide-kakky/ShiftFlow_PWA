@@ -2971,14 +2971,6 @@ function doPost(e) {
     );
   }
 
-  Logger.log(
-    '[ShiftFlow][Auth] Incoming route=%s requestId=%s origin=%s method=%s',
-    route,
-    _getHeaderValue(e && e.headers, 'X-ShiftFlow-Request-Id') || '',
-    e && e.parameter ? JSON.stringify(e.parameter) : '{}',
-    e && e.postData ? e.postData.type : ''
-  );
-
   if (route === 'logAuthProxyEvent') {
     try {
       const headers = (e && e.headers) || {};

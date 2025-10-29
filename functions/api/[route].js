@@ -78,6 +78,16 @@ function normalizeRedirectUrl(currentUrl, locationHeader) {
   }
 }
 
+function stripXssiPrefix(text) {
+  if (typeof text !== 'string') return text;
+  if (!text) return text;
+  const trimmed = text.replace(/^\s+/, '');
+  if (trimmed.startsWith(")]}'")) {
+    return trimmed.replace(/^\)\]\}'\s*/, '');
+  }
+  return text;
+}
+
 async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
   let url = originalUrl;
   const baseHeaders = originalInit && originalInit.headers ? originalInit.headers : undefined;
@@ -339,7 +349,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   const text = await response.text();
   let payload;
   try {
-    payload = JSON.parse(text);
+    payload = JSON.parse(stripXssiPrefix(text));
   } catch (_err) {
     const snippet = typeof text === 'string' ? text.slice(0, 512) : '';
     const error = new Error('resolveAccessContext returned a non-JSON payload.');
