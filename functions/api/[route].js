@@ -112,38 +112,68 @@ function isLikelyHtmlDocument(text) {
   );
 }
 
-async function fetchPreservingAuth(originalUrl, originalInit, maxRedirectsOrMeta = {}, maybeMeta) {
-  const meta =
-    typeof maxRedirectsOrMeta === 'object' && maxRedirectsOrMeta !== null
-      ? maxRedirectsOrMeta
-      : typeof maybeMeta === 'object' && maybeMeta !== null
-      ? maybeMeta
-      : {};
-  const init = { ...(originalInit || {}), redirect: 'manual' };
-  const response = await fetch(originalUrl, init);
-  if (REDIRECT_STATUSES.has(response.status)) {
-    const location = normalizeRedirectUrl(originalUrl, response.headers.get('Location'));
-    logAuthInfo('Blocked upstream redirect', {
+async function fetchPreservingAuth(originalUrl, originalInit, maxRedirects = 4, meta = {}) {
+  let url = originalUrl;
+  const baseInit = { ...(originalInit || {}) };
+  const baseHeaders = baseInit.headers ? { ...baseInit.headers } : undefined;
+  const hasBody = Object.prototype.hasOwnProperty.call(baseInit, 'body');
+  const originalBody = hasBody ? baseInit.body : undefined;
+
+  for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
+    const init = { ...baseInit, redirect: 'manual' };
+    if (attempt > 0) {
+      init.headers = baseHeaders ? { ...baseHeaders } : undefined;
+      if (hasBody) {
+        init.body = originalBody;
+      } else {
+        delete init.body;
+      }
+    }
+    const response = await fetch(url, init);
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response;
+    }
+    const locationHeader = response.headers.get('Location');
+    const location = normalizeRedirectUrl(url, locationHeader);
+    logAuthInfo('Following upstream redirect', {
       requestId: meta.requestId || '',
       route: meta.route || '',
       status: response.status,
       location: location || '',
     });
-    captureDiagnostics(meta.config, 'warn', 'upstream_redirect_blocked', {
-      event: 'upstream_redirect_blocked',
+    captureDiagnostics(meta.config, 'info', 'upstream_redirect', {
+      event: 'upstream_redirect',
       requestId: meta.requestId || '',
       route: meta.route || '',
+      step: attempt + 1,
       status: response.status,
       location: location || '',
     });
-    const error = new Error('Upstream responded with a redirect.');
-    error.httpStatus = response.status;
-    error.redirectLocation = location || '';
-    error.responseHeaders = Object.fromEntries(response.headers.entries());
-    error.isRedirect = true;
-    throw error;
+
+    if (!location) {
+      const error = new Error('Redirect without Location header.');
+      error.httpStatus = response.status;
+      error.isRedirect = true;
+      error.responseHeaders = Object.fromEntries(response.headers.entries());
+      throw error;
+    }
+
+    url = location;
+    if (response.status === 303) {
+      baseInit.method = 'GET';
+      delete baseInit.body;
+    }
   }
-  return response;
+
+  captureDiagnostics(meta.config, 'error', 'upstream_redirect_loop', {
+    event: 'upstream_redirect_loop',
+    requestId: meta.requestId || '',
+    route: meta.route || '',
+    maxRedirects,
+  });
+  const error = new Error('Too many redirects while contacting upstream.');
+  error.isRedirect = true;
+  throw error;
 }
 
 function sanitizeDiagnosticsValue(value) {
