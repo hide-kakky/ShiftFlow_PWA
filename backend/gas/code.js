@@ -2938,6 +2938,17 @@ const API_METHODS = {
 };
 
 function doPost(e) {
+  try {
+    const headers = (e && e.headers) || {};
+    const requestId = headers ? headers['X-ShiftFlow-Request-Id'] || headers['x-shiftflow-request-id'] || 'UNKNOWN' : 'UNKNOWN';
+    const payload =
+      e && e.postData && typeof e.postData.contents === 'string' && e.postData.contents.length
+        ? e.postData.contents
+        : 'NONE';
+    Logger.log('[doPost START] RequestID=%s Payload=%s', requestId, payload);
+  } catch (logErr) {
+    Logger.log('[doPost LOGGING ERROR] ' + logErr);
+  }
   _clearRequestCache();
   let body = {};
   if (e && e.postData && e.postData.contents) {
