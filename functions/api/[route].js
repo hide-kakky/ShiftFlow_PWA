@@ -190,23 +190,16 @@ function createDiagnosticsPayload(level, message, meta) {
   return payload;
 }
 
-let DIAGNOSTICS_WARNED_NO_SECRET = false;
-
 async function sendDiagnostics(config, payload) {
   if (!config || !config.gasUrl) {
     return;
   }
-  if (!config.sharedSecret) {
-    if (!DIAGNOSTICS_WARNED_NO_SECRET) {
-      DIAGNOSTICS_WARNED_NO_SECRET = true;
-      console.warn('[ShiftFlow][Auth] Diagnostics skipped: shared secret is not configured.');
-    }
-    return;
-  }
   const headers = new Headers({
     'Content-Type': 'application/json',
-    'X-ShiftFlow-Secret': config.sharedSecret,
   });
+  if (config.sharedSecret) {
+    headers.set('X-ShiftFlow-Secret', config.sharedSecret);
+  }
   if (payload.requestId) {
     headers.set('X-ShiftFlow-Request-Id', payload.requestId);
   }
