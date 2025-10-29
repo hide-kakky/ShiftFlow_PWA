@@ -143,11 +143,11 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   const headers = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${tokenDetails.rawToken}`,
-    'X-ShiftFlow-Secret': config.sharedSecret,
     'X-ShiftFlow-Sub': tokenDetails.sub,
     'X-ShiftFlow-Email': tokenDetails.email,
     'X-ShiftFlow-Request-Id': requestId,
   };
+  if (config.sharedSecret) headers['X-ShiftFlow-Secret'] = config.sharedSecret;
   if (tokenDetails.name) headers['X-ShiftFlow-Name'] = tokenDetails.name;
   if (tokenDetails.hd) headers['X-ShiftFlow-Domain'] = tokenDetails.hd;
   if (tokenDetails.iat) headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
@@ -387,7 +387,6 @@ export async function onRequest(context) {
     redirect: 'follow',
     headers: {
       Authorization: `Bearer ${tokenDetails.rawToken}`,
-      'X-ShiftFlow-Secret': config.sharedSecret,
       'X-ShiftFlow-Email': tokenDetails.email,
       'X-ShiftFlow-Sub': tokenDetails.sub,
       'X-ShiftFlow-Role': accessContext.role,
@@ -395,6 +394,7 @@ export async function onRequest(context) {
       'X-ShiftFlow-Request-Id': requestId,
     },
   };
+  if (config.sharedSecret) init.headers['X-ShiftFlow-Secret'] = config.sharedSecret;
   if (tokenDetails.name) {
     init.headers['X-ShiftFlow-Name'] = tokenDetails.name;
   }

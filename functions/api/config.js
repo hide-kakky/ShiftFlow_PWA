@@ -17,12 +17,6 @@ export function loadConfig(env) {
       'GOOGLE_OAUTH_CLIENT_ID is not configured. Set it in Cloudflare Pages environment variables.'
     );
   }
-  if (!sharedSecret) {
-    throw new Error(
-      'SHIFT_FLOW_SHARED_SECRET is not configured. Set it in Cloudflare Pages environment variables.'
-    );
-  }
-
   const allowedOrigins = cfOrigin
     .split(',')
     .map((origin) => origin.trim())

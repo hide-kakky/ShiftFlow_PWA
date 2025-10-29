@@ -937,16 +937,13 @@ function _assertRequiredConfig() {
       'GOOGLE_OAUTH_CLIENT_ID is not configured in Script Properties.'
     );
   }
-  if (!SHARED_SECRET) {
-    throw _createHttpError(
-      500,
-      'SHIFT_FLOW_SHARED_SECRET is not configured in Script Properties.'
-    );
-  }
 }
 
 function _verifySharedSecret(secretValue) {
   _assertRequiredConfig();
+  if (!SHARED_SECRET) {
+    return true;
+  }
   return String(secretValue || '').trim() === SHARED_SECRET;
 }
 
