@@ -544,6 +544,7 @@ export async function onRequest(context) {
       route,
       message: err && err.message ? err.message : String(err),
       email: tokenDetails.email || '',
+      rawSample: err && err.rawResponseSnippet ? err.rawResponseSnippet.slice(0, 200) : '',
     });
     captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
       event: 'resolve_access_context_failed',
