@@ -2940,12 +2940,16 @@ const API_METHODS = {
 function doPost(e) {
   try {
     const headers = (e && e.headers) || {};
-    const requestId = headers ? headers['X-ShiftFlow-Request-Id'] || headers['x-shiftflow-request-id'] || 'UNKNOWN' : 'UNKNOWN';
+    const requestId = _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') || 'UNKNOWN';
     const payload =
       e && e.postData && typeof e.postData.contents === 'string' && e.postData.contents.length
         ? e.postData.contents
         : 'NONE';
-    Logger.log('[doPost START] RequestID=%s Payload=%s', requestId, payload);
+    const message = '[doPost START] RequestID=' + requestId + ' Payload=' + payload;
+    Logger.log(message);
+    if (typeof console !== 'undefined' && typeof console.log === 'function') {
+      console.log(message);
+    }
   } catch (logErr) {
     Logger.log('[doPost LOGGING ERROR] ' + logErr);
   }
