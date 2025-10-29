@@ -120,22 +120,30 @@ async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects
   }
   const location = normalizeRedirectUrl(originalUrl, response.headers.get('Location'));
 
-  const originHost = (() => {
+  const originHostRaw = (() => {
     try {
       return new URL(originalUrl).hostname;
     } catch (_err) {
       return '';
     }
   })();
-  const locationHost = (() => {
+  const locationHostRaw = (() => {
     try {
       return location ? new URL(location).hostname : '';
     } catch (_err) {
       return '';
     }
   })();
+  const originHost = originHostRaw ? originHostRaw.toLowerCase() : '';
+  const locationHost = locationHostRaw ? locationHostRaw.toLowerCase() : '';
 
-  if (locationHost && locationHost.endsWith('script.googleusercontent.com')) {
+  if (
+    location &&
+    locationHost &&
+    locationHost.endsWith('script.googleusercontent.com') &&
+    originHost &&
+    (originHost === 'script.google.com' || originHost.endsWith('.script.google.com'))
+  ) {
     if (remainingRedirects <= 0) {
       logAuthError('Exceeded redirect attempts when calling upstream', {
         requestId: meta.requestId || '',
@@ -156,14 +164,14 @@ async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects
       requestId: meta.requestId || '',
       route: meta.route || '',
       status: response.status,
-      location: location || '',
+      location,
     });
     captureDiagnostics(meta.config, 'info', 'upstream_redirect_followed', {
       event: 'upstream_redirect_followed',
       requestId: meta.requestId || '',
       route: meta.route || '',
       status: response.status,
-      location: location || '',
+      location,
       originHost,
       locationHost,
     });
@@ -375,21 +383,17 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   }
 
   const url = new URL(config.gasUrl);
-  const bodyPayload = {
-    route: 'resolveAccessContext',
-    args: [],
-  };
-  if (headers.Authorization) {
-    bodyPayload.authorization = headers.Authorization;
-  }
-  const body = JSON.stringify(bodyPayload);
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${tokenDetails.rawToken}`,
     'X-ShiftFlow-Sub': tokenDetails.sub,
     'X-ShiftFlow-Email': tokenDetails.email,
     'X-ShiftFlow-Request-Id': requestId,
   };
+  const hasRawToken = typeof tokenDetails.rawToken === 'string' && tokenDetails.rawToken.trim() !== '';
+  const authorizationHeader = hasRawToken ? `Bearer ${tokenDetails.rawToken.trim()}` : '';
+  if (authorizationHeader) {
+    headers.Authorization = authorizationHeader;
+  }
   if (config.sharedSecret) headers['X-ShiftFlow-Secret'] = config.sharedSecret;
   if (tokenDetails.name) headers['X-ShiftFlow-Name'] = tokenDetails.name;
   if (tokenDetails.hd) headers['X-ShiftFlow-Domain'] = tokenDetails.hd;
@@ -397,6 +401,15 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   if (tokenDetails.exp) headers['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
   if (clientMeta.ip) headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
   if (clientMeta.userAgent) headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
+  const bodyPayload = {
+    route: 'resolveAccessContext',
+    args: [],
+  };
+  if (authorizationHeader) {
+    bodyPayload.authorization = authorizationHeader;
+    bodyPayload.headers = { Authorization: authorizationHeader };
+  }
+  const body = JSON.stringify(bodyPayload);
 
   logAuthInfo('Calling resolveAccessContext upstream', {
     requestId,
@@ -404,7 +417,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
     gasHost: url.host,
     gasPath: url.pathname,
     email: tokenDetails.email || '',
-    hasAuthorization: !!headers.Authorization,
+    hasAuthorization: !!authorizationHeader,
   });
   let response;
   try {
