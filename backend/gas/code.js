@@ -85,8 +85,13 @@ const PROXY_LOG_COLUMNS = [
 const GOOGLE_TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const GOOGLE_OAUTH_CLIENT_ID =
   PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '';
-const SHARED_SECRET =
-  PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SHARED_SECRET') || '';
+const SHARED_SECRET = (
+  PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SHARED_SECRET') || ''
+).trim();
+const SHARED_SECRET_OPTIONAL =
+  (PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SECRET_OPTIONAL') || '')
+    .trim()
+    .toLowerCase() === 'true';
 const ROUTE_PERMISSIONS = {
   getBootstrapData: ['admin', 'manager', 'member'],
   getHomeContent: ['admin', 'manager', 'member'],
@@ -1015,7 +1020,10 @@ function _assertRequiredConfig() {
 
 function _verifySharedSecret(secretValue) {
   _assertRequiredConfig();
-  if (!SHARED_SECRET) {
+  if (!SHARED_SECRET || SHARED_SECRET_OPTIONAL) {
+    if (SHARED_SECRET && SHARED_SECRET_OPTIONAL) {
+      Logger.log('[ShiftFlow][Auth] Shared secret check bypassed (SHIFT_FLOW_SECRET_OPTIONAL=true).');
+    }
     return true;
   }
   return String(secretValue || '').trim() === SHARED_SECRET;

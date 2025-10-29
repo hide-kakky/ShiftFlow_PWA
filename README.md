@@ -35,7 +35,7 @@
    - 追加列: `AuthSubject`, `Status`, `FirstLoginAt`, `LastLoginAt`, `ApprovedBy`, `ApprovedAt`, `Notes`
    - 既存列 (Email / Role など) と併せて `_ensureColumns` が自動補完します。
    - 新規ユーザーは `Status=pending` として仮登録されるため、管理者が `Status=active` (`IsActive=TRUE`) に変更してから利用を開始します。
-4. `T_LoginAudit` シートを新規作成し、`LoginID,UserEmail,UserSub,Status,Reason,RequestID,TokenIat,AttemptedAt,ClientIp,UserAgent,Role` のヘッダーを設定してください。Apps Script がログイン試行を追記します。Cloudflare Functions 側で発生した認証エラーは `T_AuthProxyLogs` シートに自動追記されます（シートが存在しない場合は初回ログ出力時に自動作成されます）。
+4. `T_LoginAudit` シートを新規作成し、`LoginID,UserEmail,UserSub,Status,Reason,RequestID,TokenIat,AttemptedAt,ClientIp,UserAgent,Role` のヘッダーを設定してください。Apps Script がログイン試行を追記します。Cloudflare Functions 側で発生した認証エラーは `T_AuthProxyLogs` シートに自動追記されます（シートが存在しない場合は初回ログ出力時に自動作成されます）。共通シークレットの照合を無効化したい場合は Script Properties に `SHIFT_FLOW_SECRET_OPTIONAL=true` を設定してください（セキュリティより利便性を優先する運用向け）。
 5. 変更後は `clasp push` → `clasp deploy` で Apps Script を更新してください。
 
 ## RBAC の挙動と承認フロー
