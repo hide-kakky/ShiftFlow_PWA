@@ -112,7 +112,7 @@ function isLikelyHtmlDocument(text) {
   );
 }
 
-async function fetchPreservingAuth(originalUrl, originalInit, _unused = 4, meta = {}) {
+async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects = 4, meta = {}) {
   const init = { ...(originalInit || {}), redirect: 'manual' };
   const response = await fetch(originalUrl, init);
   if (!REDIRECT_STATUSES.has(response.status)) {
@@ -134,6 +134,41 @@ async function fetchPreservingAuth(originalUrl, originalInit, _unused = 4, meta 
       return '';
     }
   })();
+
+  if (locationHost && locationHost.endsWith('script.googleusercontent.com')) {
+    if (remainingRedirects <= 0) {
+      logAuthError('Exceeded redirect attempts when calling upstream', {
+        requestId: meta.requestId || '',
+        route: meta.route || '',
+        status: response.status,
+        location: location || '',
+        originHost,
+        locationHost,
+      });
+      const error = new Error('Too many upstream redirects.');
+      error.httpStatus = response.status;
+      error.redirectLocation = location || '';
+      error.responseHeaders = Object.fromEntries(response.headers.entries());
+      error.isRedirect = true;
+      throw error;
+    }
+    logAuthInfo('Following upstream redirect', {
+      requestId: meta.requestId || '',
+      route: meta.route || '',
+      status: response.status,
+      location: location || '',
+    });
+    captureDiagnostics(meta.config, 'info', 'upstream_redirect_followed', {
+      event: 'upstream_redirect_followed',
+      requestId: meta.requestId || '',
+      route: meta.route || '',
+      status: response.status,
+      location: location || '',
+      originHost,
+      locationHost,
+    });
+    return fetchPreservingAuth(location, originalInit, remainingRedirects - 1, meta);
+  }
 
   logAuthInfo('Blocked upstream redirect', {
     requestId: meta.requestId || '',
@@ -340,10 +375,14 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   }
 
   const url = new URL(config.gasUrl);
-  const body = JSON.stringify({
+  const bodyPayload = {
     route: 'resolveAccessContext',
     args: [],
-  });
+  };
+  if (headers.Authorization) {
+    bodyPayload.authorization = headers.Authorization;
+  }
+  const body = JSON.stringify(bodyPayload);
   const headers = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${tokenDetails.rawToken}`,
