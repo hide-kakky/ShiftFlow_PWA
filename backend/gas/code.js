@@ -66,6 +66,22 @@ const LOGIN_AUDIT_COLUMNS = [
   'UserAgent',
   'Role',
 ];
+const PROXY_LOG_COLUMNS = [
+  'LogID',
+  'Level',
+  'Event',
+  'Message',
+  'RequestID',
+  'Route',
+  'Email',
+  'Status',
+  'Meta',
+  'Source',
+  'ClientIp',
+  'UserAgent',
+  'CfRay',
+  'CreatedAt',
+];
 const GOOGLE_TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const GOOGLE_OAUTH_CLIENT_ID =
   PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '';
@@ -471,6 +487,64 @@ function _ensureLoginAuditSheet() {
   _sheetCache['T_LoginAudit'] = sh;
   _ensureColumns(sh, LOGIN_AUDIT_COLUMNS);
   return sh;
+}
+
+function _ensureProxyLogSheet() {
+  const ss = _getSpreadsheet();
+  const sh = ss.getSheetByName('T_AuthProxyLogs') || ss.insertSheet('T_AuthProxyLogs');
+  _sheetCache['T_AuthProxyLogs'] = sh;
+  _ensureColumns(sh, PROXY_LOG_COLUMNS);
+  return sh;
+}
+
+function _appendProxyLog(entry, headers) {
+  try {
+    const sh = _ensureProxyLogSheet();
+    const hdr = _ensureColumns(sh, PROXY_LOG_COLUMNS);
+    const width = sh.getLastColumn();
+    const row = new Array(width);
+    for (let i = 0; i < width; i++) row[i] = '';
+    const raw = entry && typeof entry === 'object' ? entry : {};
+    const logId = raw.id ? String(raw.id) : Utilities.getUuid();
+    const headerIp =
+      _getHeaderValue(headers || {}, 'X-ShiftFlow-Client-IP') ||
+      _getHeaderValue(headers || {}, 'X-Forwarded-For');
+    const headerAgent =
+      _getHeaderValue(headers || {}, 'X-ShiftFlow-User-Agent') ||
+      _getHeaderValue(headers || {}, 'User-Agent');
+    const headerCfRay =
+      _getHeaderValue(headers || {}, 'X-ShiftFlow-CF-Ray') || _getHeaderValue(headers || {}, 'CF-Ray');
+    if (hdr['LogID'] != null) row[hdr['LogID']] = logId;
+    if (hdr['Level'] != null) row[hdr['Level']] = (raw.level || 'info').toString().toLowerCase();
+    if (hdr['Event'] != null) row[hdr['Event']] = raw.event ? String(raw.event) : '';
+    if (hdr['Message'] != null) row[hdr['Message']] = raw.message ? String(raw.message) : '';
+    if (hdr['RequestID'] != null) row[hdr['RequestID']] = raw.requestId ? String(raw.requestId) : '';
+    if (hdr['Route'] != null) row[hdr['Route']] = raw.route ? String(raw.route) : '';
+    if (hdr['Email'] != null) row[hdr['Email']] = raw.email ? String(raw.email) : '';
+    if (hdr['Status'] != null) row[hdr['Status']] = raw.status ? String(raw.status) : '';
+    if (hdr['Meta'] != null) {
+      let metaJson = '';
+      if (raw.meta != null) {
+        try {
+          metaJson = JSON.stringify(raw.meta);
+        } catch (metaErr) {
+          metaJson = String(raw.meta);
+        }
+      }
+      row[hdr['Meta']] = metaJson;
+    }
+    if (hdr['Source'] != null) row[hdr['Source']] = raw.source ? String(raw.source) : 'cloudflare';
+    if (hdr['ClientIp'] != null) row[hdr['ClientIp']] = raw.clientIp ? String(raw.clientIp) : headerIp || '';
+    if (hdr['UserAgent'] != null)
+      row[hdr['UserAgent']] = raw.userAgent ? String(raw.userAgent) : headerAgent || '';
+    if (hdr['CfRay'] != null) row[hdr['CfRay']] = raw.cfRay ? String(raw.cfRay) : headerCfRay || '';
+    if (hdr['CreatedAt'] != null) row[hdr['CreatedAt']] = new Date();
+    sh.appendRow(row);
+    return logId;
+  } catch (err) {
+    Logger.log('[ShiftFlow][Auth] PROXY_LOG_FAIL: ' + err);
+    return '';
+  }
 }
 
 function _logLoginAttempt(entry) {
@@ -2888,6 +2962,68 @@ function doPost(e) {
       },
       400
     );
+  }
+
+  if (route === 'logAuthProxyEvent') {
+    try {
+      const headers = (e && e.headers) || {};
+      const secret = _getHeaderValue(headers, 'X-ShiftFlow-Secret');
+      if (!_verifySharedSecret(secret)) {
+        throw _createHttpError(403, 'Shared secret mismatch.', 'shared_secret_mismatch');
+      }
+      const payload =
+        Array.isArray(body && body.args) && body.args.length
+          ? body.args[0]
+          : body && body.payload
+          ? body.payload
+          : {};
+      const normalized = payload && typeof payload === 'object' ? payload : {};
+      let metaValue = normalized.meta || normalized.Meta || {};
+      if (typeof metaValue === 'string') {
+        try {
+          metaValue = JSON.parse(metaValue);
+        } catch (_ignore) {
+          metaValue = { raw: metaValue };
+        }
+      }
+      const logEntry = {
+        id: normalized.id || normalized.logId || '',
+        level: normalized.level || normalized.Level || '',
+        event: normalized.event || normalized.Event || '',
+        message: normalized.message || normalized.Message || '',
+        requestId:
+          normalized.requestId ||
+          normalized.RequestID ||
+          _getHeaderValue(headers, 'X-ShiftFlow-Request-Id') ||
+          '',
+        route: normalized.route || normalized.Route || '',
+        email: normalized.email || normalized.Email || '',
+        status: normalized.status || normalized.Status || '',
+        meta: metaValue,
+        source: normalized.source || 'cloudflare',
+        clientIp: normalized.clientIp || normalized.ClientIp || '',
+        userAgent: normalized.userAgent || normalized.UserAgent || '',
+        cfRay: normalized.cfRay || normalized.CfRay || '',
+      };
+      const logId = _appendProxyLog(logEntry, headers);
+      return jsonResponse(
+        {
+          ok: true,
+          result: {
+            logId: logId || '',
+          },
+        },
+        200
+      );
+    } catch (err) {
+      Logger.log(err);
+      return _respondWithError(err, route);
+    } finally {
+      __CURRENT_REQUEST_EMAIL = '';
+      __CURRENT_REQUEST_NAME = '';
+      __CURRENT_ACCESS_CONTEXT = null;
+      _clearRequestCache();
+    }
   }
 
   if (route === 'resolveAccessContext') {

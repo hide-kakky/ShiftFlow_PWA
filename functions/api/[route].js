@@ -2,7 +2,9 @@ import { loadConfig, getRoutePermissions } from './config';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
+const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
+const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
 
 function logAuthInfo(message, meta) {
   if (meta) {
@@ -35,7 +37,7 @@ function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -64,6 +66,114 @@ function createRequestId() {
     return crypto.randomUUID();
   }
   return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+function sanitizeDiagnosticsValue(value) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const type = typeof value;
+  if (type === 'string') {
+    return value.length > 500 ? value.slice(0, 497) + '...' : value;
+  }
+  if (type === 'number' || type === 'boolean') {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    try {
+      return value.slice(0, 10).map((item) => sanitizeDiagnosticsValue(item));
+    } catch (_err) {
+      return String(value);
+    }
+  }
+  if (type === 'object') {
+    const entries = Object.entries(value);
+    const limited = {};
+    for (let i = 0; i < Math.min(entries.length, 10); i += 1) {
+      const [key, val] = entries[i];
+      if (!key) continue;
+      const sanitized = sanitizeDiagnosticsValue(val);
+      if (sanitized !== undefined) {
+        limited[key] = sanitized;
+      }
+    }
+    return limited;
+  }
+  return String(value);
+}
+
+function createDiagnosticsPayload(level, message, meta) {
+  const safeMetaRaw = meta && typeof meta === 'object' ? meta : {};
+  const safeMeta = {};
+  const entries = Object.entries(safeMetaRaw);
+  const limit = Math.min(entries.length, 20);
+  for (let i = 0; i < limit; i += 1) {
+    const [key, value] = entries[i];
+    if (!key) continue;
+    const sanitized = sanitizeDiagnosticsValue(value);
+    if (sanitized !== undefined) {
+      safeMeta[key] = sanitized;
+    }
+  }
+  const payload = {
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    requestId: typeof safeMeta.requestId === 'string' ? safeMeta.requestId : '',
+    event: typeof safeMeta.event === 'string' ? safeMeta.event : '',
+    route: typeof safeMeta.route === 'string' ? safeMeta.route : '',
+    email: typeof safeMeta.email === 'string' ? safeMeta.email : '',
+    status: typeof safeMeta.status === 'string' ? safeMeta.status : '',
+    meta: safeMeta,
+  };
+  return payload;
+}
+
+async function sendDiagnostics(config, payload) {
+  if (!config || !config.gasUrl || !config.sharedSecret) {
+    return;
+  }
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    'X-ShiftFlow-Secret': config.sharedSecret,
+  });
+  if (payload.requestId) {
+    headers.set('X-ShiftFlow-Request-Id', payload.requestId);
+  }
+  const body = JSON.stringify({
+    route: DIAGNOSTIC_ROUTE,
+    args: [payload],
+  });
+  const response = await fetch(config.gasUrl, {
+    method: 'POST',
+    headers,
+    body,
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(
+      `Diagnostic endpoint failed (${response.status}): ${text ? text.slice(0, 200) : 'no body'}`
+    );
+  }
+}
+
+function captureDiagnostics(config, level, message, meta) {
+  try {
+    const payload = createDiagnosticsPayload(level, message, meta);
+    sendDiagnostics(config, payload).catch((err) => {
+      console.warn('[ShiftFlow][Auth] Failed to push diagnostics log', {
+        requestId: payload.requestId || '',
+        message: err && err.message ? err.message : String(err),
+      });
+    });
+  } catch (err) {
+    console.warn('[ShiftFlow][Auth] Failed to prepare diagnostics payload', {
+      message: err && err.message ? err.message : String(err),
+    });
+  }
 }
 
 async function fetchTokenInfo(idToken, config) {
@@ -218,6 +328,13 @@ export async function onRequest(context) {
         requestId,
         origin: originHeader,
       });
+      captureDiagnostics(config, 'warn', 'origin_blocked', {
+        event: 'origin_blocked',
+        requestId,
+        origin: originHeader,
+        phase: 'preflight',
+        route,
+      });
       return jsonResponse(
         403,
         { ok: false, error: 'Origin is not allowed.' },
@@ -238,6 +355,12 @@ export async function onRequest(context) {
     logAuthInfo('Blocked request from disallowed origin', {
       requestId,
       origin: originHeader,
+    });
+    captureDiagnostics(config, 'warn', 'origin_blocked', {
+      event: 'origin_blocked',
+      requestId,
+      origin: originHeader,
+      route,
     });
     return jsonResponse(
       403,
@@ -263,6 +386,15 @@ export async function onRequest(context) {
     );
   }
 
+  const clientMeta = {
+    ip:
+      request.headers.get('cf-connecting-ip') ||
+      request.headers.get('x-forwarded-for') ||
+      '',
+    userAgent: request.headers.get('user-agent') || '',
+    cfRay: request.headers.get('cf-ray') || '',
+  };
+
   const authHeader = request.headers.get('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   let tokenDetails;
@@ -273,6 +405,16 @@ export async function onRequest(context) {
       requestId,
       message: err && err.message ? err.message : String(err),
       route,
+    });
+    captureDiagnostics(config, 'error', 'token_verification_failed', {
+      event: 'token_verification_failed',
+      requestId,
+      route,
+      detail: err && err.message ? err.message : String(err),
+      tokenPresent: !!token,
+      clientIp: clientMeta.ip,
+      userAgent: clientMeta.userAgent,
+      cfRay: clientMeta.cfRay,
     });
     return jsonResponse(
       401,
@@ -291,6 +433,15 @@ export async function onRequest(context) {
       email: tokenDetails.email || '',
       route,
     });
+    captureDiagnostics(config, 'warn', 'email_not_verified', {
+      event: 'email_not_verified',
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      clientIp: clientMeta.ip,
+      userAgent: clientMeta.userAgent,
+      cfRay: clientMeta.cfRay,
+    });
     return jsonResponse(
       403,
       { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
@@ -298,14 +449,6 @@ export async function onRequest(context) {
       { 'X-ShiftFlow-Request-Id': requestId }
     );
   }
-
-  const clientMeta = {
-    ip:
-      request.headers.get('cf-connecting-ip') ||
-      request.headers.get('x-forwarded-for') ||
-      '',
-    userAgent: request.headers.get('user-agent') || '',
-  };
 
   let accessContext;
   try {
@@ -316,6 +459,16 @@ export async function onRequest(context) {
       route,
       message: err && err.message ? err.message : String(err),
       email: tokenDetails.email || '',
+    });
+    captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
+      event: 'resolve_access_context_failed',
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      detail: err && err.message ? err.message : String(err),
+      clientIp: clientMeta.ip,
+      userAgent: clientMeta.userAgent,
+      cfRay: clientMeta.cfRay,
     });
     return jsonResponse(
       403,
@@ -335,6 +488,16 @@ export async function onRequest(context) {
       email: tokenDetails.email || '',
       status: accessContext.status,
       reason: accessContext.reason || '',
+    });
+    captureDiagnostics(config, 'warn', 'access_denied', {
+      event: 'access_denied',
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      status: accessContext.status,
+      reason: accessContext.reason || '',
+      clientIp: clientMeta.ip,
+      cfRay: clientMeta.cfRay,
     });
     return jsonResponse(
       403,
@@ -358,6 +521,15 @@ export async function onRequest(context) {
         required: routePermissions,
         role: accessContext.role,
         email: tokenDetails.email || '',
+      });
+      captureDiagnostics(config, 'warn', 'role_mismatch', {
+        event: 'role_mismatch',
+        requestId,
+        route,
+        email: tokenDetails.email || '',
+        role: accessContext.role,
+        required: routePermissions,
+        cfRay: clientMeta.cfRay,
       });
       return jsonResponse(
         403,
@@ -400,6 +572,7 @@ export async function onRequest(context) {
   }
   if (clientMeta.ip) init.headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
   if (clientMeta.userAgent) init.headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
+  if (clientMeta.cfRay) init.headers['X-ShiftFlow-CF-Ray'] = clientMeta.cfRay;
   if (tokenDetails.iat) init.headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
   if (tokenDetails.exp) init.headers['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
 
@@ -420,6 +593,15 @@ export async function onRequest(context) {
       route,
       email: tokenDetails.email || '',
       message: err && err.message ? err.message : String(err),
+    });
+    captureDiagnostics(config, 'error', 'gas_unreachable', {
+      event: 'gas_unreachable',
+      requestId,
+      route,
+      email: tokenDetails.email || '',
+      detail: err && err.message ? err.message : String(err),
+      clientIp: clientMeta.ip,
+      cfRay: clientMeta.cfRay,
     });
     return jsonResponse(
       502,

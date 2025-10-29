@@ -3964,6 +3964,15 @@
         window.__SHIFT_FLOW_AUTH_TOKEN__ = token || '';
         AUTH_TOKEN_PAYLOAD = token ? decodeJwtPayload(token) : null;
         AUTH_READY = !!token;
+        try {
+          if (token) {
+            sessionStorage.setItem('SHIFT_FLOW_ID_TOKEN', token);
+          } else {
+            sessionStorage.removeItem('SHIFT_FLOW_ID_TOKEN');
+          }
+        } catch (storageErr) {
+          console.warn('Failed to persist auth token:', storageErr);
+        }
       }
 
       function clearAuthToken() {
