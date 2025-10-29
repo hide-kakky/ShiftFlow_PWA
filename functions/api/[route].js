@@ -81,11 +81,21 @@ function normalizeRedirectUrl(currentUrl, locationHeader) {
 function stripXssiPrefix(text) {
   if (typeof text !== 'string') return text;
   if (!text) return text;
-  const trimmed = text.replace(/^\s+/, '');
+  let trimmed = text.replace(/^\s+/, '');
   if (trimmed.startsWith(")]}'")) {
-    return trimmed.replace(/^\)\]\}'\s*/, '');
+    trimmed = trimmed.replace(/^\)\]\}'\s*/, '');
   }
-  return text;
+  const firstBrace = trimmed.indexOf('{');
+  if (firstBrace > 0) {
+    const candidate = trimmed.slice(firstBrace);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch (_err) {
+      return trimmed;
+    }
+  }
+  return trimmed;
 }
 
 function isLikelyHtmlDocument(text) {
