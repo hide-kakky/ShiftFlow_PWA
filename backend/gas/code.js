@@ -1657,14 +1657,11 @@ function doGet(e) {
       return serveManifest();
     }
 
-    return jsonResponse(
-      {
-        ok: false,
-        error: 'Direct access is not supported.',
-        detail: 'ShiftFlow API is available via the Cloudflare proxy.',
-      },
-      200
-    );
+    // 認証フロー案内ページを表示して、ブラウザ経由でも承認状況を確認できるようにする。
+    const signinPage = HtmlService.createHtmlOutputFromFile('signin');
+    signinPage.setTitle('ShiftFlow Sign-In');
+    signinPage.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    return signinPage;
   } finally {
     _clearRequestCache();
   }
