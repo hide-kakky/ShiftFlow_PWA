@@ -309,6 +309,46 @@ function _getSpreadsheet() {
   return _cachedSpreadsheet;
 }
 
+/**
+ * 現在のスプレッドシート構造をログ出力するデバッグ用ユーティリティ
+ * 各シート名・行列数・ヘッダー行を順番に Logger へ出力する
+ */
+function logSpreadsheetStructure() {
+  const ss = _getSpreadsheet();
+  Logger.log('[ShiftFlow][SpreadsheetStructure] Spreadsheet: ' + ss.getName());
+  const sheets = ss.getSheets();
+  sheets.forEach((sheet, index) => {
+    const name = sheet.getName();
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    const hiddenSuffix = sheet.isSheetHidden() ? ' [hidden]' : '';
+    Logger.log(
+      '[' +
+        (index + 1) +
+        '/' +
+        sheets.length +
+        '] Sheet: ' +
+        name +
+        hiddenSuffix +
+        ' (rows=' +
+        lastRow +
+        ', cols=' +
+        lastColumn +
+        ')'
+    );
+    if (lastRow > 0 && lastColumn > 0) {
+      const headerRow = sheet.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+      const normalizedHeader = headerRow.map((value, idx) => {
+        const text = String(value || '').trim();
+        return text ? text : '(Column ' + (idx + 1) + ')';
+      });
+      Logger.log('    Headers: ' + normalizedHeader.join(', '));
+    } else {
+      Logger.log('    Headers: (empty sheet)');
+    }
+  });
+}
+
 function _openSheet(name) {
   if (_sheetCache[name]) return _sheetCache[name];
   const ss = _getSpreadsheet();
