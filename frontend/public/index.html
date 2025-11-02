@@ -1977,59 +1977,43 @@
         justify-content: center;
         align-items: center;
         min-height: min(640px, 90vh);
-        padding: clamp(20px, 4vw, 36px);
+        padding: clamp(16px, 4vw, 40px);
       }
-      .auth-panel {
-        width: min(400px, 100%);
+      .auth-card {
+        width: min(360px, 100%);
         margin: 0 auto;
         background: rgba(15, 23, 42, 0.92);
-        border-radius: 28px;
+        border-radius: 24px;
         padding: clamp(28px, 4vw, 40px);
-        box-shadow: 0 32px 72px rgba(2, 6, 23, 0.55);
+        box-shadow: 0 28px 72px rgba(2, 6, 23, 0.55);
         display: flex;
         flex-direction: column;
-        gap: 24px;
+        gap: 20px;
         backdrop-filter: blur(12px);
       }
-      .auth-panel--solo {
-        width: min(360px, 100%);
-      }
-      .auth-panel__header {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-      .auth-panel__brand {
-        width: 46px;
-        height: 46px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, #2563eb, #38bdf8);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 1.1rem;
-        color: #f8fafc;
-        box-shadow: 0 12px 28px rgba(37, 99, 235, 0.35);
-      }
-      .auth-panel__title {
+      .auth-card__title {
         margin: 0;
-        font-size: 1.35rem;
+        font-size: 1.6rem;
         font-weight: 600;
+        color: #f8fafc;
+        text-align: center;
       }
-      .auth-panel__subtitle {
+      .auth-card__subtitle {
         margin: 0;
-        font-size: 0.95rem;
-        color: rgba(226, 232, 240, 0.7);
+        font-size: 0.96rem;
+        color: rgba(226, 232, 240, 0.75);
+        text-align: center;
+        line-height: 1.6;
       }
-      .auth-panel__card {
-        background: rgba(255, 255, 255, 0.04);
-        border-radius: 20px;
-        padding: 22px;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-        border: 1px solid rgba(148, 163, 184, 0.15);
+      .auth-card__hint {
+        font-size: 0.82rem;
+        color: rgba(226, 232, 240, 0.6);
+        text-align: center;
+        line-height: 1.6;
+      }
+      .auth-card__actions {
+        display: grid;
+        gap: 12px;
       }
 
       .auth-session {
@@ -2060,10 +2044,6 @@
       .auth-session__email {
         font-size: 0.9rem;
         color: rgba(226, 232, 240, 0.7);
-      }
-      .auth-actions {
-        display: grid;
-        gap: 12px;
       }
       .auth-button {
         display: inline-flex;
@@ -2121,11 +2101,9 @@
         display: block;
       }
       @media (max-width: 920px) {
-        
-          justify-content: center;
-        }
-        .auth-panel {
-          order: -1;
+        .auth-shell {
+          min-height: auto;
+          padding: 24px;
         }
       }
       body.bootstrapping header.navbar,
@@ -2223,46 +2201,40 @@
     <div id="auth-backdrop" class="auth-backdrop" aria-hidden="true"></div>
     <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
       <div class="auth-shell">
-        <section class="auth-panel auth-panel--solo">
-          <div class="auth-panel__header">
-            <div class="auth-panel__brand">SF</div>
-            <div>
-              <h2 class="auth-panel__title">ShiftFlow</h2>
-              <p class="auth-panel__subtitle">Google アカウントでサインイン</p>
+        <section class="auth-card">
+          <div id="auth-session" class="auth-session">
+            <img id="auth-session-avatar" class="auth-session__avatar" alt="Profile" />
+            <div class="auth-session__meta">
+              <span id="auth-session-name" class="auth-session__name"></span>
+              <span id="auth-session-email" class="auth-session__email"></span>
             </div>
           </div>
-          <div class="auth-panel__card">
-            <div id="auth-session" class="auth-session">
-              <img id="auth-session-avatar" class="auth-session__avatar" alt="Profile" />
-              <div class="auth-session__meta">
-                <span id="auth-session-name" class="auth-session__name"></span>
-                <span id="auth-session-email" class="auth-session__email"></span>
-              </div>
-            </div>
-            <div class="auth-actions">
-              <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
-                <span class="material-icons">login</span>
-                <span>Google で続行</span>
-              </button>
-              <button
-                id="btn-auth-browser"
-                class="auth-button auth-button--secondary d-none"
-                type="button"
-              >
-                <span class="material-icons-outlined">open_in_new</span>
-                <span>ブラウザで認証を開く</span>
-              </button>
-              <button
-                id="btn-auth-logout"
-                class="auth-button auth-button--secondary d-none"
-                type="button"
-              >
-                <span class="material-icons-outlined">logout</span>
-                <span>サインアウト</span>
-              </button>
-            </div>
-          </div>
+          <h1 class="auth-card__title">ShiftFlow にサインイン</h1>
+          <p class="auth-card__subtitle">Google Workspace のアカウントを使用して認証を完了してください。</p>
           <div class="auth-error" id="auth-error"></div>
+          <div class="auth-card__actions">
+            <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
+              <span class="material-icons">login</span>
+              <span>Google で続行</span>
+            </button>
+            <button
+              id="btn-auth-browser"
+              class="auth-button auth-button--secondary d-none"
+              type="button"
+            >
+              <span class="material-icons-outlined">open_in_new</span>
+              <span>ブラウザで認証を開く</span>
+            </button>
+            <button
+              id="btn-auth-logout"
+              class="auth-button auth-button--secondary d-none"
+              type="button"
+            >
+              <span class="material-icons-outlined">logout</span>
+              <span>サインアウト</span>
+            </button>
+          </div>
+          <p class="auth-card__subtitle auth-card__hint">社外の Google アカウントではアクセスできません。サインインに失敗する場合は IT 担当へお問い合わせください。</p>
         </section>
       </div>
     </div>
@@ -3947,6 +3919,14 @@
         });
       }
 
+      function buildGasAuthUrl(returnTo) {
+        if (!GAS_WEB_APP_URL) return '';
+        var base = GAS_WEB_APP_URL;
+        var separator = base.indexOf('?') >= 0 ? '&' : '?';
+        var target = String(returnTo || window.location.href || '').trim();
+        return base + separator + 'return=' + encodeURIComponent(target);
+      }
+
       applyThemePreference(themePreference);
       applyUserAvatar(USER_IMAGE_URL);
 
@@ -4195,21 +4175,26 @@
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
+        const browserBtn = byId('btn-auth-browser');
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
           displayMessage = 'ShiftFlow にサインインしてください。';
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
-          const browserBtn = byId('btn-auth-browser');
-          if (browserBtn) {
-            browserBtn.classList.toggle('d-none', !NEEDS_MANUAL_SIGNIN && !IS_SAFARI);
-          }
         }
         setAppShellHidden(true);
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
+        }
+        if (browserBtn) {
+          const shouldShow =
+            HAS_GAS_WEB_APP_URL &&
+            (NEEDS_MANUAL_SIGNIN ||
+              IS_SAFARI ||
+              (displayMessage && displayMessage.indexOf('ブラウザで認証') >= 0));
+          browserBtn.classList.toggle('d-none', !shouldShow);
         }
         if (errorEl) {
           if (displayMessage) {
@@ -4323,7 +4308,10 @@
       async function startAuthFlow(options) {
         const opts = options || {};
         if (NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL) {
-          window.open(GAS_WEB_APP_URL, '_blank', 'noopener');
+          const returnTo = opts.returnTo || window.location.href;
+          const target = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
+          showAuthOverlay('ホーム画面からブラウザで認証を完了してください。');
+          window.open(target, '_blank', 'noopener');
           return;
         }
         let authUrl = '';
@@ -4347,11 +4335,19 @@
           }
         } catch (err) {
           console.error('[ShiftFlow] Failed to start auth flow', err);
-          showAuthOverlay('サインインを開始できませんでした。しばらくしてから再度お試しください。');
+          showAuthOverlay(
+            HAS_GAS_WEB_APP_URL
+              ? 'サインインを開始できませんでした。ブラウザで認証を開いて完了してください。'
+              : 'サインインを開始できませんでした。しばらくしてから再度お試しください。'
+          );
           return;
         }
         if (!authUrl) {
-          showAuthOverlay('サインイン URL を取得できませんでした。');
+          showAuthOverlay(
+            HAS_GAS_WEB_APP_URL
+              ? 'サインイン URL を取得できませんでした。ブラウザで認証を開いて完了してください。'
+              : 'サインイン URL を取得できませんでした。'
+          );
           return;
         }
         if (opts.external) {
@@ -4385,7 +4381,13 @@
         });
         on('btn-auth-browser', 'click', function (event) {
           event.preventDefault();
-          startAuthFlow({ external: true });
+          if (HAS_GAS_WEB_APP_URL) {
+            var target = buildGasAuthUrl(window.location.href) || GAS_WEB_APP_URL;
+            showAuthOverlay('ブラウザで認証を開きました。認証を完了してからこの画面に戻ってください。');
+            window.open(target, '_blank', 'noopener');
+          } else {
+            notify('ブラウザで認証を開く URL が設定されていません。', false);
+          }
         });
         on('btn-auth-logout', 'click', function (event) {
           event.preventDefault();

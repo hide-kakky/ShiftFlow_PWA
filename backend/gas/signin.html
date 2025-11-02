@@ -1,62 +1,277 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>ShiftFlow Sign-In</title>
+    <title>ShiftFlow 認証</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
+      :root {
+        color-scheme: light dark;
+      }
       html,
       body {
         height: 100%;
       }
       body {
         margin: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
+          sans-serif;
+        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 55%),
+          linear-gradient(135deg, #0f172a, #172554);
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f6f8ff;
-        color: #1f2937;
+        padding: clamp(16px, 5vw, 48px);
+        color: #f8fafc;
       }
       .card {
-        background: #ffffff;
-        border-radius: 16px;
-        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
-        padding: 36px;
-        max-width: 440px;
+        width: min(420px, 100%);
+        background: rgba(12, 19, 42, 0.9);
+        border-radius: 24px;
+        padding: clamp(28px, 5vw, 40px);
+        box-shadow: 0 32px 80px rgba(2, 6, 23, 0.55);
+        backdrop-filter: blur(16px);
+        display: flex;
+        flex-direction: column;
+        gap: clamp(18px, 3vh, 26px);
         width: calc(100% - 40px);
         text-align: center;
       }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.85rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        background: rgba(148, 163, 184, 0.2);
+        padding: 6px 14px;
+        border-radius: 999px;
+        color: rgba(226, 232, 240, 0.9);
+        justify-content: center;
+      }
       h1 {
         margin-top: 0;
-        font-size: 1.75rem;
+        margin-bottom: 0;
+        font-size: clamp(1.6rem, 4vw, 1.9rem);
+        color: #f8fafc;
+        font-weight: 650;
       }
       p {
+        margin: 0;
         line-height: 1.7;
+        color: rgba(226, 232, 240, 0.82);
+        font-size: 0.98rem;
       }
-      ol {
+      .status {
+        background: rgba(37, 99, 235, 0.12);
+        border-radius: 18px;
+        padding: 14px 18px;
+        font-size: 0.95rem;
+        color: rgba(191, 219, 254, 0.9);
+      }
+      .status.is-success {
+        background: rgba(16, 185, 129, 0.16);
+        color: rgba(167, 243, 208, 0.9);
+      }
+      .status.is-error {
+        background: rgba(248, 113, 113, 0.18);
+        color: rgba(254, 202, 202, 0.95);
+      }
+      .btn {
+        border: none;
+        border-radius: 16px;
+        padding: 14px 18px;
+        font-size: 1rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+      }
+      .btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #2563eb, #38bdf8);
+        color: #f8fafc;
+        box-shadow: 0 18px 42px rgba(37, 99, 235, 0.35);
+      }
+      .btn-primary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 22px 50px rgba(37, 99, 235, 0.45);
+      }
+      .btn-secondary {
+        background: rgba(148, 163, 184, 0.2);
+        color: rgba(226, 232, 240, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+      }
+      .btn-secondary:hover:not(:disabled) {
+        transform: translateY(-1px);
+        border-color: rgba(148, 163, 184, 0.6);
+      }
+      .hidden {
+        display: none !important;
+      }
+      .profile {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 18px;
+        padding: 12px 14px;
+        background: rgba(148, 163, 184, 0.12);
+      }
+      .profile img {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        object-fit: cover;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+      }
+      .profile span {
+        display: block;
         text-align: left;
-        margin: 1rem 0;
+        font-size: 0.9rem;
+        color: rgba(226, 232, 240, 0.9);
+      }
+      .profile span.email {
+        font-size: 0.84rem;
+        color: rgba(148, 163, 184, 0.85);
+      }
+      .steps {
+        margin: 0;
         padding-left: 1.2rem;
+        text-align: left;
+        color: rgba(226, 232, 240, 0.78);
+        font-size: 0.92rem;
         line-height: 1.6;
       }
       .hint {
-        font-size: 0.85rem;
-        color: #6b7280;
-        margin-top: 1rem;
+        font-size: 0.82rem;
+        color: rgba(148, 163, 184, 0.8);
+        line-height: 1.6;
       }
     </style>
   </head>
   <body>
-    <div class="card">
+    <div class="card" id="card">
+      <span class="badge">Google Workspace 認証</span>
       <h1>ShiftFlow にサインイン</h1>
-      <p>この画面は ShiftFlow を利用するための Google Apps Script 認証ページです。</p>
-      <ol>
-        <li>画面右上の「承認が必要です」などのボタンから <strong>組織の Google アカウント</strong> で許可します。</li>
-        <li>認証が完了したらブラウザで ShiftFlow（Cloudflare Pages）のタブに戻り、ページを更新してください。</li>
-      </ol>
+      <p id="status" class="status">Google アカウントの権限を確認しています…</p>
+      <div id="profile" class="profile hidden">
+        <img id="profile-img" src="" alt="profile" />
+        <div>
+          <span id="profile-name">認証済みユーザー</span>
+          <span id="profile-email" class="email"></span>
+        </div>
+      </div>
+      <div class="auth-card__actions">
+        <button id="btn-auth" class="btn btn-primary">Google 権限を確認</button>
+        <button id="btn-return" class="btn btn-secondary hidden">ShiftFlow を開く</button>
+      </div>
       <p class="hint">
-        認証が終わってもこのページが変わらない場合は、ブラウザの戻るボタンで閉じて構いません。
+        認証が完了すると自動で ShiftFlow に戻ります。完了しない場合は「ShiftFlow を開く」またはブラウザで対象タブに戻って更新してください。
       </p>
+      <ol class="steps">
+        <li>「Google 権限を確認」を押して社用 Google アカウントで許可します。</li>
+        <li>承認ダイアログが表示されない場合は、ブラウザのポップアップを許可してください。</li>
+      </ol>
     </div>
+    <script>
+      (function () {
+        const statusEl = document.getElementById('status');
+        const btnAuth = document.getElementById('btn-auth');
+        const btnReturn = document.getElementById('btn-return');
+        const profileBox = document.getElementById('profile');
+        const profileName = document.getElementById('profile-name');
+        const profileEmail = document.getElementById('profile-email');
+        const profileImg = document.getElementById('profile-img');
+
+        const params = new URLSearchParams(window.location.search || '');
+        let returnTo = params.get('return') || '';
+        try {
+          returnTo = returnTo ? decodeURIComponent(returnTo) : '';
+        } catch (_err) {
+          returnTo = '';
+        }
+        const hasReturn = !!returnTo;
+        if (hasReturn) {
+          btnReturn.classList.remove('hidden');
+        }
+
+        function setStatus(message, variant) {
+          statusEl.textContent = message;
+          statusEl.className = 'status';
+          if (variant === 'success') statusEl.classList.add('is-success');
+          if (variant === 'error') statusEl.classList.add('is-error');
+        }
+
+        function handleAuthorized(user) {
+          const email = user && user.email ? user.email : '';
+          const name = user && user.name ? user.name : '認証済みユーザー';
+          profileName.textContent = name;
+          profileEmail.textContent = email;
+          profileImg.src = (user && user.imageUrl) || 'https://placehold.jp/120x120.png';
+          profileBox.classList.remove('hidden');
+          setStatus(
+            email ? `${email} として認証されました。ShiftFlow に戻ります…` : '認証が完了しました。',
+            'success'
+          );
+          if (hasReturn) {
+            setTimeout(function () {
+              window.location.href = returnTo;
+            }, 1200);
+          }
+        }
+
+        function handleAuthFailure(error) {
+          console.warn('[Signin] Authorization check failed', error);
+          const message =
+            'Google の許可が必要です。「Google 権限を確認」を押して認証を完了してください。';
+          setStatus(message, 'error');
+          btnAuth.disabled = false;
+        }
+
+        function triggerAuthCheck() {
+          btnAuth.disabled = true;
+          setStatus('Google アカウントの権限を確認しています…', 'info');
+          try {
+            google.script.run
+              .withSuccessHandler(function (user) {
+                btnAuth.disabled = false;
+                handleAuthorized(user);
+              })
+              .withFailureHandler(function (err) {
+                btnAuth.disabled = false;
+                handleAuthFailure(err);
+              })
+              .getLoggedInUserInfo();
+          } catch (err) {
+            btnAuth.disabled = false;
+            handleAuthFailure(err);
+          }
+        }
+
+        btnAuth.addEventListener('click', function (event) {
+          event.preventDefault();
+          triggerAuthCheck();
+        });
+
+        btnReturn.addEventListener('click', function (event) {
+          event.preventDefault();
+          if (hasReturn) {
+            window.location.href = returnTo;
+          } else {
+            window.close();
+          }
+        });
+
+        triggerAuthCheck();
+      })();
+    </script>
   </body>
 </html>

@@ -16,7 +16,11 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const config = loadConfig(env);
   const origin = url.origin;
-  const redirectBase = (config.allowedOrigins && config.allowedOrigins[0]) || origin;
+  const allowedOrigins = Array.isArray(config.allowedOrigins)
+    ? config.allowedOrigins.filter(Boolean)
+    : [];
+  const isOriginAllowed = allowedOrigins.includes(origin);
+  const redirectBase = isOriginAllowed ? origin : allowedOrigins[0] || origin;
   const normalizedBase = redirectBase.replace(/\/+$/, '');
   if (request.method === 'OPTIONS') {
     return new Response(null, {
