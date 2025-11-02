@@ -52,7 +52,6 @@
     <!-- ===== Runtime configuration endpoint (Cloudflare Functions) ===== -->
     <script src="/config"></script>
     <!-- ===== Google Identity Services (One Tap / FedCM support) ===== -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
     <!-- ===== Initial bootstrap payload rendered by backend ===== -->
     <script id="shiftflow-bootstrap" type="application/json">
@@ -1959,36 +1958,229 @@
       .auth-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(15, 23, 42, 0.35);
-        backdrop-filter: blur(6px);
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: clamp(24px, 5vw, 64px);
+        background:
+          radial-gradient(circle at top right, rgba(59, 130, 246, 0.26), transparent 55%),
+          radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.18), transparent 45%),
+          linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.75));
+        backdrop-filter: blur(16px);
         z-index: 3000;
       }
       .auth-overlay.d-none {
         display: none !important;
       }
-      .auth-card {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 32px;
-        width: min(90%, 420px);
-        box-shadow: 0 28px 72px rgba(15, 23, 42, 0.28);
-        text-align: center;
+      .auth-shell {
+        display: flex;
+        flex-wrap: wrap;
+        gap: clamp(28px, 6vw, 64px);
+        width: min(1080px, 100%);
+        color: #f8fafc;
       }
-      .auth-card h2 {
-        margin-top: 0;
-        font-size: 1.8rem;
+      .auth-hero {
+        flex: 1 1 360px;
+        min-width: 320px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 20px;
       }
-      .auth-card p {
-        line-height: 1.6;
-        margin-bottom: 1.25rem;
-      }
-      .auth-card .auth-error {
-        margin-top: 1rem;
+      .auth-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 16px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.2);
         font-size: 0.9rem;
-        color: #b91c1c;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .auth-hero__title {
+        font-size: clamp(2rem, 4vw, 3rem);
+        font-weight: 700;
+        margin: 0;
+        line-height: 1.12;
+      }
+      .auth-hero__title mark {
+        color: #93c5fd;
+        background: none;
+      }
+      .auth-hero__copy {
+        margin: 0;
+        font-size: 1.05rem;
+        line-height: 1.7;
+        color: rgba(226, 232, 240, 0.85);
+      }
+      .auth-hero__highlights {
+        display: grid;
+        gap: 14px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .auth-hero__highlights li {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        font-size: 0.98rem;
+        color: rgba(226, 232, 240, 0.9);
+      }
+      .auth-hero__highlights li .material-icons-outlined {
+        font-size: 1.2rem;
+        color: #38bdf8;
+        margin-top: 2px;
+      }
+      .auth-panel {
+        flex: 0 0 360px;
+        max-width: 420px;
+        background: rgba(15, 23, 42, 0.88);
+        border-radius: 28px;
+        padding: clamp(28px, 4vw, 40px);
+        box-shadow: 0 32px 72px rgba(2, 6, 23, 0.55);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        backdrop-filter: blur(12px);
+      }
+      .auth-panel__header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .auth-panel__brand {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #2563eb, #38bdf8);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #f8fafc;
+        box-shadow: 0 12px 28px rgba(37, 99, 235, 0.35);
+      }
+      .auth-panel__title {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 600;
+      }
+      .auth-panel__subtitle {
+        margin: 0;
+        font-size: 0.95rem;
+        color: rgba(226, 232, 240, 0.7);
+      }
+      .auth-panel__card {
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 20px;
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+      }
+      .auth-session {
+        display: none;
+        align-items: center;
+        gap: 16px;
+      }
+      .auth-session.is-visible {
+        display: flex;
+      }
+      .auth-session__avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 18px;
+        object-fit: cover;
+        background: rgba(148, 163, 184, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .auth-session__meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .auth-session__name {
+        font-weight: 600;
+        font-size: 1rem;
+      }
+      .auth-session__email {
+        font-size: 0.9rem;
+        color: rgba(226, 232, 240, 0.7);
+      }
+      .auth-actions {
+        display: grid;
+        gap: 12px;
+      }
+      .auth-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
+        border-radius: 16px;
+        padding: 14px 18px;
+        font-weight: 600;
+        font-size: 1rem;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+      .auth-button .material-icons,
+      .auth-button .material-icons-outlined {
+        font-size: 1.3rem;
+      }
+      .auth-button--primary {
+        background: linear-gradient(135deg, #2563eb, #38bdf8);
+        color: #f8fafc;
+        box-shadow: 0 18px 36px rgba(37, 99, 235, 0.35);
+      }
+      .auth-button--primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 20px 45px rgba(37, 99, 235, 0.4);
+      }
+      .auth-button--secondary {
+        background: rgba(148, 163, 184, 0.15);
+        color: #e2e8f0;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+      }
+      .auth-button--secondary:hover {
+        transform: translateY(-1px);
+        border-color: rgba(148, 163, 184, 0.38);
+      }
+      .auth-meta {
+        font-size: 0.85rem;
+        color: rgba(226, 232, 240, 0.7);
+        text-align: center;
+        line-height: 1.6;
+      }
+      .auth-meta strong {
+        color: #f8fafc;
+      }
+      .auth-error {
+        display: none;
+        font-size: 0.88rem;
+        line-height: 1.6;
+        color: #fecaca;
+        background: rgba(220, 38, 38, 0.12);
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        border-radius: 14px;
+        padding: 12px 16px;
+      }
+      .auth-error.is-visible {
+        display: block;
+      }
+      @media (max-width: 920px) {
+        .auth-shell {
+          justify-content: center;
+        }
+        .auth-panel {
+          order: -1;
+        }
       }
       body.bootstrapping header.navbar,
       body.bootstrapping nav.topbar,
@@ -2084,18 +2276,78 @@
     <!-- ===== Authentication backdrop and overlay ===== -->
     <div id="auth-backdrop" class="auth-backdrop" aria-hidden="true"></div>
     <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
-      <div class="auth-card">
-        <h2>ShiftFlow</h2>
-        <p>Google アカウントでサインインしてください。</p>
-        <div id="google-signin-btn"></div>
-        <button
-          id="google-signin-manual"
-          class="btn btn-primary w-100 mt-3 d-none"
-          type="button"
-        >
-          Google でサインイン
-        </button>
-        <div class="auth-error d-none" id="auth-error"></div>
+      <div class="auth-shell">
+        <section class="auth-hero">
+          <span class="auth-hero__badge">
+            <span class="material-icons-outlined">bolt</span>
+            ShiftFlow Workspace
+          </span>
+          <h1 class="auth-hero__title">
+            仕事の流れを <mark>ひとつのスクリーン</mark> に。
+          </h1>
+          <p class="auth-hero__copy">
+            タスク、メッセージ、ステータスをリアルタイムに同期。チームの判断力を高め、
+            ユーザーの合意形成をより早くします。
+          </p>
+          <ul class="auth-hero__highlights">
+            <li>
+              <span class="material-icons-outlined">dashboard_customize</span>
+              <span>タスクとメッセージを統合した最新のワークスペース</span>
+            </li>
+            <li>
+              <span class="material-icons-outlined">update</span>
+              <span>GAS と自動連携、更新はすべて数秒以内に反映</span>
+            </li>
+            <li>
+              <span class="material-icons-outlined">privacy_tip</span>
+              <span>ShiftFlow セッションと Google OAuth の二重で安全に保護</span>
+            </li>
+          </ul>
+        </section>
+        <section class="auth-panel">
+          <div class="auth-panel__header">
+            <div class="auth-panel__brand">SF</div>
+            <div>
+              <h2 class="auth-panel__title">サインイン</h2>
+              <p class="auth-panel__subtitle">ShiftFlow アカウントを有効化しましょう</p>
+            </div>
+          </div>
+          <div class="auth-panel__card">
+            <div id="auth-session" class="auth-session">
+              <img id="auth-session-avatar" class="auth-session__avatar" alt="Profile" />
+              <div class="auth-session__meta">
+                <span id="auth-session-name" class="auth-session__name"></span>
+                <span id="auth-session-email" class="auth-session__email"></span>
+              </div>
+            </div>
+            <div class="auth-actions">
+              <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
+                <span class="material-icons">login</span>
+                <span>Google で続行</span>
+              </button>
+              <button
+                id="btn-auth-browser"
+                class="auth-button auth-button--secondary"
+                type="button"
+              >
+                <span class="material-icons-outlined">open_in_new</span>
+                <span>ブラウザで認証を開く</span>
+              </button>
+              <button
+                id="btn-auth-logout"
+                class="auth-button auth-button--secondary d-none"
+                type="button"
+              >
+                <span class="material-icons-outlined">logout</span>
+                <span>サインアウト</span>
+              </button>
+            </div>
+            <div class="auth-meta">
+              <strong>Google Workspace</strong> の社用アカウントでログインしてください。
+            </div>
+          </div>
+          <div class="auth-error" id="auth-error"></div>
+        </section>
       </div>
     </div>
 
@@ -3042,8 +3294,6 @@
       const BOOTSTRAP_CACHE_MAX_AGE_MS = 60 * 1000;
       const AUTH_NOTICE_MESSAGE =
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
-      const FEDCM_FALLBACK_MESSAGE =
-        'ブラウザで Google ワンタップを表示できませんでした。下のボタンからサインインしてください。';
       const USER_AGENT = (navigator && navigator.userAgent) || '';
       const IS_IOS = /iphone|ipad|ipod/i.test(USER_AGENT) && !(window && window.MSStream);
       const IS_ANDROID = /android/i.test(USER_AGENT);
@@ -3055,14 +3305,13 @@
         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         (typeof navigator !== 'undefined' && navigator.standalone === true);
       const NEEDS_MANUAL_SIGNIN = IS_IOS && IS_STANDALONE;
-      const GIS_UX_MODE = IS_STANDALONE || IS_IOS ? 'redirect' : 'popup';
-      const GIS_USE_FEDCM = GIS_UX_MODE === 'popup' && !IS_SAFARI;
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
       let TASKS_BOOTSTRAPPED = false;
       var _rszTimer = null;
       let ACTIVE_TASK_TAB = 'my';
+      let AUTH_SESSION = { authenticated: false, user: null, expiresAt: 0 };
       if (!HAS_GAS_WEB_APP_URL) {
         console.warn(
           '[ShiftFlow] GAS_WEB_APP_URL is not defined. Set the Environment Variable on Cloudflare Pages.'
@@ -3525,7 +3774,7 @@
               overlayMessage = String(error.response.error);
             }
             showAuthOverlay(overlayMessage);
-            initGoogleSignIn();
+            syncAuthSession({ silent: true }).catch(function () {});
             return;
           }
           console.error('[ShiftFlow] backend request failed', error);
@@ -3543,36 +3792,21 @@
         }
 
         // === Helpers ===
-        async function _getIdTokenOrThrow() {
-          if (window.__SHIFT_FLOW_AUTH_TOKEN__) return window.__SHIFT_FLOW_AUTH_TOKEN__;
-          const cached = sessionStorage.getItem('SHIFT_FLOW_ID_TOKEN');
-          if (cached) {
-            window.__SHIFT_FLOW_AUTH_TOKEN__ = cached;
-            return cached;
+        let _lastSessionCheck = 0;
+        async function _ensureSessionToken(forceReload) {
+          if (!forceReload && AUTH_READY && window.__SHIFT_FLOW_AUTH_TOKEN__) {
+            return window.__SHIFT_FLOW_AUTH_TOKEN__;
           }
-          if (window.google?.accounts?.id) {
-            const token = await new Promise((resolve, reject) => {
-              try {
-                google.accounts.id.prompt(() => {
-                  const t0 = Date.now();
-                  const timer = setInterval(() => {
-                    if (window.__SHIFT_FLOW_AUTH_TOKEN__) {
-                      clearInterval(timer);
-                      resolve(window.__SHIFT_FLOW_AUTH_TOKEN__);
-                    } else if (Date.now() - t0 > 3000) {
-                      clearInterval(timer);
-                      reject(new Error('NO_ID_TOKEN'));
-                    }
-                  }, 100);
-                });
-              } catch (e) {
-                reject(e);
-              }
-            });
-            sessionStorage.setItem('SHIFT_FLOW_ID_TOKEN', token);
-            return token;
+          const now = Date.now();
+          if (!forceReload && now - _lastSessionCheck < 500) {
+            return window.__SHIFT_FLOW_AUTH_TOKEN__;
           }
-          throw new Error('NO_ID_TOKEN');
+          _lastSessionCheck = now;
+          const session = await syncAuthSession({ silent: true });
+          if (session && session.authenticated && window.__SHIFT_FLOW_AUTH_TOKEN__) {
+            return window.__SHIFT_FLOW_AUTH_TOKEN__;
+          }
+          throw new Error('NO_SESSION');
         }
 
         function _rid() {
@@ -3584,16 +3818,16 @@
         function invokeRemote(route, argsSnapshot, handlers) {
           var url = API_BASE_PATH + '/' + encodeURIComponent(route);
 
-          async function _doFetch(withFreshToken) {
-            const idToken = await _getIdTokenOrThrow();
+          async function _doFetch(forceRefresh) {
+            await _ensureSessionToken(forceRefresh);
             const init = {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
-                Authorization: 'Bearer ' + idToken,
                 'X-Shiftflow-Request-Id': _rid(),
               },
+              credentials: 'include',
               body: JSON.stringify({ route: route, args: argsSnapshot }),
             };
 
@@ -3621,13 +3855,9 @@
           (async () => {
             try {
               let packet = await _doFetch(false);
-              if (
-                !packet.res.ok &&
-                (packet.res.status === 401 ||
-                  /Missing Authorization bearer token/i.test(packet.body?.detail || ''))
-              ) {
-                window.__SHIFT_FLOW_AUTH_TOKEN__ = '';
-                sessionStorage.removeItem('SHIFT_FLOW_ID_TOKEN');
+              if (!packet.res.ok && packet.res.status === 401) {
+                clearAuthToken();
+                await syncAuthSession({ silent: false });
                 packet = await _doFetch(true);
               }
 
@@ -4030,29 +4260,14 @@
         );
       }
 
-      function decodeJwtPayload(token) {
-        try {
-          const payloadPart = token.split('.')[1];
-          const decoded = atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/'));
-          return JSON.parse(decoded);
-        } catch (err) {
-          console.warn('Failed to decode JWT payload:', err);
-          return null;
-        }
-      }
-
       function setAuthToken(token) {
         window.__SHIFT_FLOW_AUTH_TOKEN__ = token || '';
-        AUTH_TOKEN_PAYLOAD = token ? decodeJwtPayload(token) : null;
+        AUTH_TOKEN_PAYLOAD = null;
         AUTH_READY = !!token;
         try {
-          if (token) {
-            sessionStorage.setItem('SHIFT_FLOW_ID_TOKEN', token);
-          } else {
-            sessionStorage.removeItem('SHIFT_FLOW_ID_TOKEN');
-          }
-        } catch (storageErr) {
-          console.warn('Failed to persist auth token:', storageErr);
+          sessionStorage.removeItem('SHIFT_FLOW_ID_TOKEN');
+        } catch (_err) {
+          /* ignore storage exceptions */
         }
       }
 
@@ -4064,11 +4279,9 @@
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
-        const manualBtn = byId('google-signin-manual');
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
-          displayMessage =
-            'Google サインインが必要です。下の「Google でサインイン」ボタンから続行してください。';
+          displayMessage = 'ShiftFlow にサインインしてください。';
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
@@ -4078,37 +4291,27 @@
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
         }
-        if (manualBtn) {
-          if (
-            displayMessage === FEDCM_FALLBACK_MESSAGE ||
-            NEEDS_MANUAL_SIGNIN ||
-            IS_MOBILE
-          ) {
-            manualBtn.classList.remove('d-none');
-          } else {
-            manualBtn.classList.add('d-none');
-          }
-        }
         if (errorEl) {
           if (displayMessage) {
             errorEl.textContent = displayMessage;
-            errorEl.classList.remove('d-none');
+            errorEl.classList.add('is-visible');
           } else {
             errorEl.textContent = '';
-            errorEl.classList.add('d-none');
+            errorEl.classList.remove('is-visible');
           }
         }
       }
 
       function hideAuthOverlay(revealShell) {
         const overlay = byId('auth-overlay');
-        const manualBtn = byId('google-signin-manual');
+        const errorEl = byId('auth-error');
         if (overlay) {
           overlay.classList.add('d-none');
           overlay.setAttribute('aria-hidden', 'true');
         }
-        if (manualBtn) {
-          manualBtn.classList.add('d-none');
+        if (errorEl) {
+          errorEl.textContent = '';
+          errorEl.classList.remove('is-visible');
         }
         if (revealShell === false) {
           if (document.body) {
@@ -4123,136 +4326,196 @@
         setAppShellHidden(false);
       }
 
-      function handleCredentialResponse(response) {
-        if (!response || !response.credential) {
-          showAuthOverlay(
-            'Google から認証トークンが取得できませんでした。もう一度お試しください。'
-          );
-          return;
-        }
-        setAuthToken(response.credential);
-        hideAuthOverlay();
-        bootstrapAfterAuth();
-      }
+      function updateAuthSessionUI(session) {
+        AUTH_SESSION = session || { authenticated: false, user: null, expiresAt: 0 };
+        const container = byId('auth-session');
+        const nameEl = byId('auth-session-name');
+        const emailEl = byId('auth-session-email');
+        const avatarEl = byId('auth-session-avatar');
+        const logoutBtn = byId('btn-auth-logout');
 
-      function handleOneTapPrompt(notification) {
-        if (!notification) {
-          return;
+        const isLoggedIn = !!(session && session.authenticated);
+        if (container) {
+          container.classList.toggle('is-visible', isLoggedIn);
         }
-        const momentType =
-          typeof notification.getMomentType === 'function' ? notification.getMomentType() : null;
-        const isDisplayed =
-          typeof notification.isDisplayed === 'function' && notification.isDisplayed();
-        if (isDisplayed || momentType === 'display') {
-          return;
+        if (logoutBtn) {
+          logoutBtn.classList.toggle('d-none', !isLoggedIn);
         }
-        const notDisplayed =
-          typeof notification.isNotDisplayed === 'function' && notification.isNotDisplayed();
-        if (notDisplayed && typeof notification.getNotDisplayedReason === 'function') {
-          console.info('[ShiftFlow][Auth] GIS prompt not displayed:', notification.getNotDisplayedReason());
-        }
-        const skipped =
-          typeof notification.isSkippedMoment === 'function' && notification.isSkippedMoment();
-        if (notDisplayed || skipped || momentType === 'skipped') {
-          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
-          return;
-        }
-        const dismissed =
-          typeof notification.isDismissedMoment === 'function' && notification.isDismissedMoment();
-        if (dismissed || momentType === 'dismissed') {
-          const reason =
-            typeof notification.getDismissedReason === 'function'
-              ? notification.getDismissedReason()
-              : '';
-          if (reason !== 'credential_returned' && !AUTH_READY) {
-            showAuthOverlay();
+        if (isLoggedIn && session.user) {
+          const name = session.user.name || '';
+          const email = session.user.email || '';
+          if (nameEl) nameEl.textContent = name;
+          if (emailEl) emailEl.textContent = email;
+          if (avatarEl) {
+            avatarEl.src = session.user.picture || PROFILE_PLACEHOLDER_URL;
+            avatarEl.alt = name || email || 'Profile';
+          }
+        } else {
+          if (nameEl) nameEl.textContent = '';
+          if (emailEl) emailEl.textContent = '';
+          if (avatarEl) {
+            avatarEl.src = PROFILE_PLACEHOLDER_URL;
+            avatarEl.alt = 'Profile placeholder';
           }
         }
       }
 
-      function startManualGoogleSignIn() {
-        if (!(window.google && google.accounts && google.accounts.id)) {
-          if (HAS_GAS_WEB_APP_URL) {
-            window.location.assign(GAS_WEB_APP_URL);
-            return;
-          }
-          showAuthOverlay(
-            'Google サインインを初期化できませんでした。ブラウザを再読み込みしてから再試行してください。'
-          );
-          return;
-        }
+      async function syncAuthSession(options) {
+        const opts = options || {};
+        let response;
         try {
-          google.accounts.id.prompt(handleOneTapPrompt);
-        } catch (promptError) {
-          console.error('Manual sign-in prompt failed', promptError);
-          if (HAS_GAS_WEB_APP_URL) {
-            window.location.assign(GAS_WEB_APP_URL);
-            return;
+          response = await fetch('/auth/session', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              Accept: 'application/json',
+            },
+          });
+        } catch (err) {
+          if (!opts.silent) {
+            showAuthOverlay('サインイン状態を確認できませんでした。接続を確認してください。');
           }
-          showAuthOverlay(
-            'サインイン処理を開始できませんでした。時間をおいて再度お試しください。'
-          );
+          throw err;
+        }
+        if (!response.ok) {
+          setAuthToken('');
+          updateAuthSessionUI(null);
+          if (!opts.silent) {
+            showAuthOverlay('認証サーバーが応答しませんでした。時間をおいて再度お試しください。');
+          }
+          throw new Error('SESSION_STATUS_' + response.status);
+        }
+        const data = await response.json();
+        if (data && data.authenticated) {
+          updateAuthSessionUI(data);
+          setAuthToken('SESSION');
+          hideAuthOverlay();
+        } else {
+          setAuthToken('');
+          updateAuthSessionUI(null);
+          if (!opts.silent) {
+            showAuthOverlay(opts.message || 'ShiftFlow にサインインしてください。');
+          }
+        }
+        return data;
+      }
+
+      async function startAuthFlow(options) {
+        const opts = options || {};
+        let authUrl = '';
+        try {
+          const res = await fetch('/auth/start', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              returnTo: opts.returnTo || window.location.href,
+            }),
+          });
+          const body = await res.json();
+          if (res.ok && body && body.authUrl) {
+            authUrl = body.authUrl;
+          } else {
+            throw new Error(body && body.error ? body.error : 'AUTH_START_FAILED');
+          }
+        } catch (err) {
+          console.error('[ShiftFlow] Failed to start auth flow', err);
+          showAuthOverlay('サインインを開始できませんでした。しばらくしてから再度お試しください。');
+          return;
+        }
+        if (!authUrl) {
+          showAuthOverlay('サインイン URL を取得できませんでした。');
+          return;
+        }
+        if (opts.external) {
+          window.open(authUrl, '_blank', 'noopener');
+        } else {
+          window.location.assign(authUrl);
         }
       }
 
-      // ----- Google Identity Services (One Tap) bootstrap sequence -----
-      function initGoogleSignIn(retryCount) {
-        if (!GOOGLE_CLIENT_ID) {
-          console.error(
-            'GOOGLE_CLIENT_ID が未設定です。Cloudflare Pages の環境変数を確認してください。'
-          );
-          showAuthOverlay(
-            'Google クライアント ID が設定されていません。管理者に連絡してください。'
-          );
-          return;
+      async function performLogout() {
+        try {
+          await fetch('/auth/logout', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              Accept: 'application/json',
+            },
+          });
+        } catch (err) {
+          console.warn('[ShiftFlow] Logout request failed', err);
         }
-        if (!(window.google && google.accounts && google.accounts.id)) {
-          const attempts = typeof retryCount === 'number' ? retryCount : 0;
-          if (attempts > 50) {
-            showAuthOverlay(
-              'Google の認証スクリプトを読み込めませんでした。ページを再読み込みしてください。'
-            );
-            return;
-          }
-          setTimeout(function () {
-            initGoogleSignIn(attempts + 1);
-          }, 120);
-          return;
-        }
-        google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          auto_select: false,
-          ux_mode: GIS_UX_MODE,
-          cancel_on_tap_outside: false,
-          use_fedcm_for_prompt: GIS_USE_FEDCM,
-          itp_support: IS_SAFARI || IS_IOS,
+        clearAuthToken();
+        updateAuthSessionUI(null);
+        showAuthOverlay('サインアウトしました。もう一度サインインしてください。');
+      }
+
+      function attachAuthEventHandlers() {
+        on('btn-auth-google', 'click', function (event) {
+          event.preventDefault();
+          startAuthFlow({});
         });
-        const btn = byId('google-signin-btn');
-        if (btn) {
-          btn.innerHTML = '';
-          google.accounts.id.renderButton(btn, {
-            theme: 'outline',
-            size: 'large',
-            width: 260,
+        on('btn-auth-browser', 'click', function (event) {
+          event.preventDefault();
+          startAuthFlow({ external: true });
+        });
+        on('btn-auth-logout', 'click', function (event) {
+          event.preventDefault();
+          performLogout();
+        });
+      }
+
+      async function initializeAuthGateway() {
+        attachAuthEventHandlers();
+        let session = null;
+        try {
+          session = await syncAuthSession({ silent: true });
+        } catch (err) {
+          console.warn('[ShiftFlow] Initial auth sync failed', err);
+          showAuthOverlay('サインイン状態を確認できませんでした。時間をおいて再度お試しください。');
+          return;
+        }
+        if (!session || !session.authenticated) {
+          showAuthOverlay();
+          return;
+        }
+
+        var restorePromise = Promise.resolve(false);
+        var sessionEmail = session.user && session.user.email ? session.user.email : '';
+        if (sessionEmail) {
+          restorePromise = restoreBootstrapSnapshot(sessionEmail).then(function (record) {
+            if (record && record.bootstrap) {
+              applyBootstrapState(record.bootstrap);
+              RESTORED_BOOTSTRAP_FROM_CACHE = true;
+              ensureTaskBootstrap();
+              return true;
+            }
+            return false;
           });
         }
-        const manualBtn = byId('google-signin-manual');
-        if (manualBtn) {
-          manualBtn.onclick = function (event) {
-            event.preventDefault();
-            startManualGoogleSignIn();
-          };
-        }
-        if (!IS_MOBILE) {
-          try {
-            google.accounts.id.prompt(handleOneTapPrompt);
-          } catch (promptError) {
-            console.warn('Google One Tap prompt failed', promptError);
-            showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+
+        restorePromise.then(
+          function () {
+            bootstrapAfterAuth();
+          },
+          function (err) {
+            console.warn('[ShiftFlow] bootstrap warm start failed', err);
+            bootstrapAfterAuth();
           }
-        }
+        );
       }
+
+      
+
+      
+
+      
+
+      
 
       function bootstrapAfterAuth(options) {
         if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
@@ -4293,8 +4556,9 @@
             setBootstrapLoading(false);
             if (isAuthError && isAuthError(err)) {
               clearAuthToken();
+              updateAuthSessionUI(null);
               showAuthOverlay('セッションが切れました。もう一度サインインしてください。');
-              initGoogleSignIn();
+              syncAuthSession({ silent: true }).catch(function () {});
               return;
             }
             console.error('Bootstrap load encountered an error:', err);
@@ -7210,50 +7474,7 @@
         attachSaveHandlers();
 
         initPullToRefresh();
-        var cachedToken = null;
-        try {
-          cachedToken = sessionStorage.getItem('SHIFT_FLOW_ID_TOKEN');
-        } catch (_storageErr) {
-          cachedToken = null;
-        }
-        var cachedEmail = '';
-        if (cachedToken) {
-          setAuthToken(cachedToken);
-          var cachedPayload = decodeJwtPayload(cachedToken);
-          if (cachedPayload && cachedPayload.email) {
-            cachedEmail = cachedPayload.email;
-          }
-          hideAuthOverlay();
-        } else {
-          showAuthOverlay();
-        }
-
-        var restorePromise = Promise.resolve(false);
-        if (cachedToken && cachedEmail) {
-          restorePromise = restoreBootstrapSnapshot(cachedEmail).then(function (record) {
-            if (record && record.bootstrap) {
-              applyBootstrapState(record.bootstrap);
-              RESTORED_BOOTSTRAP_FROM_CACHE = true;
-              ensureTaskBootstrap();
-              return true;
-            }
-            return false;
-          });
-        }
-
-        if (cachedToken) {
-          restorePromise.then(
-            function () {
-              bootstrapAfterAuth();
-            },
-            function (err) {
-              console.warn('[ShiftFlow] bootstrap warm start failed', err);
-              bootstrapAfterAuth();
-            }
-          );
-        }
-
-        initGoogleSignIn();
+        initializeAuthGateway();
       });
     </script>
     <script>

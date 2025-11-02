@@ -1,4 +1,13 @@
 import { loadConfig, getRoutePermissions } from './config';
+import {
+  verifySession,
+  buildSessionCookie,
+  buildExpiredSessionCookie,
+  refreshGoogleTokens,
+  calculateIdTokenExpiry,
+  updateSessionTokens,
+  touchSession,
+} from '../utils/session';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
@@ -2990,21 +2999,89 @@ export async function onRequest(context) {
   };
 
   const authHeader = request.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   let tokenDetails;
+  let sessionCookieHeader = '';
+  let sessionContext = null;
+  let sessionRecord = null;
   logAuthInfo('Handling authenticated route request', {
     requestId,
     route,
     hasAuthorizationHeader: !!token,
     origin: originHeader || '',
   });
+  const cookieHeader = request.headers.get('cookie') || '';
+  const mergeHeaders = (headers) => {
+    if (sessionCookieHeader) {
+      return { ...headers, 'Set-Cookie': sessionCookieHeader };
+    }
+    return headers;
+  };
+  if (!token) {
+    try {
+      sessionContext = await verifySession(env, cookieHeader);
+    } catch (err) {
+      console.warn('[ShiftFlow][Auth] Session verification failed', err);
+      sessionContext = null;
+    }
+    if (sessionContext) {
+      sessionRecord = sessionContext.record || {};
+      let sessionTokens = sessionRecord.tokens || {};
+      let idToken = sessionTokens.idToken || '';
+      const now = Date.now();
+      let expiry = Number(sessionTokens.expiry || 0);
+      const refreshToken = sessionTokens.refreshToken || '';
+      const needsRefresh =
+        !!refreshToken && (!expiry || Number.isNaN(expiry) || expiry <= now + 60_000);
+      if ((!idToken || expiry <= now + 60_000) && refreshToken) {
+        try {
+          const refreshed = await refreshGoogleTokens(env, refreshToken);
+          const newIdToken = refreshed.id_token || idToken;
+          const newExpiry =
+            calculateIdTokenExpiry(newIdToken) ||
+            (typeof refreshed.expires_in === 'number'
+              ? now + Number(refreshed.expires_in) * 1000
+              : now + 3600 * 1000);
+          const mergedTokens = {
+            ...sessionTokens,
+            idToken: newIdToken,
+            accessToken: refreshed.access_token || sessionTokens.accessToken || '',
+            scope: refreshed.scope || sessionTokens.scope || '',
+            expiry: newExpiry,
+            updatedAt: now,
+          };
+          sessionRecord = await updateSessionTokens(env, sessionContext.id, sessionRecord, mergedTokens);
+          sessionTokens = sessionRecord.tokens || mergedTokens;
+          idToken = mergedTokens.idToken;
+          expiry = mergedTokens.expiry;
+        } catch (err) {
+          console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session', err);
+          idToken = '';
+          expiry = 0;
+        }
+      }
+      if (idToken && expiry && expiry <= now + 60_000) {
+        idToken = '';
+      }
+      if (idToken) {
+        token = idToken;
+        sessionCookieHeader = buildSessionCookie(`${sessionContext.id}.${sessionContext.key}`);
+        if (!needsRefresh) {
+          await touchSession(env, sessionContext.id, sessionRecord);
+        }
+      } else {
+        sessionCookieHeader = buildExpiredSessionCookie();
+        sessionContext = null;
+      }
+    }
+  }
   if (!token) {
     logAuthError('Missing Authorization bearer token', { requestId, route });
     return jsonResponse(
       401,
       { ok: false, error: 'Unauthorized', detail: 'Missing Authorization bearer token.' },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
     );
   }
 
@@ -3035,7 +3112,7 @@ export async function onRequest(context) {
           detail: err && err.message ? err.message : String(err || 'Token verification failed'),
         },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        { 'X-ShiftFlow-Request-Id': requestId }
+        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
       );
     }
     if (!tokenDetails.emailVerified) {
@@ -3057,7 +3134,7 @@ export async function onRequest(context) {
         403,
         { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        { 'X-ShiftFlow-Request-Id': requestId }
+        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
       );
     }
   } else {
@@ -3138,7 +3215,7 @@ export async function onRequest(context) {
         status: accessContext.status,
       },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
     );
   }
 
@@ -3172,7 +3249,7 @@ export async function onRequest(context) {
         403,
         { ok: false, error: '権限がありません。' },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        { 'X-ShiftFlow-Request-Id': requestId }
+        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
       );
     }
   }
@@ -3294,12 +3371,16 @@ export async function onRequest(context) {
           route,
           cacheKey,
         });
-        return buildCacheResponse(
+        const cachedResponse = buildCacheResponse(
           cachedRecord,
           allowedOrigin || config.allowedOrigins[0] || '*',
           requestId,
           'HIT'
         );
+        if (sessionCookieHeader) {
+          cachedResponse.headers.set('Set-Cookie', sessionCookieHeader);
+        }
+        return cachedResponse;
       }
       cacheStatus = 'STALE';
       logAuthInfo('Serving stale response from KV cache', {
@@ -3321,12 +3402,16 @@ export async function onRequest(context) {
           })
         );
       }
-      return buildCacheResponse(
+      const staleResponse = buildCacheResponse(
         cachedRecord,
         allowedOrigin || config.allowedOrigins[0] || '*',
         requestId,
         'STALE'
       );
+      if (sessionCookieHeader) {
+        staleResponse.headers.set('Set-Cookie', sessionCookieHeader);
+      }
+      return staleResponse;
     }
     cacheStatus = 'MISS';
   }
@@ -3377,17 +3462,17 @@ export async function onRequest(context) {
         clientIp: clientMeta.ip,
         cfRay: clientMeta.cfRay,
       });
-      return jsonResponse(
-        401,
-        {
-          ok: false,
-          error: 'Google アカウントの認証が必要です。',
-          detail:
-            'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
-        },
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        { 'X-ShiftFlow-Request-Id': requestId }
-      );
+    return jsonResponse(
+      401,
+      {
+        ok: false,
+        error: 'Google アカウントの認証が必要です。',
+        detail:
+          'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
+      },
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+    );
     }
     logAuthError('Failed to reach GAS', {
       requestId,
@@ -3412,7 +3497,7 @@ export async function onRequest(context) {
         detail: err && err.message ? err.message : String(err || 'fetch failed'),
       },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
     );
   }
 
@@ -3484,6 +3569,9 @@ export async function onRequest(context) {
     if (lower.startsWith('access-control')) return;
     responseHeaders.set(key, value);
   });
+  if (sessionCookieHeader) {
+    responseHeaders.set('Set-Cookie', sessionCookieHeader);
+  }
   const bodyBuffer = await upstreamResponse.arrayBuffer();
 
   return new Response(bodyBuffer, {
