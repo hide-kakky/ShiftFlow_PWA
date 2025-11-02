@@ -4420,6 +4420,11 @@
           });
       }
 
+      function normalizeEmailValue(value) {
+        if (!value) return '';
+        return String(value).trim().toLowerCase();
+      }
+
       function getBootstrapCacheKey(email) {
         var normalized = normalizeEmailValue(email || '');
         if (!normalized) {
