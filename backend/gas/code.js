@@ -2741,7 +2741,8 @@ function addNewMessage(messageData) {
   try {
     const sh = _openSheet('T_Memos');
     _ensureColumns(sh, MEMO_SHEET_COLUMNS);
-    const id = Utilities.getUuid();
+    const id =
+      (messageData && messageData.messageId && String(messageData.messageId)) || Utilities.getUuid();
     const now = new Date();
     const email = _getCurrentEmail();
     const row = [];
@@ -2785,7 +2786,7 @@ function addNewMessage(messageData) {
       priority: messageData.priority,
       folderId: messageData.folderId,
     });
-    return { success: true, message: 'メッセージを投稿しました。' };
+    return { success: true, message: 'メッセージを投稿しました。', memoId: id };
   } catch (e) {
     Logger.log(e);
     const logId = _audit('memo', '', 'create_fail', { error: String(e), payload: messageData });

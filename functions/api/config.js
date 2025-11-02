@@ -3,6 +3,7 @@ export function loadConfig(env) {
   const gasUrl = (env?.GAS_EXEC_URL || env?.GAS_WEB_APP_URL || '').trim();
   const googleClientId = (env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '').trim();
   const sharedSecret = (env?.SHIFT_FLOW_SHARED_SECRET || env?.GAS_SHARED_SECRET || '').trim();
+  const flags = readFeatureFlags(env);
 
   if (!cfOrigin) {
     throw new Error('CF_ORIGIN is not configured. Set it in Cloudflare Pages environment variables.');
@@ -47,6 +48,25 @@ export function loadConfig(env) {
     gasUrl,
     googleClientId,
     sharedSecret,
+    flags,
+  };
+}
+
+function parseBooleanFlag(value) {
+  if (!value) return false;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return false;
+  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+}
+
+export function readFeatureFlags(env) {
+  return {
+    cfAuth: parseBooleanFlag(env?.CFG_CF_AUTH),
+    cacheBootstrap: parseBooleanFlag(env?.CFG_CACHE_BOOTSTRAP),
+    cacheHome: parseBooleanFlag(env?.CFG_CACHE_HOME),
+    d1Read: parseBooleanFlag(env?.CFG_D1_READ),
+    d1Write: parseBooleanFlag(env?.CFG_D1_WRITE),
+    d1Primary: parseBooleanFlag(env?.CFG_D1_PRIMARY),
   };
 }
 

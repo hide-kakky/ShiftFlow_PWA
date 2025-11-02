@@ -112,6 +112,179 @@ function isLikelyHtmlDocument(text) {
   );
 }
 
+function generateMessageId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  return 'msg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+function interceptRequestBodyForRoute(route, body, context) {
+  if (!body || typeof body !== 'object') {
+    return { body, mutated: false, dualWriteContext: null };
+  }
+  const flags = context?.flags || {};
+  if (route === 'addNewMessage' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    let mutated = false;
+    if (!mutatedBody.messageId || typeof mutatedBody.messageId !== 'string') {
+      mutatedBody.messageId = generateMessageId();
+      mutated = true;
+    }
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'message',
+        messageId: mutatedBody.messageId,
+        payload: mutatedBody,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  return { body, mutated: false, dualWriteContext: null };
+}
+
+async function parseJsonResponseSafe(response) {
+  if (!response) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    return null;
+  }
+  try {
+    const text = await response.text();
+    return JSON.parse(text);
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function performDualWriteIfNeeded(options) {
+  const { env, config, route, requestId, tokenDetails, accessContext, dualWriteContext, responseJson, clientMeta } =
+    options;
+  const flags = config?.flags || {};
+  if (!flags.d1Write || !dualWriteContext) return;
+  if (!env?.DB) {
+    logAuthInfo('Dual write skipped because DB binding is missing', { route, requestId });
+    return;
+  }
+  if (!responseJson || responseJson.success === false || responseJson.ok === false) {
+    logAuthInfo('Dual write skipped due to upstream failure', {
+      route,
+      requestId,
+      success: responseJson && responseJson.success,
+    });
+    return;
+  }
+  try {
+    if (dualWriteContext.type === 'message') {
+      await insertMessageIntoD1(env.DB, {
+        messageId: dualWriteContext.messageId,
+        payload: dualWriteContext.payload,
+        timestampMs: dualWriteContext.timestampMs,
+        authorEmail: tokenDetails.email,
+        role: accessContext.role,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_message_success', {
+        event: 'dual_write_message_success',
+        route,
+        requestId,
+        email: tokenDetails.email || '',
+        messageId: dualWriteContext.messageId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    }
+  } catch (err) {
+    console.error('[ShiftFlow][DualWrite] Failed to replicate to D1', {
+      route,
+      requestId,
+      messageId: dualWriteContext.messageId,
+      error: err && err.message ? err.message : String(err),
+    });
+    captureDiagnostics(config, 'error', 'dual_write_failure', {
+      event: 'dual_write_failure',
+      route,
+      requestId,
+      email: tokenDetails.email || '',
+      messageId: dualWriteContext.messageId,
+      detail: err && err.message ? err.message : String(err),
+      cfRay: clientMeta?.cfRay || '',
+    });
+  }
+}
+
+async function insertMessageIntoD1(db, context) {
+  if (!context?.messageId) return;
+  const lowerEmail = (context.authorEmail || '').trim().toLowerCase();
+  const membership = await resolveMembershipForEmail(db, lowerEmail);
+  const orgId =
+    membership?.org_id ||
+    (await resolveDefaultOrgId(db)) ||
+    '01H00000000000000000000000';
+  if (!membership) {
+    console.warn('[ShiftFlow][DualWrite] Membership not found for author email', {
+      email: lowerEmail,
+      messageId: context.messageId,
+    });
+  }
+  const payload = context.payload || {};
+  const timestampMs = context.timestampMs || Date.now();
+  await db
+    .prepare(
+      `
+      INSERT OR REPLACE INTO messages (
+        message_id,
+        org_id,
+        folder_id,
+        author_membership_id,
+        title,
+        body,
+        created_at_ms,
+        updated_at_ms
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `
+    )
+    .bind(
+      context.messageId,
+      orgId,
+      typeof payload.folderId === 'string' ? payload.folderId : null,
+      membership?.membership_id || null,
+      typeof payload.title === 'string' ? payload.title : '',
+      typeof payload.body === 'string' ? payload.body : '',
+      timestampMs,
+      timestampMs
+    )
+    .run();
+}
+
+async function resolveMembershipForEmail(db, email) {
+  if (!email) return null;
+  const row = await db
+    .prepare(
+      `
+      SELECT memberships.membership_id,
+             memberships.org_id,
+             users.user_id
+      FROM memberships
+      JOIN users ON users.user_id = memberships.user_id
+      WHERE lower(users.email) = ?1
+      ORDER BY memberships.created_at_ms ASC
+      LIMIT 1
+    `
+    )
+    .bind(email)
+    .first();
+  return row || null;
+}
+
+async function resolveDefaultOrgId(db) {
+  const row = await db
+    .prepare('SELECT org_id FROM organizations ORDER BY created_at_ms ASC LIMIT 1')
+    .first();
+  return row ? row.org_id : null;
+}
+
 async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects = 4, meta = {}) {
   const init = { ...(originalInit || {}), redirect: 'manual' };
   const response = await fetch(originalUrl, init);
@@ -536,6 +709,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
 export async function onRequest(context) {
   const { request, params, env } = context;
   const config = loadConfig(env);
+  const flags = config.flags || {};
   const route = params.route ? String(params.route) : '';
   const requestId = createRequestId();
   const originHeader = request.headers.get('Origin') || '';
@@ -802,6 +976,8 @@ export async function onRequest(context) {
     typeof tokenDetails.rawToken === 'string' ? tokenDetails.rawToken.trim() : '';
   const authorizationHeader = rawBearerToken ? `Bearer ${rawBearerToken}` : '';
 
+  let dualWriteContext = null;
+
   const init = {
     method: request.method,
     redirect: 'follow',
@@ -830,12 +1006,12 @@ export async function onRequest(context) {
     const contentType = request.headers.get('content-type');
     const originalContentType = contentType || '';
     if (originalContentType) {
-      init.headers['Content-Type'] = originalContentType;
+     init.headers['Content-Type'] = originalContentType;
     }
     let rawBody = await request.text();
     if (rawBody && originalContentType.includes('application/json')) {
       try {
-        const parsedBody = JSON.parse(rawBody);
+        const parsedBody = JSON.parse(rawBody) || {};
         if (authorizationHeader) {
           if (parsedBody && typeof parsedBody === 'object') {
             if (!parsedBody.authorization) {
@@ -849,7 +1025,16 @@ export async function onRequest(context) {
             }
           }
         }
-        rawBody = JSON.stringify(parsedBody);
+        const interception = interceptRequestBodyForRoute(route, parsedBody, {
+          flags,
+          tokenDetails,
+          accessContext,
+        });
+        const bodyToForward = interception ? interception.body : parsedBody;
+        if (interception && interception.dualWriteContext) {
+          dualWriteContext = interception.dualWriteContext;
+        }
+        rawBody = JSON.stringify(bodyToForward);
         init.headers['Content-Type'] = 'application/json';
       } catch (_err) {
         // Leave body as-is if JSON parsing fails.
@@ -921,6 +1106,22 @@ export async function onRequest(context) {
       allowedOrigin || config.allowedOrigins[0] || '*',
       { 'X-ShiftFlow-Request-Id': requestId }
     );
+  }
+
+  let inspectedResponseJson = null;
+  if (dualWriteContext) {
+    inspectedResponseJson = await parseJsonResponseSafe(upstreamResponse.clone());
+    await performDualWriteIfNeeded({
+      env,
+      config,
+      route,
+      requestId,
+      tokenDetails,
+      accessContext,
+      dualWriteContext,
+      responseJson: inspectedResponseJson,
+      clientMeta,
+    });
   }
 
   const baseCors = corsHeaders(allowedOrigin || config.allowedOrigins[0] || '*');

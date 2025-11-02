@@ -214,19 +214,42 @@ function normalizeUsers(rows, context) {
     const existingId = email ? context.userMap.get(email) : null;
     const requestedId = sanitizeString(getField(row, 'user_id', 'UserID'));
     const userId = pickUlid(existingId, requestedId);
+    const profileImage = sanitizeString(
+      getField(row, 'profile_image_url', 'ProfileImageUrl', 'ProfileImage')
+    );
+    const theme = sanitizeString(getField(row, 'theme', 'Theme'));
+    const firstLoginAt = parseJstDatetime(
+      getField(row, 'first_login_at', 'FirstLoginAt', 'first_login_at_jst')
+    );
+    const lastLoginAt = parseJstDatetime(
+      getField(row, 'last_login_at', 'LastLoginAt', 'updated_at_jst')
+    );
+    const approvedAt = parseJstDatetime(getField(row, 'approved_at', 'ApprovedAt'));
     const status = getField(row, 'status', 'Status');
-    const createdAtSource =
-      parseJstDatetime(getField(row, 'created_at_jst', 'created_at', 'FirstLoginAt')) || null;
-    const updatedAtSource =
-      parseJstDatetime(getField(row, 'updated_at_jst', 'updated_at', 'LastLoginAt')) ||
-      createdAtSource ||
-      null;
+    const createdAtSource = firstLoginAt || parseJstDatetime(getField(row, 'created_at_jst', 'created_at')) || null;
+    const updatedAtSource = lastLoginAt || createdAtSource || null;
+    const approvedBy = sanitizeString(getField(row, 'approved_by', 'ApprovedBy'));
+    const notes = sanitizeString(getField(row, 'notes', 'Notes'));
+    const isActiveBool = coerceBoolean(getField(row, 'is_active', 'IsActive'), status);
+    const normalizedStatus = (() => {
+      const raw = sanitizeString(status);
+      if (raw) return raw;
+      return isActiveBool ? 'active' : 'inactive';
+    })();
     return {
       user_id: userId,
       email,
       display_name: sanitizeString(getField(row, 'display_name', 'DisplayName')),
       auth_subject: sanitizeString(getField(row, 'auth_subject', 'AuthSubject')),
-      is_active: coerceBoolean(getField(row, 'is_active', 'IsActive'), status) ? 1 : 0,
+      is_active: isActiveBool ? 1 : 0,
+      status: normalizedStatus || 'active',
+      profile_image_url: profileImage || null,
+      theme: theme || null,
+      first_login_at_ms: firstLoginAt ? firstLoginAt.getTime() : null,
+      last_login_at_ms: lastLoginAt ? lastLoginAt.getTime() : null,
+      approved_by: approvedBy || null,
+      approved_at_ms: approvedAt ? approvedAt.getTime() : null,
+      notes: notes || null,
       created_at_ms: createdAtSource ? createdAtSource.getTime() : now,
       updated_at_ms: updatedAtSource ? updatedAtSource.getTime() : now,
     };
