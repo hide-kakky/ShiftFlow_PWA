@@ -3042,6 +3042,9 @@
       const IS_IOS =
         /iphone|ipad|ipod/i.test((navigator && navigator.userAgent) || '') &&
         !(window && window.MSStream);
+      const IS_SAFARI =
+        /safari/i.test((navigator && navigator.userAgent) || '') &&
+        !/chrome|crios|fxios|edgios|firefox/i.test((navigator && navigator.userAgent) || '');
       const IS_STANDALONE =
         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         (typeof navigator !== 'undefined' && navigator.standalone === true);
@@ -4073,6 +4076,9 @@
         }
         const notDisplayed =
           typeof notification.isNotDisplayed === 'function' && notification.isNotDisplayed();
+        if (notDisplayed && typeof notification.getNotDisplayedReason === 'function') {
+          console.info('[ShiftFlow][Auth] GIS prompt not displayed:', notification.getNotDisplayedReason());
+        }
         const skipped =
           typeof notification.isSkippedMoment === 'function' && notification.isSkippedMoment();
         if (notDisplayed || skipped || momentType === 'skipped') {
@@ -4123,6 +4129,7 @@
           ux_mode: 'popup',
           cancel_on_tap_outside: false,
           use_fedcm_for_prompt: true,
+          itp_support: IS_SAFARI || IS_IOS,
         });
         const btn = byId('google-signin-btn');
         if (btn) {
@@ -4138,6 +4145,7 @@
           manualBtn.onclick = function (event) {
             event.preventDefault();
             try {
+              hideAuthOverlay(false);
               google.accounts.id.prompt(handleOneTapPrompt);
             } catch (promptError) {
               console.error('Manual sign-in prompt failed', promptError);
@@ -6863,11 +6871,7 @@
         attachSaveHandlers();
 
         initPullToRefresh();
-        if (NEEDS_MANUAL_SIGNIN) {
-          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
-        } else {
-          hideAuthOverlay(false);
-        }
+        hideAuthOverlay(false);
         initGoogleSignIn();
       });
     </script>
