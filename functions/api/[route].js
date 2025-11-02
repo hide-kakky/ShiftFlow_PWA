@@ -5,6 +5,7 @@ const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
 const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
+const CORS_EXPOSE_HEADERS = 'X-ShiftFlow-Request-Id,X-ShiftFlow-Cache';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function logAuthInfo(message, meta) {
@@ -40,6 +41,7 @@ function corsHeaders(origin) {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
     'Access-Control-Max-Age': '86400',
+    'Access-Control-Expose-Headers': CORS_EXPOSE_HEADERS,
     Vary: 'Origin',
   };
 }
