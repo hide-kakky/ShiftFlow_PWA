@@ -15,10 +15,25 @@ id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
 binding = "R2"
 bucket_name = "app-r2-dev"
 
+[env.preview]
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "app_d1_dev"
+database_id = "6ed349e4-06e1-4eab-b850-b2b99450bfda"
+
+[[env.preview.kv_namespaces]]
+binding = "APP_KV"
+id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
+
+[[env.preview.r2_buckets]]
+binding = "R2"
+bucket_name = "app-r2-dev"
+
 [env.production]
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "app_d1_prod"
+# TODO: update to the real production D1 database_id
 database_id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
 
 [[env.production.kv_namespaces]]
