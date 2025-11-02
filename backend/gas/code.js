@@ -1800,7 +1800,9 @@ function addNewTask(taskObject) {
     const sh = _openSheet('T_Tasks');
     const header = _ensureColumns(sh, TASK_SHEET_COLUMNS);
 
-    const newId = Utilities.getUuid();
+    const requestedId =
+      taskObject && typeof taskObject.taskId === 'string' ? String(taskObject.taskId).trim() : '';
+    const newId = requestedId || Utilities.getUuid();
     const now = new Date();
     const current = _getCurrentEmail();
 
@@ -1841,7 +1843,7 @@ function addNewTask(taskObject) {
       assignees: assignees,
     });
     _invalidateCacheGroup('TASK_TABLE');
-    return { success: true, message: 'タスクを追加しました。' };
+    return { success: true, message: 'タスクを追加しました。', taskId: newId };
   } catch (e) {
     Logger.log(e);
     const logId = _audit('task', '', 'create_fail', { error: String(e), payload: taskObject });

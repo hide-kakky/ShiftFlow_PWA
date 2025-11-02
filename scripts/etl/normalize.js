@@ -347,32 +347,55 @@ function normalizeMessageReads(rows, context) {
 
 function normalizeTasks(rows, context) {
   return rows.map((row) => {
-    const createdAt = parseJstDatetime(
-      getField(row, 'created_at_jst', 'created_at', 'CreatedAt')
-    );
+    const createdAt =
+      parseJstDatetime(getField(row, 'created_at_jst', 'created_at', 'CreatedAt')) || new Date();
+    const updatedAt =
+      parseJstDatetime(getField(row, 'updated_at_jst', 'updated_at', 'UpdatedAt')) || createdAt;
+    const dueAt = parseJstDatetime(getField(row, 'due_at_jst', 'due_at', 'DueDate'));
     const assigneeEmails = sanitizeString(
-      getField(row, 'assignee_emails', 'AssigneeEmails') || ''
+      getField(row, 'assignee_emails', 'AssigneeEmails') || getField(row, 'assignee_email', 'AssigneeEmail') || ''
     )
       .split(/[,;、]/)
       .map(normalizeEmail)
       .filter(Boolean);
+    const createdByEmail = normalizeEmail(getField(row, 'created_by_email', 'CreatedByEmail'));
+    const createdByMembershipId = createdByEmail ? context.membershipMap.get(createdByEmail) : null;
+    if (createdByEmail && !createdByMembershipId) {
+      context.warnings.push(`Unresolved task creator email: ${createdByEmail}`);
+    }
     const assignees = assigneeEmails.map((email) => {
-      const membershipId = context.membershipMap.get(email);
-      if (!membershipId) {
+      const membershipId = email ? context.membershipMap.get(email) : null;
+      if (email && !membershipId) {
         context.warnings.push(`Unresolved task assignee email: ${email}`);
       }
-      return { membership_id: membershipId, email };
+      return {
+        membership_id: membershipId || null,
+        email,
+        assigned_at_ms: createdAt.getTime(),
+      };
     });
+    const statusRaw = sanitizeString(getField(row, 'status', 'Status'));
+    const status = statusRaw || 'open';
+    const priority = sanitizeString(getField(row, 'priority', 'Priority'));
+    const legacyId = sanitizeString(getField(row, 'legacy_task_id', 'LegacyTaskID', 'TaskID'));
     return {
       task_id: pickUlid(
         null,
         sanitizeString(getField(row, 'task_id', 'TaskID'))
       ),
+      org_id: context.defaultOrgId,
+      folder_id: sanitizeString(getField(row, 'folder_id', 'FolderID')) || null,
       title: sanitizeString(getField(row, 'title', 'Title')),
-      status: sanitizeString(getField(row, 'status', 'Status') || 'open') || 'open',
-      priority: sanitizeString(getField(row, 'priority', 'Priority') || 'medium') || 'medium',
-      created_by_email: normalizeEmail(getField(row, 'created_by_email', 'CreatedByEmail')),
-      created_at_ms: toUtcMillis(createdAt, Date.now()),
+      description: sanitizeString(getField(row, 'description', 'Description', 'Body')) || null,
+      status,
+      priority: priority || 'medium',
+      created_by_email: createdByEmail || null,
+      created_by_membership_id: createdByMembershipId || null,
+      created_at_ms: createdAt.getTime(),
+      updated_at_ms: updatedAt.getTime(),
+      due_at_ms: dueAt ? dueAt.getTime() : null,
+      legacy_task_id: legacyId || null,
+      meta_json: sanitizeString(getField(row, 'meta_json', 'MetaJson', 'Meta')) || null,
       assignees,
     };
   });

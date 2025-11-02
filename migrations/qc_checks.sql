@@ -4,6 +4,8 @@ SELECT 'users_total' AS metric, COUNT(*) AS value FROM users;
 SELECT 'memberships_total', COUNT(*) FROM memberships;
 SELECT 'messages_total', COUNT(*) FROM messages;
 SELECT 'message_reads_total', COUNT(*) FROM message_reads;
+SELECT 'tasks_total', COUNT(*) FROM tasks;
+SELECT 'task_assignees_total', COUNT(*) FROM task_assignees;
 
 -- 参照整合: 孤児検出
 SELECT mr.message_read_id
@@ -49,3 +51,15 @@ WHERE created_at_ms > (strftime('%s', 'now') + 86400 * 30) * 1000
 SELECT user_id, email
 FROM users
 WHERE email NOT LIKE '%@%.%';
+
+-- タスク割当の孤児検出
+SELECT ta.task_id, ta.email
+FROM task_assignees ta
+LEFT JOIN tasks t ON t.task_id = ta.task_id
+WHERE t.task_id IS NULL;
+
+SELECT ta.task_id, ta.email
+FROM task_assignees ta
+LEFT JOIN memberships mem ON mem.membership_id = ta.membership_id
+WHERE ta.membership_id IS NOT NULL
+  AND mem.membership_id IS NULL;

@@ -119,6 +119,271 @@ function generateMessageId() {
   return 'msg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
+function generateTaskId() {
+  return generateMessageId();
+}
+
+function normalizeEmailValue(value) {
+  if (!value) return '';
+  return String(value).trim().toLowerCase();
+}
+
+function parseTaskDueDate(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  let iso = raw;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    iso = `${raw}T00:00:00+09:00`;
+  } else if (/^\d{4}\/\d{2}\/\d{2}$/.test(raw)) {
+    const normalized = raw.replace(/\//g, '-');
+    iso = `${normalized}T00:00:00+09:00`;
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    iso = `${raw}+09:00`;
+  }
+  let timestamp = Date.parse(iso);
+  if (Number.isNaN(timestamp)) {
+    timestamp = Date.parse(raw);
+  }
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function mapTaskStatus(value) {
+  const raw = value === undefined || value === null ? '' : String(value).trim();
+  const lower = raw.toLowerCase();
+  const mapping = {
+    未着手: 'open',
+    todo: 'open',
+    open: 'open',
+    進行中: 'in_progress',
+    対応中: 'in_progress',
+    in_progress: 'in_progress',
+    'in progress': 'in_progress',
+    実行中: 'in_progress',
+    完了: 'completed',
+    完了済み: 'completed',
+    completed: 'completed',
+    done: 'completed',
+    保留: 'on_hold',
+    on_hold: 'on_hold',
+    hold: 'on_hold',
+    pending: 'pending',
+    キャンセル: 'canceled',
+    canceled: 'canceled',
+    cancelled: 'canceled',
+  };
+  return mapping[raw] || mapping[lower] || 'open';
+}
+
+function mapTaskPriority(value) {
+  const raw = value === undefined || value === null ? '' : String(value).trim();
+  const lower = raw.toLowerCase();
+  const mapping = {
+    高: 'high',
+    high: 'high',
+    中: 'medium',
+    normal: 'medium',
+    medium: 'medium',
+    低: 'low',
+    low: 'low',
+  };
+  return mapping[raw] || mapping[lower] || 'medium';
+}
+
+function deriveTaskAssigneeEmails(payload, fallbackEmail) {
+  const emails = new Set();
+  const addEmail = (candidate) => {
+    const normalized = normalizeEmailValue(candidate);
+    if (normalized) emails.add(normalized);
+  };
+  if (payload) {
+    if (Array.isArray(payload.assignees)) {
+      payload.assignees.forEach(addEmail);
+    }
+    if (payload.assignee) {
+      addEmail(payload.assignee);
+    }
+    if (typeof payload.assigneeEmail === 'string') {
+      addEmail(payload.assigneeEmail);
+    }
+    if (typeof payload.assigneeEmails === 'string') {
+      payload.assigneeEmails
+        .split(/[,;、]/)
+        .map((item) => item.trim())
+        .forEach(addEmail);
+    }
+  }
+  if (!emails.size && fallbackEmail) {
+    addEmail(fallbackEmail);
+  }
+  return Array.from(emails);
+}
+
+function buildTaskMetaJson(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const meta = {};
+  if (payload.repeatRule) meta.repeatRule = payload.repeatRule;
+  if (payload.parentTaskId) meta.parentTaskId = payload.parentTaskId;
+  if (payload.attachments) meta.attachments = payload.attachments;
+  if (payload.meta) meta.sourceMeta = payload.meta;
+  if (payload.note) meta.note = payload.note;
+  if (payload.status) meta.rawStatus = payload.status;
+  if (payload.priority) meta.rawPriority = payload.priority;
+  const keys = Object.keys(meta);
+  if (!keys.length) return null;
+  try {
+    return JSON.stringify(meta);
+  } catch (_err) {
+    return null;
+  }
+}
+
+const CACHE_TTL_SECONDS = 300;
+const CACHEABLE_ROUTES = {
+  getBootstrapData: { flagKey: 'cacheBootstrap' },
+  getHomeContent: { flagKey: 'cacheHome' },
+};
+const CACHE_INVALIDATION_ROUTES = {
+  getBootstrapData: new Set([
+    'saveUserSettings',
+    'clearCache',
+    'addNewTask',
+    'updateTask',
+    'completeTask',
+    'deleteTaskById',
+    'addNewMessage',
+    'deleteMessageById',
+  ]),
+  getHomeContent: new Set([
+    'addNewTask',
+    'updateTask',
+    'completeTask',
+    'deleteTaskById',
+    'toggleMemoRead',
+    'markMemosReadBulk',
+    'markMemoAsRead',
+    'addNewMessage',
+    'deleteMessageById',
+  ]),
+};
+
+function createLegacyTokenDetails(rawToken) {
+  return {
+    rawToken,
+    sub: '',
+    email: '',
+    emailVerified: true,
+    name: '',
+    picture: '',
+    hd: '',
+    aud: '',
+    iss: '',
+    iat: 0,
+    exp: 0,
+    iatMs: undefined,
+    expMs: undefined,
+  };
+}
+
+function shouldUseKvCache(route, flags) {
+  if (!route || !flags) return null;
+  const config = CACHEABLE_ROUTES[route];
+  if (!config) return null;
+  const enabled = !!flags[config.flagKey];
+  if (!enabled) return null;
+  return { ttlSeconds: CACHE_TTL_SECONDS };
+}
+
+function buildKvCacheKey(route, emailOrSub) {
+  const identity = emailOrSub ? emailOrSub.toLowerCase() : 'anonymous';
+  return `shiftflow:cache:${route}:${identity}`;
+}
+
+async function readKvCache(kv, key) {
+  try {
+    const raw = await kv.get(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.body !== 'string') return null;
+    return parsed;
+  } catch (err) {
+    console.warn('[ShiftFlow][Cache] Failed to read KV cache', {
+      key,
+      error: err && err.message ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+async function writeKvCache(kv, key, record, ttlSeconds) {
+  try {
+    await kv.put(
+      key,
+      JSON.stringify({
+        status: record.status,
+        body: record.body,
+        contentType: record.contentType,
+        storedAt: Date.now(),
+      }),
+      { expirationTtl: ttlSeconds }
+    );
+  } catch (err) {
+    console.warn('[ShiftFlow][Cache] Failed to write KV cache', {
+      key,
+      error: err && err.message ? err.message : String(err),
+    });
+  }
+}
+
+async function invalidateKvCacheForUser(kv, routes, email) {
+  if (!kv || !Array.isArray(routes) || !routes.length) return;
+  const identity = email ? email.toLowerCase() : 'anonymous';
+  for (const route of routes) {
+    const key = buildKvCacheKey(route, identity);
+    try {
+      await kv.delete(key);
+    } catch (err) {
+      console.warn('[ShiftFlow][Cache] Failed to delete KV cache', {
+        key,
+        error: err && err.message ? err.message : String(err),
+      });
+    }
+  }
+}
+
+function resolveInvalidationTargets(route) {
+  const routes = [];
+  if (
+    CACHE_INVALIDATION_ROUTES.getBootstrapData &&
+    CACHE_INVALIDATION_ROUTES.getBootstrapData.has(route)
+  ) {
+    routes.push('getBootstrapData');
+  }
+  if (
+    CACHE_INVALIDATION_ROUTES.getHomeContent &&
+    CACHE_INVALIDATION_ROUTES.getHomeContent.has(route)
+  ) {
+    routes.push('getHomeContent');
+  }
+  return routes;
+}
+
+function buildCacheResponse(cached, origin, requestId) {
+  const headers = new Headers({
+    ...corsHeaders(origin),
+    'Content-Type': cached.contentType || 'application/json',
+    'X-ShiftFlow-Request-Id': requestId,
+    'X-ShiftFlow-Cache': 'HIT',
+  });
+  return new Response(cached.body, {
+    status: cached.status || 200,
+    headers,
+  });
+}
+
 function interceptRequestBodyForRoute(route, body, context) {
   if (!body || typeof body !== 'object') {
     return { body, mutated: false, dualWriteContext: null };
@@ -137,6 +402,31 @@ function interceptRequestBodyForRoute(route, body, context) {
       dualWriteContext: {
         type: 'message',
         messageId: mutatedBody.messageId,
+        payload: mutatedBody,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'addNewTask' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    let mutated = false;
+    if (!mutatedBody.taskId || typeof mutatedBody.taskId !== 'string' || !mutatedBody.taskId.trim()) {
+      mutatedBody.taskId = generateTaskId();
+      mutated = true;
+    } else {
+      mutatedBody.taskId = mutatedBody.taskId.trim();
+    }
+    if (Array.isArray(mutatedBody.assignees)) {
+      mutatedBody.assignees = mutatedBody.assignees
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter(Boolean);
+    }
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'task',
+        taskId: mutatedBody.taskId,
         payload: mutatedBody,
         timestampMs: Date.now(),
       },
@@ -193,12 +483,30 @@ async function performDualWriteIfNeeded(options) {
         messageId: dualWriteContext.messageId,
         cfRay: clientMeta?.cfRay || '',
       });
+    } else if (dualWriteContext.type === 'task') {
+      await insertTaskIntoD1(env.DB, {
+        taskId: dualWriteContext.taskId,
+        payload: dualWriteContext.payload,
+        timestampMs: dualWriteContext.timestampMs,
+        authorEmail: tokenDetails.email,
+        role: accessContext.role,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_task_success', {
+        event: 'dual_write_task_success',
+        route,
+        requestId,
+        email: tokenDetails.email || '',
+        taskId: dualWriteContext.taskId,
+        cfRay: clientMeta?.cfRay || '',
+      });
     }
   } catch (err) {
     console.error('[ShiftFlow][DualWrite] Failed to replicate to D1', {
       route,
       requestId,
+      entityType: dualWriteContext.type,
       messageId: dualWriteContext.messageId,
+      taskId: dualWriteContext.taskId,
       error: err && err.message ? err.message : String(err),
     });
     captureDiagnostics(config, 'error', 'dual_write_failure', {
@@ -206,7 +514,9 @@ async function performDualWriteIfNeeded(options) {
       route,
       requestId,
       email: tokenDetails.email || '',
+      entityType: dualWriteContext.type,
       messageId: dualWriteContext.messageId,
+      taskId: dualWriteContext.taskId,
       detail: err && err.message ? err.message : String(err),
       cfRay: clientMeta?.cfRay || '',
     });
@@ -215,7 +525,7 @@ async function performDualWriteIfNeeded(options) {
 
 async function insertMessageIntoD1(db, context) {
   if (!context?.messageId) return;
-  const lowerEmail = (context.authorEmail || '').trim().toLowerCase();
+  const lowerEmail = normalizeEmailValue(context.authorEmail);
   const membership = await resolveMembershipForEmail(db, lowerEmail);
   const orgId =
     membership?.org_id ||
@@ -256,6 +566,141 @@ async function insertMessageIntoD1(db, context) {
       timestampMs
     )
     .run();
+}
+
+async function insertTaskIntoD1(db, context) {
+  if (!context?.taskId) return;
+  const payload = context.payload || {};
+  const timestampMs = context.timestampMs || Date.now();
+  const creatorEmail = normalizeEmailValue(context.authorEmail || payload.createdBy || payload.createdByEmail);
+  const folderId =
+    typeof payload.folderId === 'string'
+      ? payload.folderId.trim()
+      : typeof payload.folder_id === 'string'
+      ? payload.folder_id.trim()
+      : null;
+  const membership = creatorEmail ? await resolveMembershipForEmail(db, creatorEmail) : null;
+  const orgId =
+    membership?.org_id ||
+    (await resolveDefaultOrgId(db)) ||
+    '01H00000000000000000000000';
+  const createdAtCandidate =
+    typeof payload.createdAtMs === 'number'
+      ? payload.createdAtMs
+      : typeof payload.created_at_ms === 'number'
+      ? payload.created_at_ms
+      : null;
+  const createdAtMs = Number.isFinite(createdAtCandidate)
+    ? createdAtCandidate
+    : parseTaskDueDate(payload.createdAt) ||
+      parseTaskDueDate(payload.created_at) ||
+      timestampMs;
+  const updatedAtCandidate =
+    typeof payload.updatedAtMs === 'number'
+      ? payload.updatedAtMs
+      : typeof payload.updated_at_ms === 'number'
+      ? payload.updated_at_ms
+      : null;
+  const updatedAtMs = Number.isFinite(updatedAtCandidate)
+    ? updatedAtCandidate
+    : parseTaskDueDate(payload.updatedAt) ||
+      parseTaskDueDate(payload.updated_at) ||
+      createdAtMs;
+  const dueAtMs =
+    parseTaskDueDate(payload.dueAtMs) ||
+    parseTaskDueDate(payload.due_at_ms) ||
+    parseTaskDueDate(payload.dueDate) ||
+    parseTaskDueDate(payload.due_at) ||
+    null;
+  const status = mapTaskStatus(payload.status);
+  const priority = mapTaskPriority(payload.priority);
+  const title =
+    typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : 'Untitled Task';
+  const description =
+    typeof payload.description === 'string'
+      ? payload.description
+      : typeof payload.body === 'string'
+      ? payload.body
+      : null;
+  const legacyTaskId =
+    typeof payload.legacyTaskId === 'string' && payload.legacyTaskId.trim()
+      ? payload.legacyTaskId.trim()
+      : null;
+  const metaJson =
+    typeof payload.metaJson === 'string' && payload.metaJson.trim()
+      ? payload.metaJson
+      : typeof payload.meta_json === 'string' && payload.meta_json.trim()
+      ? payload.meta_json
+      : buildTaskMetaJson(payload);
+
+  await db
+    .prepare(
+      `
+      INSERT OR REPLACE INTO tasks (
+        task_id,
+        org_id,
+        folder_id,
+        title,
+        description,
+        status,
+        priority,
+        created_by_email,
+        created_by_membership_id,
+        created_at_ms,
+        updated_at_ms,
+        due_at_ms,
+        legacy_task_id,
+        meta_json
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+    `
+    )
+    .bind(
+      context.taskId,
+      orgId,
+      folderId || null,
+      title,
+      description,
+      status,
+      priority,
+      creatorEmail || null,
+      membership?.membership_id || null,
+      createdAtMs,
+      updatedAtMs,
+      dueAtMs,
+      legacyTaskId,
+      metaJson
+    )
+    .run();
+
+  const assigneeEmails = deriveTaskAssigneeEmails(payload, creatorEmail);
+  await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, createdAtMs);
+}
+
+async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs) {
+  if (!Array.isArray(emails) || !emails.length) return;
+  await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
+  for (const email of emails) {
+    const normalized = normalizeEmailValue(email);
+    if (!normalized) continue;
+    const membership = await resolveMembershipForEmail(db, normalized);
+    await db
+      .prepare(
+        `
+        INSERT OR REPLACE INTO task_assignees (
+          task_id,
+          email,
+          membership_id,
+          assigned_at_ms
+        )
+        VALUES (?1, ?2, ?3, ?4)
+      `
+      )
+      .bind(taskId, normalized, membership?.membership_id || null, assignedAtMs)
+      .run();
+  }
 }
 
 async function resolveMembershipForEmail(db, email) {
@@ -569,8 +1014,8 @@ async function fetchTokenInfo(idToken, config) {
 }
 
 async function resolveAccessContext(config, tokenDetails, requestId, clientMeta) {
-  const cacheKey = tokenDetails.sub;
-  const cached = ACCESS_CACHE.get(cacheKey);
+  const cacheKey = tokenDetails.sub ? tokenDetails.sub : null;
+  const cached = cacheKey ? ACCESS_CACHE.get(cacheKey) : null;
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return cached.context;
@@ -695,14 +1140,16 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
     reason: result.reason || '',
   };
   const ttlMs = context.allowed ? 5 * 60 * 1000 : 60 * 1000;
-  const expiresAt = Math.min(
-    tokenDetails.expMs ? tokenDetails.expMs - 5_000 : now + ttlMs,
-    now + ttlMs
-  );
-  ACCESS_CACHE.set(cacheKey, {
-    context,
-    expiresAt,
-  });
+  if (cacheKey) {
+    const expiresAt = Math.min(
+      tokenDetails.expMs ? tokenDetails.expMs - 5_000 : now + ttlMs,
+      now + ttlMs
+    );
+    ACCESS_CACHE.set(cacheKey, {
+      context,
+      expiresAt,
+    });
+  }
   return context;
 }
 
@@ -797,56 +1244,70 @@ export async function onRequest(context) {
     hasAuthorizationHeader: !!token,
     origin: originHeader || '',
   });
-  try {
-    tokenDetails = await fetchTokenInfo(token, config);
-  } catch (err) {
-    logAuthError('Token verification failed', {
-      requestId,
-      message: err && err.message ? err.message : String(err),
-      route,
-    });
-    captureDiagnostics(config, 'error', 'token_verification_failed', {
-      event: 'token_verification_failed',
-      requestId,
-      route,
-      detail: err && err.message ? err.message : String(err),
-      tokenPresent: !!token,
-      clientIp: clientMeta.ip,
-      userAgent: clientMeta.userAgent,
-      cfRay: clientMeta.cfRay,
-    });
+  if (!token) {
+    logAuthError('Missing Authorization bearer token', { requestId, route });
     return jsonResponse(
       401,
-      {
-        ok: false,
-        error: 'Unauthorized',
-        detail: err && err.message ? err.message : String(err || 'Token verification failed'),
-      },
+      { ok: false, error: 'Unauthorized', detail: 'Missing Authorization bearer token.' },
       allowedOrigin || config.allowedOrigins[0] || '*',
       { 'X-ShiftFlow-Request-Id': requestId }
     );
   }
-  if (!tokenDetails.emailVerified) {
-    logAuthInfo('Email not verified', {
-      requestId,
-      email: tokenDetails.email || '',
-      route,
-    });
-    captureDiagnostics(config, 'warn', 'email_not_verified', {
-      event: 'email_not_verified',
-      requestId,
-      route,
-      email: tokenDetails.email || '',
-      clientIp: clientMeta.ip,
-      userAgent: clientMeta.userAgent,
-      cfRay: clientMeta.cfRay,
-    });
-    return jsonResponse(
-      403,
-      { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
-      allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
-    );
+
+  if (flags.cfAuth) {
+    try {
+      tokenDetails = await fetchTokenInfo(token, config);
+    } catch (err) {
+      logAuthError('Token verification failed', {
+        requestId,
+        message: err && err.message ? err.message : String(err),
+        route,
+      });
+      captureDiagnostics(config, 'error', 'token_verification_failed', {
+        event: 'token_verification_failed',
+        requestId,
+        route,
+        detail: err && err.message ? err.message : String(err),
+        tokenPresent: !!token,
+        clientIp: clientMeta.ip,
+        userAgent: clientMeta.userAgent,
+        cfRay: clientMeta.cfRay,
+      });
+      return jsonResponse(
+        401,
+        {
+          ok: false,
+          error: 'Unauthorized',
+          detail: err && err.message ? err.message : String(err || 'Token verification failed'),
+        },
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        { 'X-ShiftFlow-Request-Id': requestId }
+      );
+    }
+    if (!tokenDetails.emailVerified) {
+      logAuthInfo('Email not verified', {
+        requestId,
+        email: tokenDetails.email || '',
+        route,
+      });
+      captureDiagnostics(config, 'warn', 'email_not_verified', {
+        event: 'email_not_verified',
+        requestId,
+        route,
+        email: tokenDetails.email || '',
+        clientIp: clientMeta.ip,
+        userAgent: clientMeta.userAgent,
+        cfRay: clientMeta.cfRay,
+      });
+      return jsonResponse(
+        403,
+        { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        { 'X-ShiftFlow-Request-Id': requestId }
+      );
+    }
+  } else {
+    tokenDetails = createLegacyTokenDetails(token);
   }
 
   let accessContext;
@@ -927,6 +1388,13 @@ export async function onRequest(context) {
     );
   }
 
+  if (!tokenDetails.email && accessContext.email) {
+    tokenDetails.email = accessContext.email;
+  }
+  if (!tokenDetails.sub && accessContext.email) {
+    tokenDetails.sub = accessContext.email.toLowerCase();
+  }
+
   const routePermissions = getRoutePermissions(route);
   if (Array.isArray(routePermissions) && routePermissions.length > 0) {
     if (!routePermissions.includes(accessContext.role)) {
@@ -955,6 +1423,35 @@ export async function onRequest(context) {
     }
   }
 
+  const cacheSettings = shouldUseKvCache(route, flags);
+  const hasKvStore = !!env && !!env.APP_KV;
+  const cacheIdentitySource =
+    (accessContext.email && accessContext.email.trim()) ||
+    (tokenDetails.email && tokenDetails.email.trim()) ||
+    (tokenDetails.sub && tokenDetails.sub.trim()) ||
+    'anonymous';
+  const cacheIdentity = cacheIdentitySource.toLowerCase();
+  const invalidationTargets = resolveInvalidationTargets(route);
+  let cacheKey = null;
+  let cacheStatus = 'BYPASS';
+  if (cacheSettings && hasKvStore) {
+    cacheKey = buildKvCacheKey(route, cacheIdentity);
+    const cachedRecord = await readKvCache(env.APP_KV, cacheKey);
+    if (cachedRecord) {
+      logAuthInfo('Serving response from KV cache', {
+        requestId,
+        route,
+        cacheKey,
+      });
+      return buildCacheResponse(
+        cachedRecord,
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        requestId
+      );
+    }
+    cacheStatus = 'MISS';
+  }
+
   const upstreamUrl = new URL(config.gasUrl);
   upstreamUrl.searchParams.delete('route');
   upstreamUrl.searchParams.delete('method');
@@ -966,8 +1463,8 @@ export async function onRequest(context) {
     }
   });
   upstreamUrl.searchParams.set('route', route);
-  upstreamUrl.searchParams.set('__userEmail', tokenDetails.email);
-  upstreamUrl.searchParams.set('__userSub', tokenDetails.sub);
+  upstreamUrl.searchParams.set('__userEmail', tokenDetails.email || '');
+  upstreamUrl.searchParams.set('__userSub', tokenDetails.sub || '');
   if (tokenDetails.name) {
     upstreamUrl.searchParams.set('__userName', tokenDetails.name);
   }
@@ -982,8 +1479,8 @@ export async function onRequest(context) {
     method: request.method,
     redirect: 'follow',
     headers: {
-      'X-ShiftFlow-Email': tokenDetails.email,
-      'X-ShiftFlow-Sub': tokenDetails.sub,
+      'X-ShiftFlow-Email': tokenDetails.email || '',
+      'X-ShiftFlow-Sub': tokenDetails.sub || '',
       'X-ShiftFlow-Role': accessContext.role,
       'X-ShiftFlow-User-Status': accessContext.status,
       'X-ShiftFlow-Request-Id': requestId,
@@ -1108,6 +1605,46 @@ export async function onRequest(context) {
     );
   }
 
+  const responseForCache = cacheSettings && hasKvStore ? upstreamResponse.clone() : null;
+
+  if (hasKvStore && invalidationTargets.length && upstreamResponse.ok) {
+    await invalidateKvCacheForUser(env.APP_KV, invalidationTargets, cacheIdentitySource);
+  }
+
+  if (
+    cacheSettings &&
+    hasKvStore &&
+    cacheKey &&
+    cacheStatus === 'MISS' &&
+    upstreamResponse.ok &&
+    responseForCache
+  ) {
+    try {
+      const cacheBodyText = await responseForCache.text();
+      await writeKvCache(
+        env.APP_KV,
+        cacheKey,
+        {
+          status: upstreamResponse.status,
+          body: cacheBodyText,
+          contentType: upstreamResponse.headers.get('content-type') || 'application/json',
+        },
+        cacheSettings.ttlSeconds
+      );
+      logAuthInfo('Stored response in KV cache', {
+        requestId,
+        route,
+        cacheKey,
+        ttl: cacheSettings.ttlSeconds,
+      });
+    } catch (err) {
+      console.warn('[ShiftFlow][Cache] Failed to cache response', {
+        cacheKey,
+        error: err && err.message ? err.message : String(err),
+      });
+    }
+  }
+
   let inspectedResponseJson = null;
   if (dualWriteContext) {
     inspectedResponseJson = await parseJsonResponseSafe(upstreamResponse.clone());
@@ -1129,6 +1666,7 @@ export async function onRequest(context) {
     ...baseCors,
     'X-ShiftFlow-Request-Id': requestId,
   });
+  responseHeaders.set('X-ShiftFlow-Cache', cacheStatus);
   upstreamResponse.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
     if (lower.startsWith('access-control')) return;

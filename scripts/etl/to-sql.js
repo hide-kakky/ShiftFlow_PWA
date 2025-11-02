@@ -4,7 +4,7 @@
  * JSON → SQL seed converter for ShiftFlow D1 migration.
  *
  * Usage:
- *   node scripts/etl/to-sql.js <users|memberships|messages|message_reads>
+ *   node scripts/etl/to-sql.js <users|memberships|messages|message_reads|tasks>
  *
  * Reads processed JSON (data/processed/<kind>.json) produced by normalize.js,
  * and emits a seed file (seeds/<sequence>_<kind>.sql) with INSERT OR IGNORE statements.
@@ -51,6 +51,23 @@ const TABLE_COLUMNS = {
     'updated_at_ms',
   ],
   message_reads: ['message_read_id', 'message_id', 'membership_id', 'read_at_ms'],
+  tasks: [
+    'task_id',
+    'org_id',
+    'folder_id',
+    'title',
+    'description',
+    'status',
+    'priority',
+    'created_by_email',
+    'created_by_membership_id',
+    'created_at_ms',
+    'updated_at_ms',
+    'due_at_ms',
+    'legacy_task_id',
+    'meta_json',
+  ],
+  task_assignees: ['task_id', 'email', 'membership_id', 'assigned_at_ms'],
 };
 
 function escapeValue(val) {
@@ -91,6 +108,8 @@ function inferSeedSequence(kind) {
       return 120;
     case 'message_reads':
       return 130;
+    case 'tasks':
+      return 140;
     default:
       return 190;
   }
@@ -107,11 +126,33 @@ function loadRows(kind) {
   return [];
 }
 
+function extractTaskAssignees(tasks) {
+  const dedup = new Map();
+  tasks.forEach((task) => {
+    if (!task || !task.task_id || !Array.isArray(task.assignees)) return;
+    task.assignees.forEach((assignee) => {
+      if (!assignee || !assignee.email) return;
+      const key = `${task.task_id}__${assignee.email.toLowerCase()}`;
+      if (dedup.has(key)) return;
+      dedup.set(key, {
+        task_id: task.task_id,
+        email: assignee.email,
+        membership_id: assignee.membership_id || null,
+        assigned_at_ms:
+          typeof assignee.assigned_at_ms === 'number'
+            ? assignee.assigned_at_ms
+            : task.created_at_ms || Date.now(),
+      });
+    });
+  });
+  return Array.from(dedup.values());
+}
+
 function main() {
   const kind = process.argv[2];
   if (!kind || !TABLE_COLUMNS[kind]) {
     console.error(
-      'Usage: node scripts/etl/to-sql.js <users|memberships|messages|message_reads>'
+      'Usage: node scripts/etl/to-sql.js <users|memberships|messages|message_reads|tasks>'
     );
     process.exit(1);
   }
@@ -138,15 +179,22 @@ function main() {
 
   const batches = chunk(rows, 500);
   let body = 'PRAGMA foreign_keys = ON;\n';
-  batches.forEach((batch, index) => {
+  batches.forEach((batch) => {
     const statement = buildInsert(kind, batch);
     if (statement) {
-      body += statement;
-      if (index !== batches.length - 1) {
-        body += '\n';
-      }
+      body += statement + '\n';
     }
   });
+  if (kind === 'tasks') {
+    const assigneeRows = extractTaskAssignees(rows);
+    const assigneeBatches = chunk(assigneeRows, 500);
+    assigneeBatches.forEach((batch) => {
+      const statement = buildInsert('task_assignees', batch);
+      if (statement) {
+        body += statement + '\n';
+      }
+    });
+  }
 
   fs.writeFileSync(outputPath, body, 'utf8');
   console.log(`✔ Generated ${outputPath} (${rows.length} rows)`);
