@@ -1,0 +1,44 @@
+
+ ⛅️ wrangler 4.45.1 (update available 4.45.3)
+─────────────────────────────────────────────
+🌀 Executing on remote database app_d1_dev (6ed349e4-06e1-4eab-b850-b2b99450bfda):
+🌀 To execute on your local development database, remove the --remote flag from your wrangler command.
+Note: if the execution fails to complete, your DB will return to its original state and you can safely retry.
+├ Checking if file needs uploading
+│
+🌀 File already uploaded. Processing.
+🌀 Starting import...
+🌀 Processed 12 queries.
+🚣 Executed 12 queries in 0.00 seconds (16 rows read, 0 rows written)
+   Database is currently at bookmark 0000000b-00000004-00004faa-73d9ab673a7f2f362f1884216451b996.
+[
+  {
+    "results": [
+      {
+        "Total queries executed": 12,
+        "Rows read": 16,
+        "Rows written": 0,
+        "Database size (MB)": "0.07"
+      }
+    ],
+    "success": true,
+    "finalBookmark": "0000000b-00000004-00004faa-73d9ab673a7f2f362f1884216451b996",
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "APAC",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 2.4924
+      },
+      "duration": 2.4924,
+      "changes": 1,
+      "last_row_id": 0,
+      "changed_db": true,
+      "size_after": 65536,
+      "rows_read": 16,
+      "rows_written": 0,
+      "num_tables": 5,
+      "total_attempts": 1
+    }
+  }
+]

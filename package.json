@@ -1,0 +1,18 @@
+{
+  "name": "shiftflow-pwa",
+  "private": true,
+  "scripts": {
+    "etl:users": "node scripts/etl/normalize.js --kind users --input data/templates/users.csv",
+    "etl:memberships": "node scripts/etl/normalize.js --kind memberships --input data/templates/memberships.csv",
+    "etl:messages": "node scripts/etl/normalize.js --kind messages --input data/templates/messages.csv",
+    "etl:reads": "node scripts/etl/normalize.js --kind message_reads --input data/templates/message_reads.csv",
+    "sql:users": "node scripts/etl/to-sql.js users",
+    "sql:memberships": "node scripts/etl/to-sql.js memberships",
+    "sql:messages": "node scripts/etl/to-sql.js messages",
+    "sql:reads": "node scripts/etl/to-sql.js message_reads",
+    "seed:dev": "wrangler d1 execute app_d1_dev --remote --file seeds/090_organizations.sql && wrangler d1 execute app_d1_dev --remote --file seeds/100_users.sql && wrangler d1 execute app_d1_dev --remote --file seeds/110_memberships.sql && wrangler d1 execute app_d1_dev --remote --file seeds/120_messages.sql && wrangler d1 execute app_d1_dev --remote --file seeds/130_message_reads.sql",
+    "qc:dev": "wrangler d1 execute app_d1_dev --remote --file migrations/qc_checks.sql",
+    "seed:prod": "wrangler d1 execute app_d1_prod --remote --file seeds/090_organizations.sql && wrangler d1 execute app_d1_prod --remote --file seeds/100_users.sql && wrangler d1 execute app_d1_prod --remote --file seeds/110_memberships.sql && wrangler d1 execute app_d1_prod --remote --file seeds/120_messages.sql && wrangler d1 execute app_d1_prod --remote --file seeds/130_message_reads.sql",
+    "qc:prod": "wrangler d1 execute app_d1_prod --remote --file migrations/qc_checks.sql"
+  }
+}
