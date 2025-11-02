@@ -261,6 +261,314 @@ function mergeMetaJson(existingJson, newJsonString) {
   }
 }
 
+function normalizeRoleValue(role) {
+  const value = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  if (!value) return '';
+  if (value === 'administrator') return 'admin';
+  if (value === 'manager' || value === 'admin') return value;
+  if (value === 'member' || value === 'guest') return value;
+  return value;
+}
+
+function isManagerRole(role) {
+  const normalized = normalizeRoleValue(role);
+  return normalized === 'admin' || normalized === 'manager';
+}
+
+function formatJst(dateInput, withTime = false) {
+  if (dateInput === null || dateInput === undefined) return '';
+  let date;
+  if (dateInput instanceof Date) {
+    date = new Date(dateInput.getTime());
+  } else if (typeof dateInput === 'number') {
+    date = new Date(dateInput);
+  } else if (typeof dateInput === 'string') {
+    const parsed = Date.parse(dateInput);
+    if (Number.isNaN(parsed)) return '';
+    date = new Date(parsed);
+  } else {
+    return '';
+  }
+  if (Number.isNaN(date.getTime())) return '';
+  const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+  const jst = new Date(utc + 9 * 60 * 60000);
+  const pad = (num) => String(num).padStart(2, '0');
+  const year = jst.getFullYear();
+  const month = pad(jst.getMonth() + 1);
+  const day = pad(jst.getDate());
+  if (!withTime) {
+    return `${year}-${month}-${day}`;
+  }
+  const hour = pad(jst.getHours());
+  const minute = pad(jst.getMinutes());
+  const second = pad(jst.getSeconds());
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+function formatJstMonthDay(dateInput) {
+  const formatted = formatJst(dateInput, true);
+  if (!formatted) return '';
+  const [year, month, day] = formatted.split(/[ T]/)[0].split('-');
+  return `${Number(month)}\/${Number(day)}`;
+}
+
+function mapD1StatusToLegacy(value) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  switch (normalized) {
+    case 'completed':
+      return '完了';
+    case 'in_progress':
+      return '対応中';
+    case 'open':
+      return '未着手';
+    case 'on_hold':
+      return '保留';
+    case 'pending':
+      return '保留';
+    case 'canceled':
+    case 'cancelled':
+      return 'キャンセル';
+    default:
+      return value || '';
+  }
+}
+
+function mapD1PriorityToLegacy(value) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  switch (normalized) {
+    case 'high':
+      return '高';
+    case 'low':
+      return '低';
+    case 'medium':
+    default:
+      return '中';
+  }
+}
+
+function priorityWeight(priority) {
+  const normalized = typeof priority === 'string' ? priority.trim() : '';
+  if (normalized === '高') return 1;
+  if (normalized === '中') return 2;
+  if (normalized === '低') return 3;
+  return 4;
+}
+
+function startOfTodayMs() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
+function computeTaskBucket(task, todayMs) {
+  if (task.isCompleted) return 3;
+  if (task.dueValue == null) return 2;
+  if (task.dueValue < todayMs) return 0;
+  return 1;
+}
+
+function compareTasksForList(a, b, todayMs) {
+  const bucketA = computeTaskBucket(a, todayMs);
+  const bucketB = computeTaskBucket(b, todayMs);
+  if (bucketA !== bucketB) return bucketA - bucketB;
+
+  const dueA = a.dueValue != null ? a.dueValue : Number.MAX_SAFE_INTEGER;
+  const dueB = b.dueValue != null ? b.dueValue : Number.MAX_SAFE_INTEGER;
+  if (dueA !== dueB) return dueA - dueB;
+
+  const priorityDiff = priorityWeight(a.priority || '中') - priorityWeight(b.priority || '中');
+  if (priorityDiff !== 0) return priorityDiff;
+
+  const createdA = a.createdAt != null ? -a.createdAt : 0;
+  const createdB = b.createdAt != null ? -b.createdAt : 0;
+  if (createdA !== createdB) return createdA - createdB;
+
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+function safeParseJson(input, fallback = {}) {
+  if (typeof input !== 'string' || !input.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(input);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (_err) {
+    return fallback;
+  }
+}
+
+async function fetchAssigneesForTasks(db, taskIds) {
+  const assigneeMap = new Map();
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return assigneeMap;
+  }
+  const placeholders = taskIds.map((_, idx) => `?${idx + 1}`).join(', ');
+  const statement = db.prepare(
+    `SELECT task_id, email FROM task_assignees WHERE task_id IN (${placeholders})`
+  );
+  const result = await statement.bind(...taskIds).all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  for (const row of rows) {
+    if (!row || !row.task_id) continue;
+    const list = assigneeMap.get(row.task_id) || [];
+    if (row.email) {
+      list.push(String(row.email).trim());
+    }
+    assigneeMap.set(row.task_id, list);
+  }
+  return assigneeMap;
+}
+
+function buildTaskRecordFromD1(row, assignees) {
+  if (!row) return null;
+  const meta = safeParseJson(row.meta_json, {});
+  const dueMs =
+    typeof row.due_at_ms === 'number' && Number.isFinite(row.due_at_ms) ? row.due_at_ms : null;
+  const createdMs =
+    typeof row.created_at_ms === 'number' && Number.isFinite(row.created_at_ms)
+      ? row.created_at_ms
+      : null;
+  const updatedMs =
+    typeof row.updated_at_ms === 'number' && Number.isFinite(row.updated_at_ms)
+      ? row.updated_at_ms
+      : createdMs;
+  const priority = mapD1PriorityToLegacy(row.priority);
+  const status = mapD1StatusToLegacy(row.status);
+  const normalizedAssignees = Array.isArray(assignees) ? assignees.map((email) => String(email)) : [];
+  return {
+    id: row.task_id,
+    title: row.title || 'Untitled Task',
+    assignee: normalizedAssignees.length ? normalizedAssignees[0] : '',
+    assignees: normalizedAssignees,
+    dueDate: dueMs ? formatJst(dueMs, false) : '',
+    dueValue: dueMs,
+    status,
+    priority,
+    createdBy: row.created_by_email || '',
+    createdAt: createdMs,
+    createdAtRaw: createdMs ? formatJst(createdMs, true) : '',
+    updatedAt: updatedMs,
+    updatedAtValue: updatedMs,
+    repeatRule: meta.repeatRule || '',
+    isCompleted: status === '完了',
+  };
+}
+
+function buildMessagePreview(body) {
+  const text = typeof body === 'string' ? body : '';
+  if (text.length <= 80) return text;
+  return text.slice(0, 78).trimEnd() + '...';
+}
+
+async function fetchActiveUsersForOrg(db, orgId) {
+  const result = await db
+    .prepare(
+      `
+      SELECT u.email AS email,
+             COALESCE(u.display_name, u.email) AS display_name
+        FROM memberships ms
+        JOIN users u ON u.user_id = ms.user_id
+       WHERE (?1 IS NULL OR ms.org_id = ?1)
+         AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+    `
+    )
+    .bind(orgId || null)
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  return rows
+    .map((row) => ({
+      email: row?.email ? String(row.email).trim() : '',
+      displayName: row?.display_name ? String(row.display_name).trim() : '',
+    }))
+    .filter((entry) => entry.email);
+}
+
+function buildUserLabel(email, displayName) {
+  const trimmedName = typeof displayName === 'string' ? displayName.trim() : '';
+  if (trimmedName) return trimmedName;
+  return typeof email === 'string' ? email.trim() : '';
+}
+
+async function fetchMessageAttachments(db, messageId) {
+  const result = await db
+    .prepare(
+      `
+      SELECT a.attachment_id,
+             a.file_name,
+             a.content_type,
+             a.size_bytes,
+             a.storage_path,
+             a.extra_json
+        FROM message_attachments ma
+        JOIN attachments a ON a.attachment_id = ma.attachment_id
+       WHERE ma.message_id = ?1
+    `
+    )
+    .bind(messageId)
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  return rows.map((row) => {
+    const extras = safeParseJson(row?.extra_json || null, {});
+    return {
+      name: row?.file_name || '',
+      mimeType: row?.content_type || '',
+      size: typeof row?.size_bytes === 'number' ? row.size_bytes : null,
+      url: row?.storage_path || extras?.url || '',
+    };
+  });
+}
+
+async function buildMessagesForUser(db, options) {
+  const folderRaw = typeof options?.folderId === 'string' ? options.folderId.trim() : '';
+  const folderFilter =
+    folderRaw && folderRaw.toLowerCase() !== 'all' ? folderRaw : '';
+  const membershipId = options?.membershipId || null;
+  const result = await db
+    .prepare(
+      `
+      SELECT m.message_id,
+             m.title,
+             m.body,
+             m.folder_id,
+             m.created_at_ms,
+             m.updated_at_ms,
+             CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read
+        FROM messages m
+        LEFT JOIN message_reads mr
+          ON mr.message_id = m.message_id
+         AND mr.membership_id = ?2
+       WHERE (?1 = '' OR m.folder_id = ?1)
+    `
+    )
+    .bind(folderFilter, membershipId)
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const items = rows.map((row) => {
+    const createdAtMs =
+      typeof row?.created_at_ms === 'number' && Number.isFinite(row.created_at_ms)
+        ? row.created_at_ms
+        : 0;
+    const priority = mapD1PriorityToLegacy(row?.priority);
+    return {
+      id: row?.message_id || '',
+      title: row?.title || '',
+      body: typeof row?.body === 'string' ? row.body : '',
+      preview: buildMessagePreview(row?.body || ''),
+      priority: priority || '中',
+      folderId: row?.folder_id || '',
+      isRead: row?.is_read ? true : false,
+      createdAt: createdAtMs,
+    };
+  });
+  items.sort((a, b) => {
+    if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+    const priorityDiff = priorityWeight(a.priority || '中') - priorityWeight(b.priority || '中');
+    if (priorityDiff !== 0) return priorityDiff;
+    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+  return items;
+}
+
 const CACHE_TTL_SECONDS = 300;
 const CACHEABLE_ROUTES = {
   getBootstrapData: { flagKey: 'cacheBootstrap' },
@@ -802,6 +1110,540 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponse(
         200,
         { ok: true, result },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'listMyTasks') {
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
+      const totalTasks =
+        typeof totalRow?.count === 'number'
+          ? totalRow.count
+          : typeof totalRow?.['COUNT(*)'] === 'number'
+          ? totalRow['COUNT(*)']
+          : 0;
+      if (!normalizedEmail) {
+        const emptyPayload = {
+          tasks: [],
+          meta: {
+            totalTasks,
+            matchedTasks: 0,
+            rawEmail,
+            normalizedEmail: '',
+            sampleTaskIds: [],
+            note:
+              'ログインユーザーのメールアドレスが取得できません。Webアプリの公開設定と組織ポリシーを確認してください。',
+          },
+        };
+        return jsonResponse(
+          200,
+          { ok: true, result: emptyPayload },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const assignedResult = await db
+        .prepare(
+          `
+          SELECT DISTINCT t.*
+            FROM tasks t
+            JOIN task_assignees ta ON ta.task_id = t.task_id
+           WHERE ta.email = ?1
+        `
+        )
+        .bind(normalizedEmail)
+        .all();
+      const rows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
+      const assigneeMap = await fetchAssigneesForTasks(
+        db,
+        rows.map((row) => row.task_id)
+      );
+      const tasks = rows
+        .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
+        .filter(Boolean);
+      const todayMs = startOfTodayMs();
+      tasks.sort((a, b) => compareTasksForList(a, b, todayMs));
+      const responsePayload = {
+        tasks,
+        meta: {
+          totalTasks,
+          matchedTasks: tasks.length,
+          rawEmail,
+          normalizedEmail,
+          sampleTaskIds: tasks.slice(0, 5).map((task) => task.id),
+          note: '',
+        },
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: responsePayload },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'listCreatedTasks') {
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const filterArg =
+        options.parsedBody &&
+        Array.isArray(options.parsedBody.args) &&
+        options.parsedBody.args.length
+          ? options.parsedBody.args[0] || {}
+          : {};
+      const statusFilterRaw =
+        typeof filterArg?.status === 'string' ? filterArg.status.trim() : '';
+      const sortMode =
+        typeof filterArg?.sort === 'string' && filterArg.sort.trim()
+          ? filterArg.sort.trim()
+          : 'due';
+      const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
+      const totalTasks =
+        typeof totalRow?.count === 'number'
+          ? totalRow.count
+          : typeof totalRow?.['COUNT(*)'] === 'number'
+          ? totalRow['COUNT(*)']
+          : 0;
+      if (!normalizedEmail) {
+        return jsonResponse(
+          200,
+          { ok: true, result: { tasks: [], meta: { statuses: [] } } },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const createdResult = await db
+        .prepare(
+          `
+          SELECT *
+            FROM tasks
+           WHERE created_by_email = ?1
+        `
+        )
+        .bind(normalizedEmail)
+        .all();
+      const rows = Array.isArray(createdResult?.results) ? createdResult.results : [];
+      const assigneeMap = await fetchAssigneesForTasks(
+        db,
+        rows.map((row) => row.task_id)
+      );
+      const todayMs = startOfTodayMs();
+      const createdTasks = rows
+        .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
+        .filter(Boolean);
+      const statuses = new Set();
+      createdTasks.forEach((task) => {
+        if (task.status) statuses.add(task.status);
+      });
+      const statusFilter = statusFilterRaw
+        ? mapD1StatusToLegacy(statusFilterRaw) || statusFilterRaw
+        : '';
+      let filtered = createdTasks.slice();
+      if (statusFilter) {
+        filtered = filtered.filter((task) => task.status === statusFilter);
+      }
+      if (sortMode === 'created_desc') {
+        filtered.sort((a, b) => {
+          const ca = a.createdAt != null ? a.createdAt : 0;
+          const cb = b.createdAt != null ? b.createdAt : 0;
+          if (cb !== ca) return cb - ca;
+          return compareTasksForList(a, b, todayMs);
+        });
+      } else if (sortMode === 'created_asc') {
+        filtered.sort((a, b) => {
+          const ca = a.createdAt != null ? a.createdAt : Number.MAX_SAFE_INTEGER;
+          const cb = b.createdAt != null ? b.createdAt : Number.MAX_SAFE_INTEGER;
+          if (ca !== cb) return ca - cb;
+          return compareTasksForList(a, b, todayMs);
+        });
+      } else {
+        filtered.sort((a, b) => compareTasksForList(a, b, todayMs));
+      }
+      const responsePayload = {
+        tasks: filtered,
+        meta: {
+          statuses: Array.from(statuses).sort(),
+          sort: sortMode,
+          currentEmail: rawEmail,
+          totalTasks,
+          createdCount: createdTasks.length,
+          filteredCount: filtered.length,
+        },
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: responsePayload },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'listAllTasks') {
+      if (!isManagerRole(accessContext?.role)) {
+        const normalizedRole = normalizeRoleValue(accessContext?.role);
+        const responsePayload = {
+          tasks: [],
+          meta: {
+            managerOnly: true,
+            userRole: accessContext?.role || '',
+            normalizedRole,
+            reason: '権限がありません。',
+            isManager: false,
+          },
+        };
+        return jsonResponse(
+          200,
+          { ok: true, result: responsePayload },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const filterArg =
+        options.parsedBody &&
+        Array.isArray(options.parsedBody.args) &&
+        options.parsedBody.args.length
+          ? options.parsedBody.args[0] || {}
+          : {};
+      const statusFilterRaw =
+        typeof filterArg?.status === 'string' ? filterArg.status.trim() : '';
+      const allResult = await db.prepare('SELECT * FROM tasks').all();
+      const rows = Array.isArray(allResult?.results) ? allResult.results : [];
+      const assigneeMap = await fetchAssigneesForTasks(
+        db,
+        rows.map((row) => row.task_id)
+      );
+      const todayMs = startOfTodayMs();
+      const allTasks = rows
+        .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
+        .filter(Boolean);
+      const statuses = new Set();
+      allTasks.forEach((task) => {
+        if (task.status) statuses.add(task.status);
+      });
+      const statusFilter = statusFilterRaw
+        ? mapD1StatusToLegacy(statusFilterRaw) || statusFilterRaw
+        : '';
+      let filtered = allTasks.slice();
+      if (statusFilter) {
+        filtered = filtered.filter((task) => task.status === statusFilter);
+      }
+      filtered.sort((a, b) => compareTasksForList(a, b, todayMs));
+      const responsePayload = {
+        tasks: filtered,
+        meta: {
+          statuses: Array.from(statuses).sort(),
+          totalTasks: allTasks.length,
+          filteredCount: filtered.length,
+          isManager: true,
+        },
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: responsePayload },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'getTaskById') {
+      const args =
+        options.parsedBody &&
+        Array.isArray(options.parsedBody.args) &&
+        options.parsedBody.args.length
+          ? options.parsedBody.args
+          : [];
+      const rawTaskId = args.length ? args[0] : options.query?.get('taskId') || '';
+      const taskId = normalizeIdValue(rawTaskId);
+      if (!taskId) {
+        return jsonResponse(
+          200,
+          { ok: true, result: null },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const row = await db
+        .prepare(
+          `
+          SELECT *
+            FROM tasks
+           WHERE task_id = ?1
+        `
+        )
+        .bind(taskId)
+        .first();
+      if (!row) {
+        return jsonResponse(
+          200,
+          { ok: true, result: null },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const assigneeMap = await fetchAssigneesForTasks(db, [taskId]);
+      const summary = buildTaskRecordFromD1(row, assigneeMap.get(taskId) || []);
+      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const creatorEmail = normalizeEmailValue(row.created_by_email);
+      const canDelete =
+        (currentEmail && creatorEmail && currentEmail === creatorEmail) ||
+        isManagerRole(accessContext?.role);
+      const detail = {
+        id: summary?.id || row.task_id,
+        title: summary?.title || row.title || 'Untitled Task',
+        assignee: summary?.assignee || '',
+        dueDate: summary?.dueDate || '',
+        status: summary?.status || mapD1StatusToLegacy(row.status),
+        priority: summary?.priority || mapD1PriorityToLegacy(row.priority),
+        createdBy: row.created_by_email || '',
+        canDelete,
+        assignees: summary?.assignees || [],
+        attachments: [],
+        repeatRule: summary?.repeatRule || '',
+        updatedAt: summary?.updatedAt ? formatJst(summary.updatedAt, true) : '',
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: detail },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'getMessages') {
+      const args =
+        options.parsedBody &&
+        Array.isArray(options.parsedBody.args) &&
+        options.parsedBody.args.length
+          ? options.parsedBody.args[0] || {}
+          : {};
+      const folderId = typeof args?.folderId === 'string' ? args.folderId : '';
+      const unreadOnly = !!args?.unreadOnly;
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membershipId = membership?.membership_id || null;
+      const messages = await buildMessagesForUser(db, {
+        folderId,
+        membershipId,
+      });
+      const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
+      return jsonResponse(
+        200,
+        { ok: true, result: payload },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'getMessageById') {
+      const args =
+        options.parsedBody &&
+        Array.isArray(options.parsedBody.args) &&
+        options.parsedBody.args.length
+          ? options.parsedBody.args
+          : [];
+      const rawMessageId = args.length ? args[0] : options.query?.get('memoId') || '';
+      const messageId = normalizeIdValue(rawMessageId);
+      if (!messageId) {
+        return jsonResponse(
+          200,
+          { ok: true, result: null },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const messageRow = await db
+        .prepare(
+          `
+          SELECT m.*,
+                 ms.org_id AS author_org_id,
+                 u.email AS author_email,
+                 u.display_name AS author_display_name
+            FROM messages m
+            LEFT JOIN memberships ms ON ms.membership_id = m.author_membership_id
+            LEFT JOIN users u ON u.user_id = ms.user_id
+           WHERE m.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .first();
+      if (!messageRow) {
+        return jsonResponse(
+          200,
+          { ok: true, result: null },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const attachments = await fetchMessageAttachments(db, messageId);
+      const readResult = await db
+        .prepare(
+          `
+          SELECT u.email AS email,
+                 COALESCE(u.display_name, u.email) AS display_name
+            FROM message_reads mr
+            JOIN memberships ms ON ms.membership_id = mr.membership_id
+            JOIN users u ON u.user_id = ms.user_id
+           WHERE mr.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .all();
+      const readRows = Array.isArray(readResult?.results) ? readResult.results : [];
+      const readSet = new Set();
+      const readUsers = [];
+      for (const row of readRows) {
+        const email = row?.email ? String(row.email).trim() : '';
+        const displayName = row?.display_name ? String(row.display_name).trim() : '';
+        if (email) {
+          readSet.add(normalizeEmailValue(email));
+          readUsers.push(buildUserLabel(email, displayName));
+        }
+      }
+      const membership = await resolveMembershipForEmail(
+        db,
+        normalizeEmailValue(tokenDetails?.email || accessContext?.email || '')
+      );
+      const orgId = messageRow?.org_id || membership?.org_id || messageRow?.author_org_id || null;
+      const activeUsers = await fetchActiveUsersForOrg(db, orgId);
+      const unreadUsers = [];
+      for (const user of activeUsers) {
+        const normalizedEmail = normalizeEmailValue(user.email);
+        if (normalizedEmail && readSet.has(normalizedEmail)) continue;
+        unreadUsers.push(buildUserLabel(user.email, user.displayName));
+      }
+      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const authorEmail = normalizeEmailValue(messageRow?.author_email);
+      const canDelete =
+        (currentEmail && authorEmail && currentEmail === authorEmail) ||
+        isManagerRole(accessContext?.role);
+      const detail = {
+        id: messageRow?.message_id || messageId,
+        createdBy: messageRow?.author_email || '',
+        title: messageRow?.title || '',
+        body: typeof messageRow?.body === 'string' ? messageRow.body.replace(/\r\n/g, '\n') : '',
+        priority: '中',
+        comments: [],
+        readUsers,
+        unreadUsers,
+        canDelete,
+        attachments,
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: detail },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'getHomeContent') {
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membershipId = membership?.membership_id || null;
+      const assignedResult = await db
+        .prepare(
+          `
+          SELECT DISTINCT t.*
+            FROM tasks t
+            JOIN task_assignees ta ON ta.task_id = t.task_id
+           WHERE (?1 <> '' AND ta.email = ?1)
+        `
+        )
+        .bind(normalizedEmail || '')
+        .all();
+      const taskRows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
+      const assigneeMap = await fetchAssigneesForTasks(
+        db,
+        taskRows.map((row) => row.task_id)
+      );
+      const taskRecords = taskRows
+        .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
+        .filter(Boolean);
+      const todayMs = startOfTodayMs();
+      const todays = taskRecords
+        .filter(
+          (task) =>
+            task &&
+            !task.isCompleted &&
+            task.dueValue != null &&
+            task.dueValue <= todayMs
+        )
+        .sort((a, b) => compareTasksForList(a, b, todayMs))
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          dueDate: task.dueValue != null ? formatJstMonthDay(task.dueValue) : '',
+          priority: task.priority,
+          assignees: task.assignees,
+          assignee: task.assignee,
+          status: task.status,
+          isCompleted: task.isCompleted,
+        }));
+      const messages = await buildMessagesForUser(db, {
+        folderId: '',
+        membershipId,
+      });
+      const payload = {
+        tasks: todays,
+        messages,
+      };
+      return jsonResponse(
+        200,
+        { ok: true, result: payload },
         allowedOrigin,
         {
           'X-ShiftFlow-Request-Id': requestId,
