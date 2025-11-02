@@ -4142,7 +4142,6 @@
         const isDisplayed =
           typeof notification.isDisplayed === 'function' && notification.isDisplayed();
         if (isDisplayed || momentType === 'display') {
-          hideAuthOverlay(false);
           return;
         }
         const notDisplayed =
@@ -4216,7 +4215,6 @@
           manualBtn.onclick = function (event) {
             event.preventDefault();
             try {
-              hideAuthOverlay(false);
               google.accounts.id.prompt(handleOneTapPrompt);
             } catch (promptError) {
               console.error('Manual sign-in prompt failed', promptError);
@@ -4226,11 +4224,13 @@
             }
           };
         }
-        try {
-          google.accounts.id.prompt(handleOneTapPrompt);
-        } catch (promptError) {
-          console.warn('Google One Tap prompt failed', promptError);
-          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+        if (!IS_MOBILE) {
+          try {
+            google.accounts.id.prompt(handleOneTapPrompt);
+          } catch (promptError) {
+            console.warn('Google One Tap prompt failed', promptError);
+            showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+          }
         }
       }
 
