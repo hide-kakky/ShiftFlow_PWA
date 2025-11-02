@@ -4243,6 +4243,7 @@
         BOOTSTRAP_STARTED = true;
         var suppressLoading =
           (options && options.silent === true) || RESTORED_BOOTSTRAP_FROM_CACHE;
+        var silentReload = options && options.silent === true;
         RESTORED_BOOTSTRAP_FROM_CACHE = false;
         if (suppressLoading) {
           setBootstrapLoading(false);
@@ -4253,7 +4254,15 @@
           .then(function () {
             try {
               ensureTaskBootstrap();
-              navigateTo('home');
+              if (silentReload) {
+                try {
+                  refreshCurrentView();
+                } catch (refreshErr) {
+                  console.warn('[ShiftFlow] refresh after silent bootstrap failed', refreshErr);
+                }
+              } else {
+                navigateTo('home');
+              }
             } finally {
               BOOTSTRAP_STARTED = false;
               setBootstrapLoading(false);
@@ -5129,6 +5138,24 @@
         );
       }
 
+      var MIN_CONTENT_SKELETON_MS = 220;
+
+      function revealAfterDelay(startedAt, minDuration, fn) {
+        if (typeof fn !== 'function') return;
+        var delay = 0;
+        if (typeof startedAt === 'number' && startedAt > 0 && typeof minDuration === 'number') {
+          var elapsed = Date.now() - startedAt;
+          if (elapsed < minDuration) {
+            delay = minDuration - elapsed;
+          }
+        }
+        if (delay > 0) {
+          setTimeout(fn, delay);
+        } else {
+          fn();
+        }
+      }
+
       function skel(n) {
         var h = '';
         for (var i = 0; i < (n || 4); i++) {
@@ -5236,9 +5263,12 @@
 
       function loadHomeFromCache() {
         return readUserCacheEntry('home').then(function (entry) {
-          if (!entry || !entry.value) return false;
-          renderHomeView(entry.value);
-          return true;
+          if (!entry || !entry.value) return null;
+          var value = entry.value || {};
+          return {
+            tasks: normalizeArray(value.tasks),
+            messages: normalizeArray(value.messages),
+          };
         });
       }
 
@@ -5262,7 +5292,8 @@
           return Promise.resolve(false);
         }
         var skeletonRendered = false;
-        var cacheShown = false;
+        var cachedPayload = null;
+        var skeletonStartedAt = 0;
         function ensureSkeleton() {
           if (skeletonRendered) return;
           byId('home-today-tasks').innerHTML = skel(3);
@@ -5270,25 +5301,44 @@
           skeletonRendered = true;
         }
         return loadHomeFromCache()
-          .then(function (hadCache) {
-            cacheShown = !!hadCache;
-            if (!hadCache) {
-              ensureSkeleton();
-            }
+          .catch(function () {
+            return null;
           })
-          .then(function () {
+          .then(function (cached) {
+            if (cached) {
+              cachedPayload = cached;
+            }
+            ensureSkeleton();
+            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
+              if (!(globalThis.google && google.script && google.script.run)) {
+                revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                  if (cachedPayload) {
+                    renderHomeView(cachedPayload);
+                  } else {
+                    ensureSkeleton();
+                  }
+                });
+                resolve(false);
+                return;
+              }
               google.script.run
                 .withSuccessHandler(function (d) {
-                  renderHomeView(d);
                   cacheHomePayload(d);
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    renderHomeView(d);
+                  });
                   resolve(true);
                 })
                 .withFailureHandler(function (e) {
                   notify('ホーム読み込み失敗: ' + e.message, false);
-                  if (!cacheShown) {
-                    ensureSkeleton();
-                  }
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (cachedPayload) {
+                      renderHomeView(cachedPayload);
+                    } else {
+                      ensureSkeleton();
+                    }
+                  });
                   resolve(false);
                 })
                 .getHomeContent();
@@ -5499,9 +5549,10 @@
         );
       }
 
-      function loadTasksFromCache(scope) {
+      function loadTasksFromCache(scope, options) {
+        var opts = options || {};
         return readUserCacheEntry('tasks:' + scope).then(function (entry) {
-          if (!entry || !entry.value) return false;
+          if (!entry || !entry.value) return null;
           var payload = entry.value || {};
           var rows = normalizeArray(payload.rows);
           var meta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
@@ -5509,13 +5560,15 @@
           TASK_STATE[scope].meta = meta;
           TASK_STATE[scope].loaded = true;
           TASK_STATE[scope].loading = false;
-          renderTaskList(scope);
-          if (scope === 'my') {
-            updateTaskOverdueBadge(rows);
-          } else {
-            updateTaskOverdueBadge();
+          if (opts.render !== false) {
+            renderTaskList(scope);
+            if (scope === 'my') {
+              updateTaskOverdueBadge(rows);
+            } else {
+              updateTaskOverdueBadge();
+            }
           }
-          return true;
+          return { rows: rows, meta: meta };
         });
       }
 
@@ -5550,26 +5603,34 @@
           }
           return Promise.resolve(false);
         }
-        var cacheShown = false;
-        return loadTasksFromCache(scope)
+        var cachedPayload = null;
+        var skeletonStartedAt = 0;
+        return loadTasksFromCache(scope, { render: false })
           .catch(function () {
-            return false;
+            return null;
           })
-          .then(function (hadCache) {
-            cacheShown = !!hadCache;
+          .then(function (cached) {
+            if (cached && Array.isArray(cached.rows)) {
+              cachedPayload = cached;
+            }
+            setTaskLoading(scope, true);
+            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
-                if (!cacheShown) {
-                  setTaskError(
-                    scope,
-                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-                  );
-                }
+                TASK_STATE[scope].loading = false;
+                revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                  if (cachedPayload) {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge(cachedPayload.rows);
+                  } else {
+                    setTaskError(
+                      scope,
+                      'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                    );
+                  }
+                });
                 resolve(false);
                 return;
-              }
-              if (!cacheShown) {
-                setTaskLoading(scope, true);
               }
               google.script.run
                 .withSuccessHandler(function (result) {
@@ -5578,16 +5639,23 @@
                   TASK_STATE.my.meta = payload.meta || {};
                   TASK_STATE.my.loaded = true;
                   TASK_STATE.my.loading = false;
-                  renderTaskList(scope);
-                  updateTaskOverdueBadge(payload.rows);
                   cacheTasks(scope, payload.rows, payload.meta);
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge(payload.rows);
+                  });
                   resolve(true);
                 })
                 .withFailureHandler(function (error) {
                   TASK_STATE.my.loading = false;
-                  if (!cacheShown) {
-                    setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
-                  }
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (cachedPayload) {
+                      renderTaskList(scope);
+                      updateTaskOverdueBadge(cachedPayload.rows);
+                    } else {
+                      setTaskError(scope, 'マイタスクの表示中にエラーが発生しました。');
+                    }
+                  });
                   notify(
                     'マイタスク取得失敗: ' + (error && error.message ? error.message : error),
                     false
@@ -5601,26 +5669,34 @@
 
       function loadCreatedTasks() {
         var scope = 'from';
-        var cacheShown = false;
-        return loadTasksFromCache(scope)
+        var cachedPayload = null;
+        var skeletonStartedAt = 0;
+        return loadTasksFromCache(scope, { render: false })
           .catch(function () {
-            return false;
+            return null;
           })
-          .then(function (hadCache) {
-            cacheShown = !!hadCache;
+          .then(function (cached) {
+            if (cached && Array.isArray(cached.rows)) {
+              cachedPayload = cached;
+            }
+            setTaskLoading(scope, true);
+            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
-                if (!cacheShown) {
-                  setTaskError(
-                    scope,
-                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-                  );
-                }
+                TASK_STATE[scope].loading = false;
+                revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                  if (cachedPayload) {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge();
+                  } else {
+                    setTaskError(
+                      scope,
+                      'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                    );
+                  }
+                });
                 resolve(false);
                 return;
-              }
-              if (!cacheShown) {
-                setTaskLoading(scope, true);
               }
               google.script.run
                 .withSuccessHandler(function (result) {
@@ -5629,16 +5705,23 @@
                   TASK_STATE.from.meta = payload.meta || {};
                   TASK_STATE.from.loaded = true;
                   TASK_STATE.from.loading = false;
-                  renderTaskList(scope);
-                  updateTaskOverdueBadge();
                   cacheTasks(scope, payload.rows, payload.meta);
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge();
+                  });
                   resolve(true);
                 })
                 .withFailureHandler(function (error) {
                   TASK_STATE.from.loading = false;
-                  if (!cacheShown) {
-                    setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-                  }
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (cachedPayload) {
+                      renderTaskList(scope);
+                      updateTaskOverdueBadge();
+                    } else {
+                      setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+                    }
+                  });
                   notify(
                     '作成したタスクの取得に失敗しました: ' +
                       (error && error.message ? error.message : error),
@@ -5658,26 +5741,34 @@
           renderTaskList(scope);
           return Promise.resolve(false);
         }
-        var cacheShown = false;
-        return loadTasksFromCache(scope)
+        var cachedPayload = null;
+        var skeletonStartedAt = 0;
+        return loadTasksFromCache(scope, { render: false })
           .catch(function () {
-            return false;
+            return null;
           })
-          .then(function (hadCache) {
-            cacheShown = !!hadCache;
+          .then(function (cached) {
+            if (cached && Array.isArray(cached.rows)) {
+              cachedPayload = cached;
+            }
+            setTaskLoading(scope, true);
+            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
-                if (!cacheShown) {
-                  setTaskError(
-                    scope,
-                    'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
-                  );
-                }
+                TASK_STATE[scope].loading = false;
+                revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                  if (cachedPayload) {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge();
+                  } else {
+                    setTaskError(
+                      scope,
+                      'Google Apps Script のランタイムに接続できません。ページを再読み込みしてください。'
+                    );
+                  }
+                });
                 resolve(false);
                 return;
-              }
-              if (!cacheShown) {
-                setTaskLoading(scope, true);
               }
               google.script.run
                 .withSuccessHandler(function (result) {
@@ -5685,7 +5776,9 @@
                   if (payload.meta && payload.meta.managerOnly && !payload.meta.isManager) {
                     TASK_STATE.all.restricted = true;
                     TASK_STATE.all.loading = false;
-                    renderTaskList(scope);
+                    revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                      renderTaskList(scope);
+                    });
                     if (!MANAGER_NOTICE_SHOWN) {
                       notify('全体のタスク閲覧には管理者権限が必要です。', false);
                       MANAGER_NOTICE_SHOWN = true;
@@ -5698,16 +5791,23 @@
                   TASK_STATE.all.loaded = true;
                   TASK_STATE.all.restricted = false;
                   TASK_STATE.all.loading = false;
-                  renderTaskList(scope);
-                  updateTaskOverdueBadge();
                   cacheTasks(scope, payload.rows, payload.meta);
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    renderTaskList(scope);
+                    updateTaskOverdueBadge();
+                  });
                   resolve(true);
                 })
                 .withFailureHandler(function (error) {
                   TASK_STATE.all.loading = false;
-                  if (!cacheShown) {
-                    setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
-                  }
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (cachedPayload) {
+                      renderTaskList(scope);
+                      updateTaskOverdueBadge();
+                    } else {
+                      setTaskError(scope, 'タスクの表示中にエラーが発生しました。');
+                    }
+                  });
                   notify(
                     '全体タスクの取得に失敗しました: ' +
                       (error && error.message ? error.message : error),
@@ -6043,7 +6143,9 @@
           : '';
         var useCache = !searchKeyword;
         var cacheKey = useCache ? getMessagesCacheKey(folderOpt, unreadOnlyFlag) : null;
-        var cacheShown = false;
+        var cachedRows = null;
+        var skeletonStartedAt = Date.now();
+        setMsgLoading(true);
         var cachePromise = useCache
           ? loadMessagesFromCache(cacheKey).catch(function () {
               return null;
@@ -6052,12 +6154,7 @@
         return cachePromise
           .then(function (cached) {
             if (cached && Array.isArray(cached.rows)) {
-              cacheShown = true;
-              byId('msg-list').innerHTML = renderMessageList(cached.rows);
-              var btnAll = byId('btn-msg-markall');
-              if (btnAll) btnAll.disabled = true;
-            } else {
-              setMsgLoading(true);
+              cachedRows = cached.rows;
             }
           })
           .then(function () {
@@ -6065,21 +6162,26 @@
               google.script.run
                 .withSuccessHandler(function (list) {
                   var rows = filterMessages(list);
-                  byId('msg-list').innerHTML = renderMessageList(rows);
                   if (useCache) {
                     cacheMessages(cacheKey, rows);
                   }
-                  setMsgLoading(false);
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    byId('msg-list').innerHTML = renderMessageList(rows);
+                    setMsgLoading(false);
+                  });
                   resolve(true);
                 })
                 .withFailureHandler(function (e) {
                   notify('Failed to load messages: ' + e.message, false);
-                  if (!cacheShown) {
+                  revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (Array.isArray(cachedRows)) {
+                      byId('msg-list').innerHTML = renderMessageList(cachedRows);
+                    } else {
+                      byId('msg-list').innerHTML =
+                        '<div class="card app-card msg-card mb-2"><div class="card-body text-danger">メッセージの読み込みに失敗しました。</div></div>';
+                    }
                     setMsgLoading(false);
-                  } else {
-                    var btnAll = byId('btn-msg-markall');
-                    if (btnAll) btnAll.disabled = false;
-                  }
+                  });
                   resolve(false);
                 })
                 .getMessages({
