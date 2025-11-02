@@ -3044,12 +3044,13 @@
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       const FEDCM_FALLBACK_MESSAGE =
         'ブラウザで Google ワンタップを表示できませんでした。下のボタンからサインインしてください。';
-      const IS_IOS =
-        /iphone|ipad|ipod/i.test((navigator && navigator.userAgent) || '') &&
-        !(window && window.MSStream);
+      const USER_AGENT = (navigator && navigator.userAgent) || '';
+      const IS_IOS = /iphone|ipad|ipod/i.test(USER_AGENT) && !(window && window.MSStream);
+      const IS_ANDROID = /android/i.test(USER_AGENT);
+      const IS_MOBILE = IS_IOS || IS_ANDROID;
       const IS_SAFARI =
-        /safari/i.test((navigator && navigator.userAgent) || '') &&
-        !/chrome|crios|fxios|edgios|firefox/i.test((navigator && navigator.userAgent) || '');
+        /safari/i.test(USER_AGENT || '') &&
+        !/chrome|crios|fxios|edgios|firefox/i.test(USER_AGENT || '');
       const IS_STANDALONE =
         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         (typeof navigator !== 'undefined' && navigator.standalone === true);
@@ -4062,6 +4063,11 @@
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
         const manualBtn = byId('google-signin-manual');
+        var displayMessage = message;
+        if (!displayMessage && IS_MOBILE) {
+          displayMessage =
+            'Google サインインを開始できませんでした。下の「Google でサインイン」ボタンから続行してください。';
+        }
         if (document.body) {
           document.body.classList.add('auth-screen');
         }
@@ -4071,15 +4077,19 @@
           overlay.setAttribute('aria-hidden', 'false');
         }
         if (manualBtn) {
-          if (message === FEDCM_FALLBACK_MESSAGE || NEEDS_MANUAL_SIGNIN) {
+          if (
+            displayMessage === FEDCM_FALLBACK_MESSAGE ||
+            NEEDS_MANUAL_SIGNIN ||
+            IS_MOBILE
+          ) {
             manualBtn.classList.remove('d-none');
           } else {
             manualBtn.classList.add('d-none');
           }
         }
         if (errorEl) {
-          if (message) {
-            errorEl.textContent = message;
+          if (displayMessage) {
+            errorEl.textContent = displayMessage;
             errorEl.classList.remove('d-none');
           } else {
             errorEl.textContent = '';
