@@ -393,43 +393,63 @@ function interceptRequestBodyForRoute(route, body, context) {
   const flags = context?.flags || {};
   if (route === 'addNewMessage' && flags.d1Write) {
     const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const originalPayload =
+      argsArray.length && argsArray[0] && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+    const messagePayload = { ...originalPayload };
     let mutated = false;
-    if (!mutatedBody.messageId || typeof mutatedBody.messageId !== 'string') {
-      mutatedBody.messageId = generateMessageId();
+    if (!messagePayload.messageId || typeof messagePayload.messageId !== 'string') {
+      messagePayload.messageId = generateMessageId();
       mutated = true;
+    }
+    if (argsArray.length) {
+      argsArray[0] = messagePayload;
+      mutatedBody.args = argsArray;
+    } else {
+      mutatedBody.args = [messagePayload];
     }
     return {
       body: mutatedBody,
       mutated,
       dualWriteContext: {
         type: 'message',
-        messageId: mutatedBody.messageId,
-        payload: mutatedBody,
+        messageId: messagePayload.messageId,
+        payload: messagePayload,
         timestampMs: Date.now(),
       },
     };
   }
   if (route === 'addNewTask' && flags.d1Write) {
     const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const originalPayload =
+      argsArray.length && argsArray[0] && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+    const taskPayload = { ...originalPayload };
     let mutated = false;
-    if (!mutatedBody.taskId || typeof mutatedBody.taskId !== 'string' || !mutatedBody.taskId.trim()) {
-      mutatedBody.taskId = generateTaskId();
+    if (!taskPayload.taskId || typeof taskPayload.taskId !== 'string' || !taskPayload.taskId.trim()) {
+      taskPayload.taskId = generateTaskId();
       mutated = true;
     } else {
-      mutatedBody.taskId = mutatedBody.taskId.trim();
+      taskPayload.taskId = taskPayload.taskId.trim();
     }
-    if (Array.isArray(mutatedBody.assignees)) {
-      mutatedBody.assignees = mutatedBody.assignees
+    if (Array.isArray(taskPayload.assignees)) {
+      taskPayload.assignees = taskPayload.assignees
         .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
         .filter(Boolean);
+    }
+    if (argsArray.length) {
+      argsArray[0] = taskPayload;
+      mutatedBody.args = argsArray;
+    } else {
+      mutatedBody.args = [taskPayload];
     }
     return {
       body: mutatedBody,
       mutated,
       dualWriteContext: {
         type: 'task',
-        taskId: mutatedBody.taskId,
-        payload: mutatedBody,
+        taskId: taskPayload.taskId,
+        payload: taskPayload,
         timestampMs: Date.now(),
       },
     };
