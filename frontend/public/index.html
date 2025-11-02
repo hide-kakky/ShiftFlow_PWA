@@ -3055,6 +3055,8 @@
         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         (typeof navigator !== 'undefined' && navigator.standalone === true);
       const NEEDS_MANUAL_SIGNIN = IS_IOS && IS_STANDALONE;
+      const GIS_UX_MODE = IS_STANDALONE || IS_IOS ? 'redirect' : 'popup';
+      const GIS_USE_FEDCM = GIS_UX_MODE === 'popup' && !IS_SAFARI;
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -4066,7 +4068,7 @@
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
           displayMessage =
-            'Google サインインを開始できませんでした。下の「Google でサインイン」ボタンから続行してください。';
+            'Google サインインが必要です。下の「Google でサインイン」ボタンから続行してください。';
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
@@ -4168,6 +4170,31 @@
         }
       }
 
+      function startManualGoogleSignIn() {
+        if (!(window.google && google.accounts && google.accounts.id)) {
+          if (HAS_GAS_WEB_APP_URL) {
+            window.location.assign(GAS_WEB_APP_URL);
+            return;
+          }
+          showAuthOverlay(
+            'Google サインインを初期化できませんでした。ブラウザを再読み込みしてから再試行してください。'
+          );
+          return;
+        }
+        try {
+          google.accounts.id.prompt(handleOneTapPrompt);
+        } catch (promptError) {
+          console.error('Manual sign-in prompt failed', promptError);
+          if (HAS_GAS_WEB_APP_URL) {
+            window.location.assign(GAS_WEB_APP_URL);
+            return;
+          }
+          showAuthOverlay(
+            'サインイン処理を開始できませんでした。時間をおいて再度お試しください。'
+          );
+        }
+      }
+
       // ----- Google Identity Services (One Tap) bootstrap sequence -----
       function initGoogleSignIn(retryCount) {
         if (!GOOGLE_CLIENT_ID) {
@@ -4196,9 +4223,9 @@
           client_id: GOOGLE_CLIENT_ID,
           callback: handleCredentialResponse,
           auto_select: false,
-          ux_mode: 'popup',
+          ux_mode: GIS_UX_MODE,
           cancel_on_tap_outside: false,
-          use_fedcm_for_prompt: true,
+          use_fedcm_for_prompt: GIS_USE_FEDCM,
           itp_support: IS_SAFARI || IS_IOS,
         });
         const btn = byId('google-signin-btn');
@@ -4214,14 +4241,7 @@
         if (manualBtn) {
           manualBtn.onclick = function (event) {
             event.preventDefault();
-            try {
-              google.accounts.id.prompt(handleOneTapPrompt);
-            } catch (promptError) {
-              console.error('Manual sign-in prompt failed', promptError);
-              showAuthOverlay(
-                'サインイン処理を開始できませんでした。時間をおいて再度お試しください。'
-              );
-            }
+            startManualGoogleSignIn();
           };
         }
         if (!IS_MOBILE) {
@@ -4682,7 +4702,9 @@
         if (v === 'home') loadHome();
         if (v === 'tasks') {
           ensureTaskBootstrap();
-          activateTaskTab(ACTIVE_TASK_TAB || 'my', false);
+          var activeTaskTab = ACTIVE_TASK_TAB || 'my';
+          setTaskLoading(activeTaskTab, true);
+          activateTaskTab(activeTaskTab, false);
           reloadActiveTaskTab();
         }
         if (v === 'messages') loadMessages();
@@ -5551,21 +5573,25 @@
 
       function loadTasksFromCache(scope, options) {
         var opts = options || {};
+        var mutateState = opts.mutate !== false;
+        var shouldRender = opts.render !== false;
         return readUserCacheEntry('tasks:' + scope).then(function (entry) {
           if (!entry || !entry.value) return null;
           var payload = entry.value || {};
           var rows = normalizeArray(payload.rows);
           var meta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
-          TASK_STATE[scope].rows = rows;
-          TASK_STATE[scope].meta = meta;
-          TASK_STATE[scope].loaded = true;
-          TASK_STATE[scope].loading = false;
-          if (opts.render !== false) {
-            renderTaskList(scope);
-            if (scope === 'my') {
-              updateTaskOverdueBadge(rows);
-            } else {
-              updateTaskOverdueBadge();
+          if (mutateState) {
+            TASK_STATE[scope].rows = rows;
+            TASK_STATE[scope].meta = meta;
+            TASK_STATE[scope].loaded = true;
+            TASK_STATE[scope].loading = false;
+            if (shouldRender) {
+              renderTaskList(scope);
+              if (scope === 'my') {
+                updateTaskOverdueBadge(rows);
+              } else {
+                updateTaskOverdueBadge();
+              }
             }
           }
           return { rows: rows, meta: meta };
@@ -5604,8 +5630,9 @@
           return Promise.resolve(false);
         }
         var cachedPayload = null;
-        var skeletonStartedAt = 0;
-        return loadTasksFromCache(scope, { render: false })
+        setTaskLoading(scope, true);
+        var skeletonStartedAt = Date.now();
+        return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
             return null;
           })
@@ -5613,13 +5640,15 @@
             if (cached && Array.isArray(cached.rows)) {
               cachedPayload = cached;
             }
-            setTaskLoading(scope, true);
-            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                   if (cachedPayload) {
+                    TASK_STATE[scope].rows = cachedPayload.rows;
+                    TASK_STATE[scope].meta = cachedPayload.meta || {};
+                    TASK_STATE[scope].loaded = true;
+                    TASK_STATE[scope].loading = false;
                     renderTaskList(scope);
                     updateTaskOverdueBadge(cachedPayload.rows);
                   } else {
@@ -5650,6 +5679,10 @@
                   TASK_STATE.my.loading = false;
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     if (cachedPayload) {
+                      TASK_STATE[scope].rows = cachedPayload.rows;
+                      TASK_STATE[scope].meta = cachedPayload.meta || {};
+                      TASK_STATE[scope].loaded = true;
+                      TASK_STATE[scope].loading = false;
                       renderTaskList(scope);
                       updateTaskOverdueBadge(cachedPayload.rows);
                     } else {
@@ -5670,8 +5703,9 @@
       function loadCreatedTasks() {
         var scope = 'from';
         var cachedPayload = null;
-        var skeletonStartedAt = 0;
-        return loadTasksFromCache(scope, { render: false })
+        setTaskLoading(scope, true);
+        var skeletonStartedAt = Date.now();
+        return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
             return null;
           })
@@ -5679,13 +5713,15 @@
             if (cached && Array.isArray(cached.rows)) {
               cachedPayload = cached;
             }
-            setTaskLoading(scope, true);
-            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                   if (cachedPayload) {
+                    TASK_STATE[scope].rows = cachedPayload.rows;
+                    TASK_STATE[scope].meta = cachedPayload.meta || {};
+                    TASK_STATE[scope].loaded = true;
+                    TASK_STATE[scope].loading = false;
                     renderTaskList(scope);
                     updateTaskOverdueBadge();
                   } else {
@@ -5716,6 +5752,10 @@
                   TASK_STATE.from.loading = false;
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     if (cachedPayload) {
+                      TASK_STATE[scope].rows = cachedPayload.rows;
+                      TASK_STATE[scope].meta = cachedPayload.meta || {};
+                      TASK_STATE[scope].loaded = true;
+                      TASK_STATE[scope].loading = false;
                       renderTaskList(scope);
                       updateTaskOverdueBadge();
                     } else {
@@ -5742,8 +5782,9 @@
           return Promise.resolve(false);
         }
         var cachedPayload = null;
-        var skeletonStartedAt = 0;
-        return loadTasksFromCache(scope, { render: false })
+        setTaskLoading(scope, true);
+        var skeletonStartedAt = Date.now();
+        return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
             return null;
           })
@@ -5751,13 +5792,15 @@
             if (cached && Array.isArray(cached.rows)) {
               cachedPayload = cached;
             }
-            setTaskLoading(scope, true);
-            skeletonStartedAt = Date.now();
             return new Promise(function (resolve) {
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                   if (cachedPayload) {
+                    TASK_STATE[scope].rows = cachedPayload.rows;
+                    TASK_STATE[scope].meta = cachedPayload.meta || {};
+                    TASK_STATE[scope].loaded = true;
+                    TASK_STATE[scope].loading = false;
                     renderTaskList(scope);
                     updateTaskOverdueBadge();
                   } else {
@@ -5802,6 +5845,10 @@
                   TASK_STATE.all.loading = false;
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     if (cachedPayload) {
+                      TASK_STATE[scope].rows = cachedPayload.rows;
+                      TASK_STATE[scope].meta = cachedPayload.meta || {};
+                      TASK_STATE[scope].loaded = true;
+                      TASK_STATE[scope].loading = false;
                       renderTaskList(scope);
                       updateTaskOverdueBadge();
                     } else {
