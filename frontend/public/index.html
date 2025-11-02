@@ -1974,70 +1974,15 @@
       }
       .auth-shell {
         display: flex;
-        flex-wrap: wrap;
-        gap: clamp(28px, 6vw, 64px);
-        width: min(1080px, 100%);
-        color: #f8fafc;
-      }
-      .auth-hero {
-        flex: 1 1 360px;
-        min-width: 320px;
-        display: flex;
-        flex-direction: column;
         justify-content: center;
-        gap: 20px;
-      }
-      .auth-hero__badge {
-        display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 8px 16px;
-        border-radius: 999px;
-        background: rgba(148, 163, 184, 0.2);
-        font-size: 0.9rem;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-      }
-      .auth-hero__title {
-        font-size: clamp(2rem, 4vw, 3rem);
-        font-weight: 700;
-        margin: 0;
-        line-height: 1.12;
-      }
-      .auth-hero__title mark {
-        color: #93c5fd;
-        background: none;
-      }
-      .auth-hero__copy {
-        margin: 0;
-        font-size: 1.05rem;
-        line-height: 1.7;
-        color: rgba(226, 232, 240, 0.85);
-      }
-      .auth-hero__highlights {
-        display: grid;
-        gap: 14px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
-      .auth-hero__highlights li {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        font-size: 0.98rem;
-        color: rgba(226, 232, 240, 0.9);
-      }
-      .auth-hero__highlights li .material-icons-outlined {
-        font-size: 1.2rem;
-        color: #38bdf8;
-        margin-top: 2px;
+        min-height: min(640px, 90vh);
+        padding: clamp(20px, 4vw, 36px);
       }
       .auth-panel {
-        flex: 0 0 360px;
-        max-width: 420px;
-        background: rgba(15, 23, 42, 0.88);
+        width: min(400px, 100%);
+        margin: 0 auto;
+        background: rgba(15, 23, 42, 0.92);
         border-radius: 28px;
         padding: clamp(28px, 4vw, 40px);
         box-shadow: 0 32px 72px rgba(2, 6, 23, 0.55);
@@ -2045,6 +1990,9 @@
         flex-direction: column;
         gap: 24px;
         backdrop-filter: blur(12px);
+      }
+      .auth-panel--solo {
+        width: min(360px, 100%);
       }
       .auth-panel__header {
         display: flex;
@@ -2083,6 +2031,7 @@
         gap: 18px;
         border: 1px solid rgba(148, 163, 184, 0.15);
       }
+
       .auth-session {
         display: none;
         align-items: center;
@@ -2153,10 +2102,7 @@
         border-color: rgba(148, 163, 184, 0.38);
       }
       .auth-meta {
-        font-size: 0.85rem;
-        color: rgba(226, 232, 240, 0.7);
-        text-align: center;
-        line-height: 1.6;
+        display: none;
       }
       .auth-meta strong {
         color: #f8fafc;
@@ -2175,7 +2121,7 @@
         display: block;
       }
       @media (max-width: 920px) {
-        .auth-shell {
+        
           justify-content: center;
         }
         .auth-panel {
@@ -2277,39 +2223,12 @@
     <div id="auth-backdrop" class="auth-backdrop" aria-hidden="true"></div>
     <div id="auth-overlay" class="auth-overlay d-none" aria-hidden="true">
       <div class="auth-shell">
-        <section class="auth-hero">
-          <span class="auth-hero__badge">
-            <span class="material-icons-outlined">bolt</span>
-            ShiftFlow Workspace
-          </span>
-          <h1 class="auth-hero__title">
-            仕事の流れを <mark>ひとつのスクリーン</mark> に。
-          </h1>
-          <p class="auth-hero__copy">
-            タスク、メッセージ、ステータスをリアルタイムに同期。チームの判断力を高め、
-            ユーザーの合意形成をより早くします。
-          </p>
-          <ul class="auth-hero__highlights">
-            <li>
-              <span class="material-icons-outlined">dashboard_customize</span>
-              <span>タスクとメッセージを統合した最新のワークスペース</span>
-            </li>
-            <li>
-              <span class="material-icons-outlined">update</span>
-              <span>GAS と自動連携、更新はすべて数秒以内に反映</span>
-            </li>
-            <li>
-              <span class="material-icons-outlined">privacy_tip</span>
-              <span>ShiftFlow セッションと Google OAuth の二重で安全に保護</span>
-            </li>
-          </ul>
-        </section>
-        <section class="auth-panel">
+        <section class="auth-panel auth-panel--solo">
           <div class="auth-panel__header">
             <div class="auth-panel__brand">SF</div>
             <div>
-              <h2 class="auth-panel__title">サインイン</h2>
-              <p class="auth-panel__subtitle">ShiftFlow アカウントを有効化しましょう</p>
+              <h2 class="auth-panel__title">ShiftFlow</h2>
+              <p class="auth-panel__subtitle">Google アカウントでサインイン</p>
             </div>
           </div>
           <div class="auth-panel__card">
@@ -2327,7 +2246,7 @@
               </button>
               <button
                 id="btn-auth-browser"
-                class="auth-button auth-button--secondary"
+                class="auth-button auth-button--secondary d-none"
                 type="button"
               >
                 <span class="material-icons-outlined">open_in_new</span>
@@ -2341,9 +2260,6 @@
                 <span class="material-icons-outlined">logout</span>
                 <span>サインアウト</span>
               </button>
-            </div>
-            <div class="auth-meta">
-              <strong>Google Workspace</strong> の社用アカウントでログインしてください。
             </div>
           </div>
           <div class="auth-error" id="auth-error"></div>
@@ -4285,6 +4201,10 @@
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
+          const browserBtn = byId('btn-auth-browser');
+          if (browserBtn) {
+            browserBtn.classList.toggle('d-none', !NEEDS_MANUAL_SIGNIN && !IS_SAFARI);
+          }
         }
         setAppShellHidden(true);
         if (overlay) {
@@ -4394,7 +4314,7 @@
           setAuthToken('');
           updateAuthSessionUI(null);
           if (!opts.silent) {
-            showAuthOverlay(opts.message || 'ShiftFlow にサインインしてください。');
+            showAuthOverlay(opts.message || (NEEDS_MANUAL_SIGNIN ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。' : 'ShiftFlow にサインインしてください。'));
           }
         }
         return data;
@@ -4402,6 +4322,10 @@
 
       async function startAuthFlow(options) {
         const opts = options || {};
+        if (NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL) {
+          window.open(GAS_WEB_APP_URL, '_blank', 'noopener');
+          return;
+        }
         let authUrl = '';
         try {
           const res = await fetch('/auth/start', {
@@ -4480,7 +4404,7 @@
           return;
         }
         if (!session || !session.authenticated) {
-          showAuthOverlay();
+          showAuthOverlay(NEEDS_MANUAL_SIGNIN ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。' : 'ShiftFlow にサインインしてください。');
           return;
         }
 

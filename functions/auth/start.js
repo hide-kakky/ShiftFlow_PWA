@@ -16,6 +16,8 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const config = loadConfig(env);
   const origin = url.origin;
+  const redirectBase = (config.allowedOrigins && config.allowedOrigins[0]) || origin;
+  const normalizedBase = redirectBase.replace(/\/+$/, '');
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -56,17 +58,17 @@ export async function onRequest({ request, env }) {
 
   let returnTo = typeof body.returnTo === 'string' ? body.returnTo.trim() : '';
   if (!returnTo) {
-    returnTo = config.allowedOrigins[0] || origin;
+    returnTo = normalizedBase;
   }
   try {
-    const parsedReturn = new URL(returnTo, origin);
-    if (parsedReturn.origin !== origin) {
-      returnTo = origin;
+    const parsedReturn = new URL(returnTo, normalizedBase);
+    if (parsedReturn.origin !== normalizedBase) {
+      returnTo = normalizedBase;
     } else {
       returnTo = parsedReturn.toString();
     }
   } catch (_err) {
-    returnTo = origin;
+    returnTo = normalizedBase;
   }
 
   const { verifier, challenge } = await createPkcePair();
@@ -87,7 +89,7 @@ export async function onRequest({ request, env }) {
 
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: `${origin}/auth/callback`,
+    redirect_uri: `${normalizedBase}/auth/callback`,
     response_type: 'code',
     scope: scopes.join(' '),
     state,
