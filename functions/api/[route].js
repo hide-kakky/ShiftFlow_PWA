@@ -614,8 +614,16 @@ async function buildMessagesForUser(db, options) {
 
 const CACHE_TTL_SECONDS = 300;
 const CACHEABLE_ROUTES = {
-  getBootstrapData: { flagKey: 'cacheBootstrap' },
-  getHomeContent: { flagKey: 'cacheHome' },
+  getBootstrapData: {
+    flagKey: 'cacheBootstrap',
+    staleAfterSeconds: 60,
+    ttlSeconds: CACHE_TTL_SECONDS,
+  },
+  getHomeContent: {
+    flagKey: 'cacheHome',
+    staleAfterSeconds: 60,
+    ttlSeconds: CACHE_TTL_SECONDS,
+  },
 };
 const CACHE_INVALIDATION_ROUTES = {
   getBootstrapData: new Set([
@@ -661,11 +669,13 @@ function createLegacyTokenDetails(rawToken) {
 
 function shouldUseKvCache(route, flags) {
   if (!route || !flags) return null;
-  const config = CACHEABLE_ROUTES[route];
-  if (!config) return null;
-  const enabled = !!flags[config.flagKey];
+  const settings = CACHEABLE_ROUTES[route];
+  if (!settings) return null;
+  const enabled = !!flags[settings.flagKey];
   if (!enabled) return null;
-  return { ttlSeconds: CACHE_TTL_SECONDS };
+  const ttlSeconds = Number(settings.ttlSeconds || CACHE_TTL_SECONDS);
+  const staleAfterSeconds = Number(settings.staleAfterSeconds || ttlSeconds);
+  return { ttlSeconds, staleAfterSeconds };
 }
 
 function buildKvCacheKey(route, emailOrSub) {
@@ -679,6 +689,11 @@ async function readKvCache(kv, key) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.body !== 'string') return null;
+    if (parsed.storedAt) {
+      parsed.storedAt = Number(parsed.storedAt) || 0;
+    } else {
+      parsed.storedAt = 0;
+    }
     return parsed;
   } catch (err) {
     console.warn('[ShiftFlow][Cache] Failed to read KV cache', {
@@ -705,6 +720,80 @@ async function writeKvCache(kv, key, record, ttlSeconds) {
     console.warn('[ShiftFlow][Cache] Failed to write KV cache', {
       key,
       error: err && err.message ? err.message : String(err),
+    });
+  }
+}
+
+function cloneFetchInitForCache(init) {
+  if (!init || typeof init !== 'object') return {};
+  const clone = { ...init };
+  if (init.headers instanceof Headers) {
+    clone.headers = new Headers(init.headers);
+  } else if (init.headers && typeof init.headers === 'object') {
+    clone.headers = { ...init.headers };
+  } else {
+    clone.headers = {};
+  }
+  if (typeof init.body === 'string') {
+    clone.body = init.body;
+  } else if (init.body === undefined) {
+    delete clone.body;
+  } else {
+    clone.body = init.body;
+  }
+  return clone;
+}
+
+async function revalidateKvCache(options) {
+  const { env, cacheKey, cacheSettings, upstreamUrl, init, config, route } = options || {};
+  if (!env || !env.APP_KV || !cacheKey || !cacheSettings || !upstreamUrl || !init) {
+    return;
+  }
+  try {
+    const refreshInit = cloneFetchInitForCache(init);
+    const refreshRequestId = createRequestId();
+    if (refreshInit.headers instanceof Headers) {
+      refreshInit.headers.set('X-ShiftFlow-Request-Id', refreshRequestId);
+    } else if (refreshInit.headers && typeof refreshInit.headers === 'object') {
+      refreshInit.headers['X-ShiftFlow-Request-Id'] = refreshRequestId;
+    } else {
+      refreshInit.headers = { 'X-ShiftFlow-Request-Id': refreshRequestId };
+    }
+    const response = await fetchPreservingAuth(upstreamUrl, refreshInit, 4, {
+      config,
+      requestId: refreshRequestId,
+      route,
+    });
+    if (!response.ok) {
+      console.warn('[ShiftFlow][Cache] Revalidation fetch did not return OK', {
+        cacheKey,
+        status: response.status,
+        route,
+      });
+      return;
+    }
+    const cacheBodyText = await response.text();
+    await writeKvCache(
+      env.APP_KV,
+      cacheKey,
+      {
+        status: response.status,
+        body: cacheBodyText,
+        contentType: response.headers.get('content-type') || 'application/json',
+      },
+      cacheSettings.ttlSeconds
+    );
+    logAuthInfo('KV cache revalidated in background', {
+      route,
+      cacheKey,
+      requestId: refreshRequestId,
+      ttl: cacheSettings.ttlSeconds,
+    });
+  } catch (err) {
+    console.warn('[ShiftFlow][Cache] Failed to revalidate cache', {
+      cacheKey,
+      error: err && err.message ? err.message : String(err),
+      route,
     });
   }
 }
@@ -742,13 +831,18 @@ function resolveInvalidationTargets(route) {
   return routes;
 }
 
-function buildCacheResponse(cached, origin, requestId) {
+function buildCacheResponse(cached, origin, requestId, cacheStatus = 'HIT') {
   const headers = new Headers({
     ...corsHeaders(origin),
     'Content-Type': cached.contentType || 'application/json',
     'X-ShiftFlow-Request-Id': requestId,
-    'X-ShiftFlow-Cache': 'HIT',
+    'X-ShiftFlow-Cache': cacheStatus || 'HIT',
   });
+  const ageMs =
+    typeof cached.storedAt === 'number' && cached.storedAt > 0
+      ? Math.max(0, Date.now() - cached.storedAt)
+      : 0;
+  headers.set('X-ShiftFlow-Cache-Age', String(ageMs));
   return new Response(cached.body, {
     status: cached.status || 200,
     headers,
@@ -2791,7 +2885,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
 }
 
 export async function onRequest(context) {
-  const { request, params, env } = context;
+  const { request, params, env, waitUntil } = context;
   const config = loadConfig(env);
   let flags = { ...(config.flags || {}) };
   let appliedFlagOverrides = null;
@@ -3083,40 +3177,15 @@ export async function onRequest(context) {
     }
   }
 
-  const cacheSettings = shouldUseKvCache(route, flags);
-  const hasKvStore = !!env && !!env.APP_KV;
-  const cacheIdentitySource =
-    (accessContext.email && accessContext.email.trim()) ||
-    (tokenDetails.email && tokenDetails.email.trim()) ||
-    (tokenDetails.sub && tokenDetails.sub.trim()) ||
-    'anonymous';
-  const cacheIdentity = cacheIdentitySource.toLowerCase();
-  const invalidationTargets = resolveInvalidationTargets(route);
-  let cacheKey = null;
-  let cacheStatus = 'BYPASS';
-  if (cacheSettings && hasKvStore) {
-    cacheKey = buildKvCacheKey(route, cacheIdentity);
-    const cachedRecord = await readKvCache(env.APP_KV, cacheKey);
-    if (cachedRecord) {
-      logAuthInfo('Serving response from KV cache', {
-        requestId,
-        route,
-        cacheKey,
-      });
-      return buildCacheResponse(
-        cachedRecord,
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        requestId
-      );
-    }
-    cacheStatus = 'MISS';
-  }
+  const rawBearerToken =
+    typeof tokenDetails.rawToken === 'string' ? tokenDetails.rawToken.trim() : '';
+  const authorizationHeader = rawBearerToken ? `Bearer ${rawBearerToken}` : '';
 
+  const originalUrl = new URL(request.url);
   const upstreamUrl = new URL(config.gasUrl);
   upstreamUrl.searchParams.delete('route');
   upstreamUrl.searchParams.delete('method');
   upstreamUrl.searchParams.delete('page');
-  const originalUrl = new URL(request.url);
   originalUrl.searchParams.forEach((value, key) => {
     if (key !== 'route') {
       upstreamUrl.searchParams.append(key, value);
@@ -3129,38 +3198,35 @@ export async function onRequest(context) {
     upstreamUrl.searchParams.set('__userName', tokenDetails.name);
   }
 
-  const rawBearerToken =
-    typeof tokenDetails.rawToken === 'string' ? tokenDetails.rawToken.trim() : '';
-  const authorizationHeader = rawBearerToken ? `Bearer ${rawBearerToken}` : '';
-
   let dualWriteContext = null;
+  let parsedJsonBody = null;
+  let rawBodyToForward = null;
+
+  const initHeaders = {
+    'X-ShiftFlow-Email': tokenDetails.email || '',
+    'X-ShiftFlow-Sub': tokenDetails.sub || '',
+    'X-ShiftFlow-Role': accessContext.role,
+    'X-ShiftFlow-User-Status': accessContext.status,
+    'X-ShiftFlow-Request-Id': requestId,
+  };
+  if (authorizationHeader) {
+    initHeaders.Authorization = authorizationHeader;
+  }
+  if (config.sharedSecret) initHeaders['X-ShiftFlow-Secret'] = config.sharedSecret;
+  if (tokenDetails.name) {
+    initHeaders['X-ShiftFlow-Name'] = tokenDetails.name;
+  }
+  if (clientMeta.ip) initHeaders['X-ShiftFlow-Client-IP'] = clientMeta.ip;
+  if (clientMeta.userAgent) initHeaders['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
+  if (clientMeta.cfRay) initHeaders['X-ShiftFlow-CF-Ray'] = clientMeta.cfRay;
+  if (tokenDetails.iat) initHeaders['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
+  if (tokenDetails.exp) initHeaders['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
 
   const init = {
     method: request.method,
     redirect: 'follow',
-    headers: {
-      'X-ShiftFlow-Email': tokenDetails.email || '',
-      'X-ShiftFlow-Sub': tokenDetails.sub || '',
-      'X-ShiftFlow-Role': accessContext.role,
-      'X-ShiftFlow-User-Status': accessContext.status,
-      'X-ShiftFlow-Request-Id': requestId,
-    },
+    headers: initHeaders,
   };
-  if (authorizationHeader) {
-    init.headers.Authorization = authorizationHeader;
-  }
-  if (config.sharedSecret) init.headers['X-ShiftFlow-Secret'] = config.sharedSecret;
-  if (tokenDetails.name) {
-    init.headers['X-ShiftFlow-Name'] = tokenDetails.name;
-  }
-  if (clientMeta.ip) init.headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
-  if (clientMeta.userAgent) init.headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
-  if (clientMeta.cfRay) init.headers['X-ShiftFlow-CF-Ray'] = clientMeta.cfRay;
-  if (tokenDetails.iat) init.headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
-  if (tokenDetails.exp) init.headers['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
-
-  let parsedJsonBody = null;
-  let rawBodyToForward = null;
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const contentType = request.headers.get('content-type');
@@ -3198,11 +3264,71 @@ export async function onRequest(context) {
         rawBodyToForward = JSON.stringify(bodyToForward);
         init.headers['Content-Type'] = 'application/json';
       } catch (_err) {
-        // Leave body as-is if JSON parsing fails.
         parsedJsonBody = null;
       }
     }
     init.body = rawBodyToForward;
+  }
+
+  const cacheSettings = shouldUseKvCache(route, flags);
+  const hasKvStore = !!env && !!env.APP_KV;
+  const cacheIdentitySource =
+    (accessContext.email && accessContext.email.trim()) ||
+    (tokenDetails.email && tokenDetails.email.trim()) ||
+    (tokenDetails.sub && tokenDetails.sub.trim()) ||
+    'anonymous';
+  const cacheIdentity = cacheIdentitySource.toLowerCase();
+  const invalidationTargets = resolveInvalidationTargets(route);
+  let cacheKey = null;
+  let cacheStatus = 'BYPASS';
+  if (cacheSettings && hasKvStore) {
+    cacheKey = buildKvCacheKey(route, cacheIdentity);
+    const cachedRecord = await readKvCache(env.APP_KV, cacheKey);
+    if (cachedRecord) {
+      const storedAtMs = Number(cachedRecord.storedAt || 0);
+      const staleAfterMs = (cacheSettings.staleAfterSeconds || cacheSettings.ttlSeconds) * 1000;
+      const isStale = storedAtMs > 0 && Date.now() - storedAtMs > staleAfterMs;
+      if (!isStale) {
+        logAuthInfo('Serving response from KV cache', {
+          requestId,
+          route,
+          cacheKey,
+        });
+        return buildCacheResponse(
+          cachedRecord,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'HIT'
+        );
+      }
+      cacheStatus = 'STALE';
+      logAuthInfo('Serving stale response from KV cache', {
+        requestId,
+        route,
+        cacheKey,
+      });
+      if (typeof waitUntil === 'function') {
+        const refreshInit = cloneFetchInitForCache(init);
+        waitUntil(
+          revalidateKvCache({
+            env,
+            cacheKey,
+            cacheSettings,
+            upstreamUrl: upstreamUrl.toString(),
+            init: refreshInit,
+            config,
+            route,
+          })
+        );
+      }
+      return buildCacheResponse(
+        cachedRecord,
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        requestId,
+        'STALE'
+      );
+    }
+    cacheStatus = 'MISS';
   }
 
   if ((flags.d1Primary || flags.d1Read) && env && env.DB) {
@@ -3352,6 +3478,7 @@ export async function onRequest(context) {
     'X-ShiftFlow-Request-Id': requestId,
   });
   responseHeaders.set('X-ShiftFlow-Cache', cacheStatus);
+  responseHeaders.set('X-ShiftFlow-Cache-Age', '0');
   upstreamResponse.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
     if (lower.startsWith('access-control')) return;
