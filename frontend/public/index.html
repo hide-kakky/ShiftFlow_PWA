@@ -3039,6 +3039,7 @@
       const BOOTSTRAP_CACHE_PREFIX = 'bootstrap:';
       const BOOTSTRAP_CACHE_RECENT_KEY = 'bootstrap:recent';
       const BOOTSTRAP_CACHE_DEFAULT_EMAIL = 'guest';
+      const BOOTSTRAP_CACHE_MAX_AGE_MS = 60 * 1000;
       const AUTH_NOTICE_MESSAGE =
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       const FEDCM_FALLBACK_MESSAGE =
@@ -4430,6 +4431,32 @@
         return String(value).trim().toLowerCase();
       }
 
+      function resolveUserCacheNamespace() {
+        if (typeof CURRENT_USER_EMAIL === 'string' && CURRENT_USER_EMAIL) {
+          return normalizeEmailValue(CURRENT_USER_EMAIL);
+        }
+        var fallbackEmail =
+          (window.userInfo && typeof window.userInfo.email === 'string' && window.userInfo.email) ||
+          '';
+        return normalizeEmailValue(fallbackEmail || '');
+      }
+
+      function buildUserCacheKey(baseKey) {
+        var ns = resolveUserCacheNamespace();
+        if (ns) {
+          return 'user:' + ns + ':' + baseKey;
+        }
+        return 'user:__guest__:' + baseKey;
+      }
+
+      function readUserCacheEntry(baseKey) {
+        return readCacheEntry(buildUserCacheKey(baseKey));
+      }
+
+      function writeUserCacheEntry(baseKey, value) {
+        return writeCacheEntry(buildUserCacheKey(baseKey), value);
+      }
+
       function getBootstrapCacheKey(email) {
         var normalized = normalizeEmailValue(email || '');
         if (!normalized) {
@@ -4490,6 +4517,10 @@
                 return null;
               }
               if (!record.bootstrap || typeof record.bootstrap !== 'object') {
+                return null;
+              }
+              var cachedAtMs = Number(record.cachedAt || 0);
+              if (!cachedAtMs || Date.now() - cachedAtMs > BOOTSTRAP_CACHE_MAX_AGE_MS) {
                 return null;
               }
               return record;
@@ -5194,7 +5225,7 @@
       }
 
       function loadHomeFromCache() {
-        return readCacheEntry('home').then(function (entry) {
+        return readUserCacheEntry('home').then(function (entry) {
           if (!entry || !entry.value) return false;
           renderHomeView(entry.value);
           return true;
@@ -5202,7 +5233,7 @@
       }
 
       function cacheHomePayload(data) {
-        return writeCacheEntry('home', {
+        return writeUserCacheEntry('home', {
           tasks: normalizeArray(data && data.tasks),
           messages: normalizeArray(data && data.messages),
         });
@@ -5459,7 +5490,7 @@
       }
 
       function loadTasksFromCache(scope) {
-        return readCacheEntry('tasks:' + scope).then(function (entry) {
+        return readUserCacheEntry('tasks:' + scope).then(function (entry) {
           if (!entry || !entry.value) return false;
           var payload = entry.value || {};
           var rows = normalizeArray(payload.rows);
@@ -5479,7 +5510,7 @@
       }
 
       function cacheTasks(scope, rows, meta) {
-        return writeCacheEntry('tasks:' + scope, {
+        return writeUserCacheEntry('tasks:' + scope, {
           rows: Array.isArray(rows) ? rows : [],
           meta: meta && typeof meta === 'object' ? meta : {},
         });
@@ -5956,14 +5987,14 @@
         return 'messages:' + folder + ':unread:' + (unreadOnly ? '1' : '0');
       }
       function loadMessagesFromCache(cacheKey) {
-        return readCacheEntry(cacheKey).then(function (entry) {
+        return readUserCacheEntry(cacheKey).then(function (entry) {
           if (!entry || !entry.value) return null;
           var rows = normalizeArray(entry.value.rows);
           return { rows: rows, empty: entry.value.empty };
         });
       }
       function cacheMessages(cacheKey, rows) {
-        return writeCacheEntry(cacheKey, {
+        return writeUserCacheEntry(cacheKey, {
           rows: Array.isArray(rows) ? rows : [],
           empty: !rows || rows.length === 0,
         });
@@ -7035,7 +7066,7 @@
           }
           hideAuthOverlay();
         } else {
-          hideAuthOverlay(false);
+          showAuthOverlay();
         }
 
         var restorePromise = Promise.resolve(false);
