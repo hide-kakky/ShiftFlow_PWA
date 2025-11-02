@@ -2088,6 +2088,13 @@
         <h2>ShiftFlow</h2>
         <p>Google アカウントでサインインしてください。</p>
         <div id="google-signin-btn"></div>
+        <button
+          id="google-signin-manual"
+          class="btn btn-primary w-100 mt-3 d-none"
+          type="button"
+        >
+          Google でサインイン
+        </button>
         <div class="auth-error d-none" id="auth-error"></div>
       </div>
     </div>
@@ -3032,6 +3039,13 @@
         'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       const FEDCM_FALLBACK_MESSAGE =
         'ブラウザで Google ワンタップを表示できませんでした。下のボタンからサインインしてください。';
+      const IS_IOS =
+        /iphone|ipad|ipod/i.test((navigator && navigator.userAgent) || '') &&
+        !(window && window.MSStream);
+      const IS_STANDALONE =
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        (typeof navigator !== 'undefined' && navigator.standalone === true);
+      const NEEDS_MANUAL_SIGNIN = IS_IOS && IS_STANDALONE;
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -3983,6 +3997,7 @@
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
+        const manualBtn = byId('google-signin-manual');
         if (document.body) {
           document.body.classList.add('auth-screen');
         }
@@ -3990,6 +4005,13 @@
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
+        }
+        if (manualBtn) {
+          if (message === FEDCM_FALLBACK_MESSAGE || NEEDS_MANUAL_SIGNIN) {
+            manualBtn.classList.remove('d-none');
+          } else {
+            manualBtn.classList.add('d-none');
+          }
         }
         if (errorEl) {
           if (message) {
@@ -4004,9 +4026,13 @@
 
       function hideAuthOverlay(revealShell) {
         const overlay = byId('auth-overlay');
+        const manualBtn = byId('google-signin-manual');
         if (overlay) {
           overlay.classList.add('d-none');
           overlay.setAttribute('aria-hidden', 'true');
+        }
+        if (manualBtn) {
+          manualBtn.classList.add('d-none');
         }
         if (revealShell === false) {
           if (document.body) {
@@ -4106,6 +4132,20 @@
             size: 'large',
             width: 260,
           });
+        }
+        const manualBtn = byId('google-signin-manual');
+        if (manualBtn) {
+          manualBtn.onclick = function (event) {
+            event.preventDefault();
+            try {
+              google.accounts.id.prompt(handleOneTapPrompt);
+            } catch (promptError) {
+              console.error('Manual sign-in prompt failed', promptError);
+              showAuthOverlay(
+                'サインイン処理を開始できませんでした。時間をおいて再度お試しください。'
+              );
+            }
+          };
         }
         google.accounts.id.prompt(handleOneTapPrompt);
       }
@@ -6823,7 +6863,11 @@
         attachSaveHandlers();
 
         initPullToRefresh();
-        hideAuthOverlay(false);
+        if (NEEDS_MANUAL_SIGNIN) {
+          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+        } else {
+          hideAuthOverlay(false);
+        }
         initGoogleSignIn();
       });
     </script>

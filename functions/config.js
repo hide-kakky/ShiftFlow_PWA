@@ -1,8 +1,11 @@
 export async function onRequest(context) {
-  const gasUrl =
-    context.env && typeof context.env.GAS_WEB_APP_URL === 'string'
+  const gasUrlRaw =
+    context.env && typeof context.env.GAS_EXEC_URL === 'string'
+      ? context.env.GAS_EXEC_URL
+      : context.env && typeof context.env.GAS_WEB_APP_URL === 'string'
       ? context.env.GAS_WEB_APP_URL
       : '';
+  const gasUrl = typeof gasUrlRaw === 'string' ? gasUrlRaw.trim() : '';
   const clientIdRaw =
     context.env && typeof context.env.GOOGLE_OAUTH_CLIENT_ID === 'string'
       ? context.env.GOOGLE_OAUTH_CLIENT_ID
