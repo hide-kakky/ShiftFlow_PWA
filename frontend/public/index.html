@@ -4215,7 +4215,12 @@
             }
           };
         }
-        google.accounts.id.prompt(handleOneTapPrompt);
+        try {
+          google.accounts.id.prompt(handleOneTapPrompt);
+        } catch (promptError) {
+          console.warn('Google One Tap prompt failed', promptError);
+          showAuthOverlay(FEDCM_FALLBACK_MESSAGE);
+        }
       }
 
       function bootstrapAfterAuth(options) {
