@@ -396,6 +396,49 @@ function safeParseJson(input, fallback = {}) {
   }
 }
 
+function coerceFlagValue(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return null;
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  }
+  return null;
+}
+
+async function readFlagOverridesFromKv(kv, key) {
+  if (!kv || !key) return null;
+  try {
+    const raw = await kv.get(key);
+    if (!raw) return null;
+    let payload = raw;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+      payload = JSON.parse(trimmed);
+    }
+    if (!payload || typeof payload !== 'object') return null;
+    const overrides = {};
+    Object.entries(payload).forEach(([flagKey, flagValue]) => {
+      const coerced = coerceFlagValue(flagValue);
+      if (coerced === null) return;
+      overrides[flagKey] = coerced;
+    });
+    return Object.keys(overrides).length ? overrides : null;
+  } catch (err) {
+    console.warn('[ShiftFlow][Flags] Failed to load KV flag overrides', {
+      key,
+      error: err && err.message ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 async function fetchAssigneesForTasks(db, taskIds) {
   const assigneeMap = new Map();
   if (!Array.isArray(taskIds) || taskIds.length === 0) {
@@ -2750,11 +2793,34 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
 export async function onRequest(context) {
   const { request, params, env } = context;
   const config = loadConfig(env);
-  const flags = config.flags || {};
+  let flags = { ...(config.flags || {}) };
+  let appliedFlagOverrides = null;
+  if (env && env.APP_KV) {
+    const kvOverrides = await readFlagOverridesFromKv(env.APP_KV, config.flagKvKey);
+    if (kvOverrides) {
+      const recognized = {};
+      Object.keys(kvOverrides).forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(flags, key)) {
+          recognized[key] = kvOverrides[key];
+        }
+      });
+      if (Object.keys(recognized).length) {
+        flags = { ...flags, ...recognized };
+        appliedFlagOverrides = recognized;
+      }
+    }
+  }
+  config.flags = flags;
   const route = params.route ? String(params.route) : '';
   const requestId = createRequestId();
   const originHeader = request.headers.get('Origin') || '';
   const allowedOrigin = pickAllowedOrigin(config.allowedOrigins, originHeader);
+  if (appliedFlagOverrides) {
+    logAuthInfo('Applied KV flag overrides', {
+      requestId,
+      overrides: appliedFlagOverrides,
+    });
+  }
 
   if (request.method === 'OPTIONS') {
     if (originHeader && !allowedOrigin) {

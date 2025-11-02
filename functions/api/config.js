@@ -48,6 +48,7 @@ export function loadConfig(env) {
     gasUrl,
     googleClientId,
     sharedSecret,
+    flagKvKey: (env?.CFG_FLAG_KV_KEY || 'shiftflow:flags').trim(),
     flags,
   };
 }
