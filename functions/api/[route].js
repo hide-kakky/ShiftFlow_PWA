@@ -7,6 +7,7 @@ const ACCESS_CACHE = new Map();
 const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
 const CORS_EXPOSE_HEADERS = 'X-ShiftFlow-Request-Id,X-ShiftFlow-Cache';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
 
 function logAuthInfo(message, meta) {
   if (meta) {
@@ -243,6 +244,23 @@ function buildTaskMetaJson(payload) {
   }
 }
 
+function normalizeIdValue(value) {
+  if (value === undefined || value === null) return '';
+  return typeof value === 'string' ? value.trim() : String(value).trim();
+}
+
+function mergeMetaJson(existingJson, newJsonString) {
+  if (!newJsonString) return existingJson || null;
+  try {
+    const newMeta = JSON.parse(newJsonString);
+    const existingMeta = existingJson ? JSON.parse(existingJson) : {};
+    const merged = { ...existingMeta, ...newMeta };
+    return JSON.stringify(merged);
+  } catch (_err) {
+    return newJsonString;
+  }
+}
+
 const CACHE_TTL_SECONDS = 300;
 const CACHEABLE_ROUTES = {
   getBootstrapData: { flagKey: 'cacheBootstrap' },
@@ -454,6 +472,170 @@ function interceptRequestBodyForRoute(route, body, context) {
       },
     };
   }
+  if (route === 'updateTask' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const originalPayload =
+      argsArray.length && argsArray[0] && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+    const taskPayload = { ...originalPayload };
+    const taskId = normalizeIdValue(taskPayload.id || taskPayload.taskId || taskPayload.task_id);
+    if (argsArray.length) {
+      argsArray[0] = taskPayload;
+      mutatedBody.args = argsArray;
+    } else {
+      mutatedBody.args = [taskPayload];
+    }
+    return {
+      body: mutatedBody,
+      mutated: false,
+      dualWriteContext: {
+        type: 'task_update',
+        taskId,
+        payload: taskPayload,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'completeTask' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const taskIdRaw = argsArray.length ? argsArray[0] : '';
+    const taskId = normalizeIdValue(taskIdRaw);
+    const normalizedArgs = [taskId];
+    const mutated = taskId !== taskIdRaw;
+    mutatedBody.args = normalizedArgs;
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'task_complete',
+        taskId,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'toggleMemoRead' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const memoIdRaw = argsArray.length ? argsArray[0] : '';
+    const memoId = normalizeIdValue(memoIdRaw);
+    const shouldRead =
+      argsArray.length > 1 ? Boolean(argsArray[1]) : true;
+    mutatedBody.args = [memoId, shouldRead];
+    const mutated =
+      memoId !== memoIdRaw || (argsArray.length > 1 && shouldRead !== argsArray[1]);
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'memo_read_toggle',
+        messageId: memoId,
+        shouldRead,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'deleteTaskById' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const rawTaskId = argsArray.length ? argsArray[0] : '';
+    const taskId = normalizeIdValue(rawTaskId);
+    mutatedBody.args = [taskId];
+    const mutated = taskId !== rawTaskId;
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'task_delete',
+        taskId,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'deleteMessageById' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const rawMessageId = argsArray.length ? argsArray[0] : '';
+    const messageId = normalizeIdValue(rawMessageId);
+    mutatedBody.args = [messageId];
+    const mutated = messageId !== rawMessageId;
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'message_delete',
+        messageId,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'markMemoAsRead' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const rawMemoId = argsArray.length ? argsArray[0] : '';
+    const memoId = normalizeIdValue(rawMemoId);
+    mutatedBody.args = [memoId];
+    const mutated = memoId !== rawMemoId;
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'memo_mark_read',
+        messageId: memoId,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'markMemosReadBulk' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const rawList = argsArray.length ? argsArray[0] : [];
+    const memoIds = Array.isArray(rawList)
+      ? rawList.map((id) => normalizeIdValue(id)).filter(Boolean)
+      : [];
+    mutatedBody.args = [memoIds];
+    const mutated =
+      Array.isArray(rawList) &&
+      (rawList.length !== memoIds.length ||
+        rawList.some((value, index) => normalizeIdValue(value) !== memoIds[index]));
+    return {
+      body: mutatedBody,
+      mutated,
+      dualWriteContext: {
+        type: 'memo_mark_read_bulk',
+        messageIds: memoIds,
+        timestampMs: Date.now(),
+      },
+    };
+  }
+  if (route === 'saveUserSettings' && flags.d1Write) {
+    const mutatedBody = { ...body };
+    const argsArray = Array.isArray(mutatedBody.args) ? [...mutatedBody.args] : [];
+    const originalPayload =
+      argsArray.length && argsArray[0] && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+    const payload = { ...originalPayload };
+    if (argsArray.length) {
+      argsArray[0] = payload;
+      mutatedBody.args = argsArray;
+    } else {
+      mutatedBody.args = [payload];
+    }
+    const sanitizedContext = {
+      name: typeof payload.name === 'string' ? payload.name : undefined,
+      theme: typeof payload.theme === 'string' ? payload.theme : undefined,
+      imageUrl: typeof payload.imageUrl === 'string' ? payload.imageUrl : undefined,
+      hasImageData: typeof payload.imageData === 'string' && payload.imageData.length > 0,
+    };
+    return {
+      body: mutatedBody,
+      mutated: false,
+      dualWriteContext: {
+        type: 'user_settings',
+        payload: sanitizedContext,
+        timestampMs: Date.now(),
+      },
+    };
+  }
   return { body, mutated: false, dualWriteContext: null };
 }
 
@@ -469,6 +651,179 @@ async function parseJsonResponseSafe(response) {
   } catch (_err) {
     return null;
   }
+}
+
+async function maybeHandleRouteWithD1(options) {
+  if (!options) return null;
+  const { route, flags, db, requestId, allowedOrigin, config, tokenDetails, accessContext } =
+    options;
+  if (!db) return null;
+  const preferD1 = !!(flags && (flags.d1Primary || flags.d1Read));
+  if (!preferD1) return null;
+  const normalizedRoute = typeof route === 'string' ? route.trim() : '';
+  if (!normalizedRoute) return null;
+
+  try {
+    if (normalizedRoute === 'listActiveUsers') {
+      const email = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      let orgId = null;
+      if (email) {
+        const membership = await resolveMembershipForEmail(db, email);
+        orgId = membership?.org_id || null;
+      }
+      if (!orgId) {
+        orgId = await resolveDefaultOrgId(db);
+      }
+      const result = await db
+        .prepare(
+          `
+          SELECT users.email AS email,
+                 COALESCE(users.display_name, users.email) AS display_name,
+                 COALESCE(memberships.role, 'member') AS role
+            FROM memberships
+            JOIN users ON users.user_id = memberships.user_id
+           WHERE (?1 IS NULL OR memberships.org_id = ?1)
+             AND LOWER(COALESCE(memberships.status, 'active')) = 'active'
+             AND (users.is_active IS NULL OR users.is_active = 1)
+             AND LOWER(COALESCE(users.status, 'active')) = 'active'
+           ORDER BY LOWER(display_name) ASC, users.email ASC
+        `
+        )
+        .bind(orgId || null)
+        .all();
+      const rows = Array.isArray(result?.results) ? result.results : [];
+      const mapped =
+        rows.length > 0
+          ? rows.map((row) => ({
+              email: row.email,
+              name: row.display_name || row.email || '',
+              role: row.role ? String(row.role).trim() || 'member' : 'member',
+            }))
+          : [
+              { id: '全体', name: '全体' },
+              { id: 'ブッフェ', name: 'ブッフェ' },
+              { id: 'レセプション', name: 'レセプション' },
+              { id: 'ホール', name: 'ホール' },
+            ];
+      logAuthInfo('Served route from D1', {
+        requestId,
+        route: normalizedRoute,
+        orgId: orgId || '',
+        count: mapped.length,
+      });
+      captureDiagnostics(config, 'info', 'd1_route_served', {
+        event: 'd1_route_served',
+        route: normalizedRoute,
+        requestId,
+        orgId: orgId || '',
+        count: mapped.length,
+      });
+      return jsonResponse(
+        200,
+        { ok: true, result: mapped },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+    if (normalizedRoute === 'getUserSettings') {
+      const email = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      if (!email) return null;
+      const user = await db
+        .prepare(
+          `
+          SELECT user_id,
+                 email,
+                 display_name,
+                 profile_image_url,
+                 theme
+            FROM users
+           WHERE lower(email) = ?1
+        `
+        )
+        .bind(email)
+        .first();
+      if (!user) {
+        return jsonResponse(
+          200,
+          {
+            ok: true,
+            result: {
+              name: 'ゲスト',
+              imageUrl: PROFILE_PLACEHOLDER_URL,
+              imageName: '',
+              role: accessContext?.role || 'guest',
+              email: tokenDetails?.email || '',
+              theme: 'light',
+            },
+          },
+          allowedOrigin,
+          {
+            'X-ShiftFlow-Request-Id': requestId,
+            'X-ShiftFlow-Cache': 'BYPASS',
+            'X-ShiftFlow-Backend': 'D1',
+          }
+        );
+      }
+      const membership = await db
+        .prepare(
+          `
+          SELECT role
+            FROM memberships
+           WHERE user_id = ?1
+           ORDER BY created_at_ms ASC
+           LIMIT 1
+        `
+        )
+        .bind(user.user_id)
+        .first();
+      const role = membership?.role || accessContext?.role || 'member';
+      const result = {
+        name: user.display_name || 'ユーザー',
+        imageUrl: user.profile_image_url || PROFILE_PLACEHOLDER_URL,
+        imageName: '',
+        role,
+        email: tokenDetails?.email || user.email || '',
+        theme: user.theme || 'light',
+      };
+      captureDiagnostics(config, 'info', 'd1_route_served', {
+        event: 'd1_route_served',
+        route: normalizedRoute,
+        requestId,
+        email: result.email,
+      });
+      return jsonResponse(
+        200,
+        { ok: true, result },
+        allowedOrigin,
+        {
+          'X-ShiftFlow-Request-Id': requestId,
+          'X-ShiftFlow-Cache': 'BYPASS',
+          'X-ShiftFlow-Backend': 'D1',
+        }
+      );
+    }
+  } catch (err) {
+    console.error('[ShiftFlow][D1] Route handling failed', {
+      route: normalizedRoute,
+      requestId,
+      error: err && err.message ? err.message : String(err),
+    });
+    captureDiagnostics(config, 'error', 'd1_route_failed', {
+      event: 'd1_route_failed',
+      route: normalizedRoute,
+      requestId,
+      detail: err && err.message ? err.message : String(err),
+    });
+  }
+  return null;
 }
 
 async function performDualWriteIfNeeded(options) {
@@ -489,6 +844,7 @@ async function performDualWriteIfNeeded(options) {
     return;
   }
   try {
+    const userEmail = tokenDetails.email || accessContext.email || '';
     if (dualWriteContext.type === 'message') {
       await insertMessageIntoD1(env.DB, {
         messageId: dualWriteContext.messageId,
@@ -521,6 +877,132 @@ async function performDualWriteIfNeeded(options) {
         taskId: dualWriteContext.taskId,
         cfRay: clientMeta?.cfRay || '',
       });
+    } else if (dualWriteContext.type === 'task_update') {
+      await updateTaskInD1(env.DB, {
+        taskId: dualWriteContext.taskId,
+        payload: dualWriteContext.payload,
+        timestampMs: dualWriteContext.timestampMs,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_task_update_success', {
+        event: 'dual_write_task_update_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        taskId: dualWriteContext.taskId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'task_complete') {
+      await completeTaskInD1(env.DB, {
+        taskId: dualWriteContext.taskId,
+        timestampMs: dualWriteContext.timestampMs,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_task_complete_success', {
+        event: 'dual_write_task_complete_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        taskId: dualWriteContext.taskId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'memo_read_toggle') {
+      await toggleMemoReadInD1(env.DB, {
+        messageId: dualWriteContext.messageId,
+        shouldRead: dualWriteContext.shouldRead,
+        timestampMs: dualWriteContext.timestampMs,
+        email: userEmail,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_memo_read_success', {
+        event: 'dual_write_memo_read_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        messageId: dualWriteContext.messageId,
+        shouldRead: dualWriteContext.shouldRead,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'task_delete') {
+      await deleteTaskFromD1(env.DB, {
+        taskId: dualWriteContext.taskId,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_task_delete_success', {
+        event: 'dual_write_task_delete_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        taskId: dualWriteContext.taskId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'message_delete') {
+      await deleteMessageFromD1(env.DB, {
+        messageId: dualWriteContext.messageId,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_message_delete_success', {
+        event: 'dual_write_message_delete_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        messageId: dualWriteContext.messageId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'memo_mark_read') {
+      await ensureMemoReadInD1(env.DB, {
+        messageId: dualWriteContext.messageId,
+        timestampMs: dualWriteContext.timestampMs,
+        email: userEmail,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_memo_mark_read_success', {
+        event: 'dual_write_memo_mark_read_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        messageId: dualWriteContext.messageId,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'memo_mark_read_bulk') {
+      await bulkEnsureMemoReadInD1(env.DB, {
+        messageIds: Array.isArray(dualWriteContext.messageIds) ? dualWriteContext.messageIds : [],
+        timestampMs: dualWriteContext.timestampMs,
+        email: userEmail,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_memo_mark_read_bulk_success', {
+        event: 'dual_write_memo_mark_read_bulk_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        targetCount: Array.isArray(dualWriteContext.messageIds)
+          ? dualWriteContext.messageIds.length
+          : 0,
+        cfRay: clientMeta?.cfRay || '',
+      });
+    } else if (dualWriteContext.type === 'user_settings') {
+      const finalTheme =
+        dualWriteContext.payload?.theme ||
+        (responseJson && typeof responseJson.theme === 'string' ? responseJson.theme : undefined);
+      const finalName =
+        dualWriteContext.payload?.name ||
+        (responseJson && typeof responseJson.name === 'string' ? responseJson.name : undefined);
+      const finalImageUrl =
+        (responseJson && typeof responseJson.imageUrl === 'string'
+          ? responseJson.imageUrl
+          : undefined) ||
+        (dualWriteContext.payload?.imageUrl && !dualWriteContext.payload.hasImageData
+          ? dualWriteContext.payload.imageUrl
+          : undefined);
+      await updateUserSettingsInD1(env.DB, {
+        email: userEmail,
+        name: finalName,
+        theme: finalTheme,
+        imageUrl: finalImageUrl,
+        timestampMs: dualWriteContext.timestampMs,
+      });
+      captureDiagnostics(config, 'info', 'dual_write_user_settings_success', {
+        event: 'dual_write_user_settings_success',
+        route,
+        requestId,
+        email: userEmail || '',
+        theme: finalTheme || '',
+        cfRay: clientMeta?.cfRay || '',
+      });
     }
   } catch (err) {
     console.error('[ShiftFlow][DualWrite] Failed to replicate to D1', {
@@ -529,6 +1011,7 @@ async function performDualWriteIfNeeded(options) {
       entityType: dualWriteContext.type,
       messageId: dualWriteContext.messageId,
       taskId: dualWriteContext.taskId,
+      shouldRead: dualWriteContext.shouldRead,
       error: err && err.message ? err.message : String(err),
     });
     captureDiagnostics(config, 'error', 'dual_write_failure', {
@@ -539,6 +1022,7 @@ async function performDualWriteIfNeeded(options) {
       entityType: dualWriteContext.type,
       messageId: dualWriteContext.messageId,
       taskId: dualWriteContext.taskId,
+      shouldRead: dualWriteContext.shouldRead,
       detail: err && err.message ? err.message : String(err),
       cfRay: clientMeta?.cfRay || '',
     });
@@ -723,6 +1207,252 @@ async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs) {
       .bind(taskId, normalized, membership?.membership_id || null, assignedAtMs)
       .run();
   }
+}
+
+async function updateTaskInD1(db, context) {
+  if (!context?.taskId) return;
+  const existing = await db
+    .prepare(
+      `
+      SELECT task_id,
+             title,
+             description,
+             status,
+             priority,
+             due_at_ms,
+             folder_id,
+             meta_json
+      FROM tasks
+      WHERE task_id = ?1
+    `
+    )
+    .bind(context.taskId)
+    .first();
+  if (!existing) {
+    logAuthInfo('Task not found in D1 during update', { taskId: context.taskId });
+    return;
+  }
+  const payload = context.payload || {};
+  const timestampMs = context.timestampMs || Date.now();
+
+  const nextTitle =
+    payload.title !== undefined ? String(payload.title || '') : existing.title || '';
+  const nextDescription =
+    payload.description !== undefined
+      ? payload.description === null
+        ? null
+        : String(payload.description)
+      : existing.description ?? null;
+  const nextStatus =
+    payload.status !== undefined ? mapTaskStatus(payload.status) : existing.status || 'open';
+  const nextPriority =
+    payload.priority !== undefined ? mapTaskPriority(payload.priority) : existing.priority || 'medium';
+  const nextFolderId =
+    payload.folderId !== undefined
+      ? normalizeIdValue(payload.folderId) || null
+      : existing.folder_id ?? null;
+
+  let nextDueAtMs =
+    existing.due_at_ms !== undefined && existing.due_at_ms !== null
+      ? Number(existing.due_at_ms)
+      : null;
+  if (payload.dueDate !== undefined) {
+    const parsedDue = parseTaskDueDate(payload.dueDate);
+    nextDueAtMs = parsedDue !== null ? parsedDue : null;
+  }
+
+  const mergedMetaJson = mergeMetaJson(existing.meta_json, buildTaskMetaJson(payload));
+
+  await db
+    .prepare(
+      `
+      UPDATE tasks
+         SET title = ?2,
+             description = ?3,
+             status = ?4,
+             priority = ?5,
+             updated_at_ms = ?6,
+             due_at_ms = ?7,
+             folder_id = ?8,
+             meta_json = ?9
+       WHERE task_id = ?1
+    `
+    )
+    .bind(
+      context.taskId,
+      nextTitle,
+      nextDescription,
+      nextStatus,
+      nextPriority,
+      timestampMs,
+      nextDueAtMs,
+      nextFolderId,
+      mergedMetaJson
+    )
+    .run();
+
+  const assigneeChanged =
+    Array.isArray(payload.assignees) ||
+    typeof payload.assignee === 'string' ||
+    typeof payload.assigneeEmail === 'string' ||
+    typeof payload.assigneeEmails === 'string';
+  if (assigneeChanged) {
+    const assigneeEmails = deriveTaskAssigneeEmails(payload, null);
+    await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, timestampMs);
+  }
+}
+
+async function completeTaskInD1(db, context) {
+  if (!context?.taskId) return;
+  const timestampMs = context.timestampMs || Date.now();
+  const completedStatus = mapTaskStatus('完了');
+  await db
+    .prepare(
+      `
+      UPDATE tasks
+         SET status = ?2,
+             updated_at_ms = ?3
+       WHERE task_id = ?1
+    `
+    )
+    .bind(context.taskId, completedStatus, timestampMs)
+    .run();
+}
+
+async function toggleMemoReadInD1(db, context) {
+  if (!context?.messageId) return;
+  const email = normalizeEmailValue(context.email);
+  if (!email) {
+    logAuthInfo('Skipping memo read toggle because email is missing', {
+      messageId: context.messageId,
+    });
+    return;
+  }
+  const membership = await resolveMembershipForEmail(db, email);
+  if (!membership || !membership.membership_id) {
+    logAuthInfo('Membership not found for memo read toggle', {
+      messageId: context.messageId,
+      email,
+    });
+    return;
+  }
+  const membershipId = membership.membership_id;
+  if (context.shouldRead) {
+    await db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO message_reads (
+          message_read_id,
+          message_id,
+          membership_id,
+          read_at_ms
+        )
+        VALUES (?1, ?2, ?3, ?4)
+      `
+      )
+      .bind(
+        generateMessageId(),
+        context.messageId,
+        membershipId,
+        context.timestampMs || Date.now()
+      )
+      .run();
+  } else {
+    await db
+      .prepare(
+        `
+        DELETE FROM message_reads
+        WHERE message_id = ?1 AND membership_id = ?2
+      `
+      )
+      .bind(context.messageId, membershipId)
+      .run();
+  }
+}
+
+async function ensureMemoReadInD1(db, context) {
+  if (!context?.messageId) return;
+  await toggleMemoReadInD1(db, {
+    messageId: context.messageId,
+    shouldRead: true,
+    timestampMs: context.timestampMs,
+    email: context.email,
+  });
+}
+
+async function bulkEnsureMemoReadInD1(db, context) {
+  if (!context || !Array.isArray(context.messageIds) || !context.messageIds.length) return;
+  for (const memoId of context.messageIds) {
+    await toggleMemoReadInD1(db, {
+      messageId: memoId,
+      shouldRead: true,
+      timestampMs: context.timestampMs,
+      email: context.email,
+    });
+  }
+}
+
+async function deleteTaskFromD1(db, context) {
+  if (!context?.taskId) return;
+  const taskId = normalizeIdValue(context.taskId);
+  if (!taskId) return;
+  await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
+  await db.prepare('DELETE FROM task_attachments WHERE task_id = ?1').bind(taskId).run();
+  await db.prepare('DELETE FROM tasks WHERE task_id = ?1').bind(taskId).run();
+}
+
+async function deleteMessageFromD1(db, context) {
+  if (!context?.messageId) return;
+  const messageId = normalizeIdValue(context.messageId);
+  if (!messageId) return;
+  await db.prepare('DELETE FROM message_reads WHERE message_id = ?1').bind(messageId).run();
+  await db.prepare('DELETE FROM message_attachments WHERE message_id = ?1')
+    .bind(messageId)
+    .run();
+  await db.prepare('DELETE FROM messages WHERE message_id = ?1').bind(messageId).run();
+}
+
+async function updateUserSettingsInD1(db, context) {
+  if (!context) return;
+  const email = normalizeEmailValue(context.email);
+  if (!email) return;
+  const user = await db
+    .prepare(
+      `
+      SELECT user_id, theme, display_name, profile_image_url
+        FROM users
+       WHERE lower(email) = ?1
+    `
+    )
+    .bind(email)
+    .first();
+  if (!user) {
+    console.warn('[ShiftFlow][DualWrite] User not found in D1 when saving settings', { email });
+    return;
+  }
+  const updates = [];
+  const values = [];
+  let bindIndex = 2;
+  if (context.theme) {
+    updates.push(`theme = ?${bindIndex++}`);
+    values.push(context.theme);
+  }
+  if (context.name) {
+    updates.push(`display_name = ?${bindIndex++}`);
+    values.push(context.name);
+  }
+  if (context.imageUrl) {
+    updates.push(`profile_image_url = ?${bindIndex++}`);
+    values.push(context.imageUrl);
+  }
+  const timestamp = context.timestampMs || Date.now();
+  updates.push(`updated_at_ms = ?${bindIndex++}`);
+  values.push(timestamp);
+  if (!updates.length) return;
+  await db
+    .prepare(`UPDATE users SET ${updates.join(', ')} WHERE lower(email) = ?1`)
+    .bind(email, ...values)
+    .run();
 }
 
 async function resolveMembershipForEmail(db, email) {
@@ -1521,45 +2251,70 @@ export async function onRequest(context) {
   if (tokenDetails.iat) init.headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
   if (tokenDetails.exp) init.headers['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
 
+  let parsedJsonBody = null;
+  let rawBodyToForward = null;
+
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const contentType = request.headers.get('content-type');
     const originalContentType = contentType || '';
     if (originalContentType) {
-     init.headers['Content-Type'] = originalContentType;
+      init.headers['Content-Type'] = originalContentType;
     }
-    let rawBody = await request.text();
-    if (rawBody && originalContentType.includes('application/json')) {
+    rawBodyToForward = await request.text();
+    if (rawBodyToForward && originalContentType.includes('application/json')) {
       try {
-        const parsedBody = JSON.parse(rawBody) || {};
+        parsedJsonBody = JSON.parse(rawBodyToForward) || {};
         if (authorizationHeader) {
-          if (parsedBody && typeof parsedBody === 'object') {
-            if (!parsedBody.authorization) {
-              parsedBody.authorization = authorizationHeader;
+          if (parsedJsonBody && typeof parsedJsonBody === 'object') {
+            if (!parsedJsonBody.authorization) {
+              parsedJsonBody.authorization = authorizationHeader;
             }
-            if (!parsedBody.headers || typeof parsedBody.headers !== 'object') {
-              parsedBody.headers = {};
+            if (!parsedJsonBody.headers || typeof parsedJsonBody.headers !== 'object') {
+              parsedJsonBody.headers = {};
             }
-            if (!parsedBody.headers.Authorization) {
-              parsedBody.headers.Authorization = authorizationHeader;
+            if (!parsedJsonBody.headers.Authorization) {
+              parsedJsonBody.headers.Authorization = authorizationHeader;
             }
           }
         }
-        const interception = interceptRequestBodyForRoute(route, parsedBody, {
+        const interception = interceptRequestBodyForRoute(route, parsedJsonBody, {
           flags,
           tokenDetails,
           accessContext,
         });
-        const bodyToForward = interception ? interception.body : parsedBody;
+        const bodyToForward = interception ? interception.body : parsedJsonBody;
         if (interception && interception.dualWriteContext) {
           dualWriteContext = interception.dualWriteContext;
         }
-        rawBody = JSON.stringify(bodyToForward);
+        parsedJsonBody = bodyToForward || {};
+        rawBodyToForward = JSON.stringify(bodyToForward);
         init.headers['Content-Type'] = 'application/json';
       } catch (_err) {
         // Leave body as-is if JSON parsing fails.
+        parsedJsonBody = null;
       }
     }
-    init.body = rawBody;
+    init.body = rawBodyToForward;
+  }
+
+  if ((flags.d1Primary || flags.d1Read) && env && env.DB) {
+    const d1Response = await maybeHandleRouteWithD1({
+      route,
+      flags,
+      db: env.DB,
+      requestId,
+      allowedOrigin: allowedOrigin || config.allowedOrigins[0] || '*',
+      config,
+      tokenDetails,
+      accessContext,
+      requestMethod: request.method,
+      parsedBody: parsedJsonBody,
+      query: originalUrl.searchParams,
+      clientMeta,
+    });
+    if (d1Response) {
+      return d1Response;
+    }
   }
 
   let upstreamResponse;
