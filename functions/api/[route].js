@@ -13,14 +13,38 @@ const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.
 const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
+const ACTIVE_ACCESS_CACHE_TTL_MS = 3 * 60 * 1000;
 const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
 const CORS_EXPOSE_HEADERS = 'X-ShiftFlow-Request-Id,X-ShiftFlow-Cache';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
+const SENSITIVE_META_KEYWORDS = ['secret', 'authorization', 'authheader', 'token'];
+
+function sanitizeLogMeta(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return meta;
+  }
+  if (Array.isArray(meta)) {
+    return meta.map((item) => sanitizeLogMeta(item));
+  }
+  const sanitized = {};
+  Object.entries(meta).forEach(([key, value]) => {
+    if (!key) return;
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_META_KEYWORDS.some((keyword) => lowerKey.includes(keyword))) {
+      sanitized[key] = '[masked]';
+    } else if (value && typeof value === 'object') {
+      sanitized[key] = sanitizeLogMeta(value);
+    } else {
+      sanitized[key] = value;
+    }
+  });
+  return sanitized;
+}
 
 function logAuthInfo(message, meta) {
   if (meta) {
-    console.info('[ShiftFlow][Auth]', message, meta);
+    console.info('[ShiftFlow][Auth]', message, sanitizeLogMeta(meta));
   } else {
     console.info('[ShiftFlow][Auth]', message);
   }
@@ -28,7 +52,7 @@ function logAuthInfo(message, meta) {
 
 function logAuthError(message, meta) {
   if (meta) {
-    console.error('[ShiftFlow][Auth]', message, meta);
+    console.error('[ShiftFlow][Auth]', message, sanitizeLogMeta(meta));
   } else {
     console.error('[ShiftFlow][Auth]', message);
   }
@@ -56,11 +80,65 @@ function corsHeaders(origin) {
   };
 }
 
-function jsonResponse(status, payload, origin, extraHeaders) {
+function jsonResponse(status, payload, origin, requestIdOrHeaders, maybeHeaders) {
+  let requestId = '';
+  let extraHeaders = undefined;
+  if (typeof requestIdOrHeaders === 'string') {
+    requestId = requestIdOrHeaders;
+    extraHeaders = maybeHeaders;
+  } else if (
+    requestIdOrHeaders &&
+    typeof requestIdOrHeaders === 'object' &&
+    !(requestIdOrHeaders instanceof Headers)
+  ) {
+    extraHeaders = requestIdOrHeaders;
+  }
   const headers = new Headers({
     'Content-Type': 'application/json',
     ...corsHeaders(origin),
   });
+  if (requestId) {
+    headers.set('X-ShiftFlow-Request-Id', requestId);
+  }
+  let bodyPayload = payload;
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    bodyPayload = { ...payload };
+    const isErrorPayload =
+      bodyPayload.ok === false ||
+      (typeof bodyPayload.ok === 'undefined' &&
+        (typeof bodyPayload.error === 'string' || typeof bodyPayload.reason === 'string'));
+    if (isErrorPayload) {
+      const derivedReason =
+        typeof bodyPayload.reason === 'string' && bodyPayload.reason
+          ? bodyPayload.reason
+          : typeof bodyPayload.error === 'string' && bodyPayload.error
+          ? bodyPayload.error
+          : `Request failed (${status})`;
+      bodyPayload.ok = false;
+      bodyPayload.reason = derivedReason;
+      bodyPayload.where =
+        typeof bodyPayload.where === 'string' && bodyPayload.where
+          ? bodyPayload.where
+          : 'cf-api';
+      bodyPayload.code =
+        typeof bodyPayload.code === 'string' && bodyPayload.code
+          ? bodyPayload.code
+          : typeof bodyPayload.errorCode === 'string' && bodyPayload.errorCode
+          ? bodyPayload.errorCode
+          : 'error';
+      bodyPayload.requestId = requestId;
+    } else if (requestId && typeof bodyPayload.requestId !== 'string') {
+      bodyPayload.requestId = requestId;
+    }
+  } else if (requestId) {
+    bodyPayload = {
+      ok: false,
+      where: 'cf-api',
+      code: 'invalid_payload',
+      reason: 'Invalid payload',
+      requestId,
+    };
+  }
   if (extraHeaders && typeof extraHeaders === 'object') {
     Object.entries(extraHeaders).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -68,10 +146,22 @@ function jsonResponse(status, payload, origin, extraHeaders) {
       }
     });
   }
-  return new Response(JSON.stringify(payload), {
+  return new Response(JSON.stringify(bodyPayload), {
     status,
     headers,
   });
+}
+
+function errorResponse(status, origin, requestId, where, code, reason, extraPayload, extraHeaders) {
+  const payload = {
+    ok: false,
+    where,
+    code,
+    reason,
+    requestId,
+    ...(extraPayload || {}),
+  };
+  return jsonResponse(status, payload, origin, requestId, extraHeaders);
 }
 
 function createRequestId() {
@@ -277,6 +367,184 @@ function normalizeRoleValue(role) {
   if (value === 'manager' || value === 'admin') return value;
   if (value === 'member' || value === 'guest') return value;
   return value;
+}
+
+function normalizeUserStatusValue(status) {
+  const value = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (!value) return 'pending';
+  if (value === 'active' || value === 'pending' || value === 'suspended') return value;
+  if (value === 'revoked') return 'revoked';
+  if (value === 'disabled' || value === 'inactive') return 'suspended';
+  return 'pending';
+}
+
+function deriveStatusReason(status) {
+  switch ((status || '').toLowerCase()) {
+    case 'pending':
+      return '承認待ちです。管理者の承認をお待ちください。';
+    case 'suspended':
+      return '利用が停止されています。管理者にお問い合わせください。';
+    case 'revoked':
+      return 'アクセス権が取り消されています。';
+    default:
+      return 'アクセスが制限されています。';
+  }
+}
+
+function resolveAccessCacheKey(tokenDetails) {
+  if (!tokenDetails) return '';
+  if (tokenDetails.sub) return tokenDetails.sub;
+  if (tokenDetails.email) return normalizeEmailValue(tokenDetails.email);
+  return '';
+}
+
+function readAccessCache(cacheKey) {
+  if (!cacheKey) return null;
+  const entry = ACCESS_CACHE.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    ACCESS_CACHE.delete(cacheKey);
+    return null;
+  }
+  const context = { ...entry.context };
+  context.cached = true;
+  return context;
+}
+
+function writeAccessCache(cacheKey, context, ttlMs, tokenDetails) {
+  if (!cacheKey || !context) return;
+  const baseTtl = typeof ttlMs === 'number' && ttlMs > 0 ? ttlMs : ACTIVE_ACCESS_CACHE_TTL_MS;
+  const now = Date.now();
+  let expiresAt = now + baseTtl;
+  const tokenExpiryMs =
+    tokenDetails && typeof tokenDetails.expMs === 'number' ? Number(tokenDetails.expMs) : 0;
+  if (tokenExpiryMs > 0) {
+    expiresAt = Math.min(expiresAt, tokenExpiryMs - 5000);
+  }
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+    return;
+  }
+  const contextCopy = { ...context };
+  delete contextCopy.cached;
+  ACCESS_CACHE.set(cacheKey, {
+    context: contextCopy,
+    expiresAt,
+  });
+}
+
+async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
+  if (!db || !tokenDetails) return null;
+  const email = normalizeEmailValue(tokenDetails.email);
+  if (!email) return null;
+  let row;
+  try {
+    row = await db
+      .prepare(
+        `
+        SELECT
+          users.user_id,
+          users.email,
+          users.display_name,
+          users.status AS user_status,
+          users.auth_subject,
+          users.is_active,
+          memberships.membership_id,
+          memberships.role,
+          memberships.status AS membership_status,
+          memberships.org_id
+        FROM users
+        LEFT JOIN memberships
+          ON memberships.user_id = users.user_id
+        WHERE lower(users.email) = ?1
+        ORDER BY
+          CASE
+            WHEN memberships.status IS NULL THEN 0
+            WHEN LOWER(memberships.status) = 'active' THEN 0
+            ELSE 1
+          END,
+          CASE
+            WHEN memberships.created_at_ms IS NULL THEN 9223372036854775807
+            ELSE memberships.created_at_ms
+          END ASC
+        LIMIT 1
+      `
+      )
+      .bind(email)
+      .first();
+  } catch (err) {
+    console.warn('[ShiftFlow][Auth] Failed to query D1 for access context', {
+      requestId,
+      email,
+      message: err && err.message ? err.message : String(err),
+    });
+    return null;
+  }
+  if (!row) {
+    return null;
+  }
+  const storedSubject = typeof row.auth_subject === 'string' ? row.auth_subject.trim() : '';
+  if (storedSubject && tokenDetails.sub && storedSubject !== tokenDetails.sub) {
+    logAuthInfo('D1 auth subject mismatch; falling back to GAS', {
+      requestId,
+      email: row.email || email,
+    });
+    return null;
+  }
+  const userStatusRaw =
+    row.user_status != null && row.user_status !== ''
+      ? row.user_status
+      : row.is_active === 0
+      ? 'suspended'
+      : 'active';
+  const membershipStatusRaw =
+    row.membership_status != null && row.membership_status !== ''
+      ? row.membership_status
+      : row.membership_id
+      ? 'active'
+      : '';
+  const userStatus = normalizeUserStatusValue(userStatusRaw);
+  const membershipStatus = normalizeUserStatusValue(membershipStatusRaw);
+  let status = userStatus || 'pending';
+  if (status === 'active') {
+    status = membershipStatus || 'active';
+  }
+  if (!status) status = 'pending';
+  const allowed = status === 'active';
+  const role = normalizeRoleValue(row.role || 'member') || 'member';
+  const context = {
+    allowed,
+    status,
+    role,
+    email: row.email || tokenDetails.email || '',
+    displayName: row.display_name || '',
+    reason: allowed ? '' : deriveStatusReason(status),
+    userId: row.user_id || '',
+    authSubject: storedSubject,
+    source: 'd1',
+  };
+  logAuthInfo('Resolved access context via D1', {
+    requestId,
+    email: context.email,
+    role: context.role,
+    status: context.status,
+  });
+  return context;
+}
+
+function jsonResponseFromD1(status, payload, origin, requestId, extraHeaders) {
+  return jsonResponse(status, payload, origin, requestId, {
+    'X-ShiftFlow-Cache': 'BYPASS',
+    'X-ShiftFlow-Backend': 'D1',
+    ...(extraHeaders || {}),
+  });
+}
+
+function getPrimarySharedSecret(config) {
+  if (!config) return '';
+  if (Array.isArray(config.sharedSecrets) && config.sharedSecrets.length) {
+    return config.sharedSecrets[0];
+  }
+  return config.sharedSecret || '';
 }
 
 function isManagerRole(role) {
@@ -1174,16 +1442,7 @@ async function maybeHandleRouteWithD1(options) {
         orgId: orgId || '',
         count: mapped.length,
       });
-      return jsonResponse(
-        200,
-        { ok: true, result: mapped },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: mapped }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'getUserSettings') {
       const email = normalizeEmailValue(
@@ -1205,7 +1464,7 @@ async function maybeHandleRouteWithD1(options) {
         .bind(email)
         .first();
       if (!user) {
-        return jsonResponse(
+        return jsonResponseFromD1(
           200,
           {
             ok: true,
@@ -1219,11 +1478,7 @@ async function maybeHandleRouteWithD1(options) {
             },
           },
           allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
+          requestId
         );
       }
       const membership = await db
@@ -1253,16 +1508,7 @@ async function maybeHandleRouteWithD1(options) {
         requestId,
         email: result.email,
       });
-      return jsonResponse(
-        200,
-        { ok: true, result },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'listMyTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
@@ -1287,16 +1533,7 @@ async function maybeHandleRouteWithD1(options) {
               'ログインユーザーのメールアドレスが取得できません。Webアプリの公開設定と組織ポリシーを確認してください。',
           },
         };
-        return jsonResponse(
-          200,
-          { ok: true, result: emptyPayload },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: emptyPayload }, allowedOrigin, requestId);
       }
       const assignedResult = await db
         .prepare(
@@ -1330,16 +1567,7 @@ async function maybeHandleRouteWithD1(options) {
           note: '',
         },
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: responsePayload },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'listCreatedTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
@@ -1364,15 +1592,11 @@ async function maybeHandleRouteWithD1(options) {
           ? totalRow['COUNT(*)']
           : 0;
       if (!normalizedEmail) {
-        return jsonResponse(
+        return jsonResponseFromD1(
           200,
           { ok: true, result: { tasks: [], meta: { statuses: [] } } },
           allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
+          requestId
         );
       }
       const createdResult = await db
@@ -1433,16 +1657,7 @@ async function maybeHandleRouteWithD1(options) {
           filteredCount: filtered.length,
         },
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: responsePayload },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'listAllTasks') {
       if (!isManagerRole(accessContext?.role)) {
@@ -1457,16 +1672,7 @@ async function maybeHandleRouteWithD1(options) {
             isManager: false,
           },
         };
-        return jsonResponse(
-          200,
-          { ok: true, result: responsePayload },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
       }
       const filterArg =
         options.parsedBody &&
@@ -1507,16 +1713,7 @@ async function maybeHandleRouteWithD1(options) {
           isManager: true,
         },
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: responsePayload },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'getTaskById') {
       const args =
@@ -1528,16 +1725,7 @@ async function maybeHandleRouteWithD1(options) {
       const rawTaskId = args.length ? args[0] : options.query?.get('taskId') || '';
       const taskId = normalizeIdValue(rawTaskId);
       if (!taskId) {
-        return jsonResponse(
-          200,
-          { ok: true, result: null },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
       }
       const row = await db
         .prepare(
@@ -1550,16 +1738,7 @@ async function maybeHandleRouteWithD1(options) {
         .bind(taskId)
         .first();
       if (!row) {
-        return jsonResponse(
-          200,
-          { ok: true, result: null },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
       }
       const assigneeMap = await fetchAssigneesForTasks(db, [taskId]);
       const summary = buildTaskRecordFromD1(row, assigneeMap.get(taskId) || []);
@@ -1582,16 +1761,7 @@ async function maybeHandleRouteWithD1(options) {
         repeatRule: summary?.repeatRule || '',
         updatedAt: summary?.updatedAt ? formatJst(summary.updatedAt, true) : '',
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: detail },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: detail }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'getMessages') {
       const args =
@@ -1611,16 +1781,7 @@ async function maybeHandleRouteWithD1(options) {
         membershipId,
       });
       const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
-      return jsonResponse(
-        200,
-        { ok: true, result: payload },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: payload }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'getMessageById') {
       const args =
@@ -1632,16 +1793,7 @@ async function maybeHandleRouteWithD1(options) {
       const rawMessageId = args.length ? args[0] : options.query?.get('memoId') || '';
       const messageId = normalizeIdValue(rawMessageId);
       if (!messageId) {
-        return jsonResponse(
-          200,
-          { ok: true, result: null },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
       }
       const messageRow = await db
         .prepare(
@@ -1659,16 +1811,7 @@ async function maybeHandleRouteWithD1(options) {
         .bind(messageId)
         .first();
       if (!messageRow) {
-        return jsonResponse(
-          200,
-          { ok: true, result: null },
-          allowedOrigin,
-          {
-            'X-ShiftFlow-Request-Id': requestId,
-            'X-ShiftFlow-Cache': 'BYPASS',
-            'X-ShiftFlow-Backend': 'D1',
-          }
-        );
+        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
       }
       const attachments = await fetchMessageAttachments(db, messageId);
       const readResult = await db
@@ -1724,16 +1867,7 @@ async function maybeHandleRouteWithD1(options) {
         canDelete,
         attachments,
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: detail },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: detail }, allowedOrigin, requestId);
     }
     if (normalizedRoute === 'getHomeContent') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
@@ -1787,16 +1921,7 @@ async function maybeHandleRouteWithD1(options) {
         tasks: todays,
         messages,
       };
-      return jsonResponse(
-        200,
-        { ok: true, result: payload },
-        allowedOrigin,
-        {
-          'X-ShiftFlow-Request-Id': requestId,
-          'X-ShiftFlow-Cache': 'BYPASS',
-          'X-ShiftFlow-Backend': 'D1',
-        }
-      );
+      return jsonResponseFromD1(200, { ok: true, result: payload }, allowedOrigin, requestId);
     }
   } catch (err) {
     console.error('[ShiftFlow][D1] Route handling failed', {
@@ -2653,8 +2778,9 @@ async function sendDiagnostics(config, payload) {
   const headers = new Headers({
     'Content-Type': 'application/json',
   });
-  if (config.sharedSecret) {
-    headers.set('X-ShiftFlow-Secret', config.sharedSecret);
+  const primarySharedSecret = getPrimarySharedSecret(config);
+  if (primarySharedSecret) {
+    headers.set('X-ShiftFlow-Secret', primarySharedSecret);
   }
   if (payload.requestId) {
     headers.set('X-ShiftFlow-Request-Id', payload.requestId);
@@ -2753,12 +2879,26 @@ async function fetchTokenInfo(idToken, config) {
   };
 }
 
-async function resolveAccessContext(config, tokenDetails, requestId, clientMeta) {
-  const cacheKey = tokenDetails.sub ? tokenDetails.sub : null;
-  const cached = cacheKey ? ACCESS_CACHE.get(cacheKey) : null;
-  const now = Date.now();
-  if (cached && cached.expiresAt > now) {
-    return cached.context;
+async function resolveAccessContext(config, tokenDetails, requestId, clientMeta, options = {}) {
+  const cacheKey = resolveAccessCacheKey(tokenDetails);
+  const cached = readAccessCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const flags = config.flags || {};
+  const db = options && options.db ? options.db : null;
+  const allowD1 = !!(db && (flags.d1Primary || flags.d1Read));
+  if (allowD1) {
+    const d1Context = await resolveAccessContextFromD1(db, tokenDetails, requestId);
+    if (d1Context) {
+      if (d1Context.allowed && d1Context.status === 'active') {
+        writeAccessCache(cacheKey, d1Context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
+      } else if (cacheKey) {
+        ACCESS_CACHE.delete(cacheKey);
+      }
+      return d1Context;
+    }
   }
 
   const url = new URL(config.gasUrl);
@@ -2773,7 +2913,8 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
   if (authorizationHeader) {
     headers.Authorization = authorizationHeader;
   }
-  if (config.sharedSecret) headers['X-ShiftFlow-Secret'] = config.sharedSecret;
+  const primarySharedSecret = getPrimarySharedSecret(config);
+  if (primarySharedSecret) headers['X-ShiftFlow-Secret'] = primarySharedSecret;
   if (tokenDetails.name) headers['X-ShiftFlow-Name'] = tokenDetails.name;
   if (tokenDetails.hd) headers['X-ShiftFlow-Domain'] = tokenDetails.hd;
   if (tokenDetails.iat) headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
@@ -2871,24 +3012,27 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta)
     throw new Error(reason);
   }
   const result = payload.result || {};
+  const normalizedStatus = normalizeUserStatusValue(
+    result.status || (result.allowed ? 'active' : 'pending')
+  );
+  const allowed = !!result.allowed && normalizedStatus === 'active';
+  const role = normalizeRoleValue(result.role || '') || 'guest';
+  const reason = allowed ? '' : result.reason || deriveStatusReason(normalizedStatus);
   const context = {
-    allowed: !!result.allowed,
-    role: String(result.role || '').trim() || 'guest',
-    status: String(result.status || '').trim() || 'unknown',
+    allowed,
+    status: normalizedStatus || 'unknown',
+    role,
     email: result.email || tokenDetails.email,
     displayName: result.displayName || '',
-    reason: result.reason || '',
+    reason,
+    userId: result.userId || '',
+    authSubject: result.authSubject || '',
+    source: 'gas',
   };
-  const ttlMs = context.allowed ? 5 * 60 * 1000 : 60 * 1000;
-  if (cacheKey) {
-    const expiresAt = Math.min(
-      tokenDetails.expMs ? tokenDetails.expMs - 5_000 : now + ttlMs,
-      now + ttlMs
-    );
-    ACCESS_CACHE.set(cacheKey, {
-      context,
-      expiresAt,
-    });
+  if (allowed) {
+    writeAccessCache(cacheKey, context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
+  } else if (cacheKey) {
+    ACCESS_CACHE.delete(cacheKey);
   }
   return context;
 }
@@ -2938,11 +3082,13 @@ export async function onRequest(context) {
         phase: 'preflight',
         route,
       });
-      return jsonResponse(
+      return errorResponse(
         403,
-        { ok: false, error: 'Origin is not allowed.' },
         config.allowedOrigins[0] || '*',
-        { 'X-ShiftFlow-Request-Id': requestId }
+        requestId,
+        'cf-api',
+        'origin_not_allowed',
+        'Origin is not allowed.'
       );
     }
     return new Response(null, {
@@ -2965,27 +3111,33 @@ export async function onRequest(context) {
       origin: originHeader,
       route,
     });
-    return jsonResponse(
+    return errorResponse(
       403,
-      { ok: false, error: 'Origin is not allowed.' },
       config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      requestId,
+      'cf-api',
+      'origin_not_allowed',
+      'Origin is not allowed.'
     );
   }
   if (!route) {
-    return jsonResponse(
+    return errorResponse(
       400,
-      { ok: false, error: 'Route parameter is required.' },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      requestId,
+      'cf-api',
+      'route_required',
+      'Route parameter is required.'
     );
   }
   if (route === 'resolveAccessContext') {
-    return jsonResponse(
+    return errorResponse(
       403,
-      { ok: false, error: 'Route is reserved.' },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      requestId,
+      'cf-api',
+      'reserved_route',
+      'Route is reserved.'
     );
   }
 
@@ -3011,11 +3163,13 @@ export async function onRequest(context) {
     origin: originHeader || '',
   });
   const cookieHeader = request.headers.get('cookie') || '';
-  const mergeHeaders = (headers) => {
+  const mergeHeaders = (headers = {}) => {
+    const base =
+      headers && typeof headers === 'object' ? { ...headers } : {};
     if (sessionCookieHeader) {
-      return { ...headers, 'Set-Cookie': sessionCookieHeader };
+      base['Set-Cookie'] = sessionCookieHeader;
     }
-    return headers;
+    return Object.keys(base).length ? base : undefined;
   };
   if (!token) {
     try {
@@ -3077,11 +3231,15 @@ export async function onRequest(context) {
   }
   if (!token) {
     logAuthError('Missing Authorization bearer token', { requestId, route });
-    return jsonResponse(
+    return errorResponse(
       401,
-      { ok: false, error: 'Unauthorized', detail: 'Missing Authorization bearer token.' },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+      requestId,
+      'cf-api',
+      'missing_bearer_token',
+      'Missing Authorization bearer token.',
+      null,
+      mergeHeaders()
     );
   }
 
@@ -3104,15 +3262,15 @@ export async function onRequest(context) {
         userAgent: clientMeta.userAgent,
         cfRay: clientMeta.cfRay,
       });
-      return jsonResponse(
+      return errorResponse(
         401,
-        {
-          ok: false,
-          error: 'Unauthorized',
-          detail: err && err.message ? err.message : String(err || 'Token verification failed'),
-        },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+        requestId,
+        'cf-api',
+        'token_verification_failed',
+        err && err.message ? err.message : String(err || 'Token verification failed'),
+        null,
+        mergeHeaders()
       );
     }
     if (!tokenDetails.emailVerified) {
@@ -3130,11 +3288,15 @@ export async function onRequest(context) {
         userAgent: clientMeta.userAgent,
         cfRay: clientMeta.cfRay,
       });
-      return jsonResponse(
+      return errorResponse(
         403,
-        { ok: false, error: 'Google アカウントのメールアドレスが未確認です。' },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+        requestId,
+        'cf-api',
+        'email_not_verified',
+        'Google アカウントのメールアドレスが未確認です。',
+        null,
+        mergeHeaders()
       );
     }
   } else {
@@ -3143,7 +3305,9 @@ export async function onRequest(context) {
 
   let accessContext;
   try {
-    accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta);
+    accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta, {
+      db: env && env.DB ? env.DB : null,
+    });
   } catch (err) {
     logAuthError('resolveAccessContext failed', {
       requestId,
@@ -3177,15 +3341,15 @@ export async function onRequest(context) {
       cfRay: clientMeta.cfRay,
       redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
-    return jsonResponse(
+    return errorResponse(
       statusCode,
-      {
-        ok: false,
-        error: 'アクセス権を確認できませんでした。',
-        detail: detailMessage,
-      },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      { 'X-ShiftFlow-Request-Id': requestId }
+      requestId,
+      'cf-api',
+      'resolve_access_context_failed',
+      detailMessage,
+      {},
+      mergeHeaders()
     );
   }
   if (!accessContext.allowed || accessContext.status !== 'active') {
@@ -3206,16 +3370,15 @@ export async function onRequest(context) {
       clientIp: clientMeta.ip,
       cfRay: clientMeta.cfRay,
     });
-    return jsonResponse(
+    return errorResponse(
       403,
-      {
-        ok: false,
-        error: 'アクセスが許可されていません。',
-        reason: accessContext.reason || '承認待ち、または利用停止の可能性があります。',
-        status: accessContext.status,
-      },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+      requestId,
+      'cf-api',
+      'access_denied',
+      accessContext.reason || '承認待ち、または利用停止の可能性があります。',
+      { status: accessContext.status },
+      mergeHeaders()
     );
   }
 
@@ -3245,11 +3408,15 @@ export async function onRequest(context) {
         required: routePermissions,
         cfRay: clientMeta.cfRay,
       });
-      return jsonResponse(
+      return errorResponse(
         403,
-        { ok: false, error: '権限がありません。' },
         allowedOrigin || config.allowedOrigins[0] || '*',
-        mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+        requestId,
+        'cf-api',
+        'role_not_allowed',
+        '権限がありません。',
+        { requiredRoles: routePermissions, role: accessContext.role },
+        mergeHeaders()
       );
     }
   }
@@ -3289,7 +3456,8 @@ export async function onRequest(context) {
   if (authorizationHeader) {
     initHeaders.Authorization = authorizationHeader;
   }
-  if (config.sharedSecret) initHeaders['X-ShiftFlow-Secret'] = config.sharedSecret;
+  const upstreamSharedSecret = getPrimarySharedSecret(config);
+  if (upstreamSharedSecret) initHeaders['X-ShiftFlow-Secret'] = upstreamSharedSecret;
   if (tokenDetails.name) {
     initHeaders['X-ShiftFlow-Name'] = tokenDetails.name;
   }
@@ -3462,17 +3630,19 @@ export async function onRequest(context) {
         clientIp: clientMeta.ip,
         cfRay: clientMeta.cfRay,
       });
-    return jsonResponse(
-      401,
-      {
-        ok: false,
-        error: 'Google アカウントの認証が必要です。',
-        detail:
-          'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
-      },
-      allowedOrigin || config.allowedOrigins[0] || '*',
-      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
-    );
+      return errorResponse(
+        401,
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        requestId,
+        'cf-api',
+        'gas_redirected',
+        'Google アカウントの認証が必要です。',
+        {
+          detail:
+            'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
+        },
+        mergeHeaders()
+      );
     }
     logAuthError('Failed to reach GAS', {
       requestId,
@@ -3489,15 +3659,15 @@ export async function onRequest(context) {
       clientIp: clientMeta.ip,
       cfRay: clientMeta.cfRay,
     });
-    return jsonResponse(
+    return errorResponse(
       502,
-      {
-        ok: false,
-        error: 'GAS unreachable',
-        detail: err && err.message ? err.message : String(err || 'fetch failed'),
-      },
       allowedOrigin || config.allowedOrigins[0] || '*',
-      mergeHeaders({ 'X-ShiftFlow-Request-Id': requestId })
+      requestId,
+      'cf-api',
+      'gas_unreachable',
+      err && err.message ? err.message : String(err || 'fetch failed'),
+      null,
+      mergeHeaders()
     );
   }
 

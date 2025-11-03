@@ -171,37 +171,25 @@
       </div>
       <div class="auth-card__actions">
         <button id="btn-auth" class="btn btn-primary">Google 権限を確認</button>
-        <button id="btn-return" class="btn btn-secondary hidden">ShiftFlow を開く</button>
+        <a id="btn-return" class="btn btn-secondary" href="/">ShiftFlow を開く</a>
       </div>
       <p class="hint">
-        認証が完了すると自動で ShiftFlow に戻ります。完了しない場合は「ShiftFlow を開く」またはブラウザで対象タブに戻って更新してください。
+        右上のボタンから ShiftFlow を開き、ブラウザで Google アカウントの認証を完了してください。認証に成功しているかはこのページで確認できます。
       </p>
       <ol class="steps">
         <li>「Google 権限を確認」を押して社用 Google アカウントで許可します。</li>
         <li>承認ダイアログが表示されない場合は、ブラウザのポップアップを許可してください。</li>
+        <li>認証が完了したら「ShiftFlow を開く」ボタンからアプリに戻ります。</li>
       </ol>
     </div>
     <script>
       (function () {
         const statusEl = document.getElementById('status');
         const btnAuth = document.getElementById('btn-auth');
-        const btnReturn = document.getElementById('btn-return');
         const profileBox = document.getElementById('profile');
         const profileName = document.getElementById('profile-name');
         const profileEmail = document.getElementById('profile-email');
         const profileImg = document.getElementById('profile-img');
-
-        const params = new URLSearchParams(window.location.search || '');
-        let returnTo = params.get('return') || '';
-        try {
-          returnTo = returnTo ? decodeURIComponent(returnTo) : '';
-        } catch (_err) {
-          returnTo = '';
-        }
-        const hasReturn = !!returnTo;
-        if (hasReturn) {
-          btnReturn.classList.remove('hidden');
-        }
 
         function setStatus(message, variant) {
           statusEl.textContent = message;
@@ -218,14 +206,9 @@
           profileImg.src = (user && user.imageUrl) || 'https://placehold.jp/120x120.png';
           profileBox.classList.remove('hidden');
           setStatus(
-            email ? `${email} として認証されました。ShiftFlow に戻ります…` : '認証が完了しました。',
+            email ? `${email} として認証されました。ShiftFlow を開いて利用を再開できます。` : '認証が完了しました。',
             'success'
           );
-          if (hasReturn) {
-            setTimeout(function () {
-              window.location.href = returnTo;
-            }, 1200);
-          }
         }
 
         function handleAuthFailure(error) {
@@ -259,15 +242,6 @@
         btnAuth.addEventListener('click', function (event) {
           event.preventDefault();
           triggerAuthCheck();
-        });
-
-        btnReturn.addEventListener('click', function (event) {
-          event.preventDefault();
-          if (hasReturn) {
-            window.location.href = returnTo;
-          } else {
-            window.close();
-          }
         });
 
         triggerAuthCheck();

@@ -2,7 +2,9 @@ export function loadConfig(env) {
   const cfOrigin = (env?.CF_ORIGIN || '').trim();
   const gasUrl = (env?.GAS_EXEC_URL || env?.GAS_WEB_APP_URL || '').trim();
   const googleClientId = (env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '').trim();
-  const sharedSecret = (env?.SHIFT_FLOW_SHARED_SECRET || env?.GAS_SHARED_SECRET || '').trim();
+  const primarySecret = (env?.SHIFT_FLOW_SHARED_SECRET || env?.GAS_SHARED_SECRET || '').trim();
+  const nextSecret = (env?.SHIFT_FLOW_SHARED_SECRET_NEXT || '').trim();
+  const sharedSecrets = [primarySecret, nextSecret].filter((value, index, arr) => value && arr.indexOf(value) === index);
   const flags = readFeatureFlags(env);
 
   if (!cfOrigin) {
@@ -47,7 +49,8 @@ export function loadConfig(env) {
     allowedOrigins,
     gasUrl,
     googleClientId,
-    sharedSecret,
+    sharedSecret: sharedSecrets.length ? sharedSecrets[0] : '',
+    sharedSecrets,
     flagKvKey: (env?.CFG_FLAG_KV_KEY || 'shiftflow:flags').trim(),
     flags,
   };

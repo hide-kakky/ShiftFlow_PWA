@@ -88,6 +88,9 @@ const GOOGLE_OAUTH_CLIENT_ID =
 const SHARED_SECRET = (
   PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SHARED_SECRET') || ''
 ).trim();
+const SHARED_SECRET_NEXT = (
+  PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SHARED_SECRET_NEXT') || ''
+).trim();
 const SHARED_SECRET_OPTIONAL =
   (PropertiesService.getScriptProperties().getProperty('SHIFT_FLOW_SECRET_OPTIONAL') || '')
     .trim()
@@ -1098,13 +1101,27 @@ function _assertRequiredConfig() {
 
 function _verifySharedSecret(secretValue) {
   _assertRequiredConfig();
-  if (!SHARED_SECRET || SHARED_SECRET_OPTIONAL) {
-    if (SHARED_SECRET && SHARED_SECRET_OPTIONAL) {
+  const candidates = [SHARED_SECRET, SHARED_SECRET_NEXT]
+    .map(function (value) {
+      return String(value || '').trim();
+    })
+    .filter(function (value, index, arr) {
+      return value && arr.indexOf(value) === index;
+    });
+  if (!candidates.length || SHARED_SECRET_OPTIONAL) {
+    if (candidates.length && SHARED_SECRET_OPTIONAL) {
       Logger.log('[ShiftFlow][Auth] Shared secret check bypassed (SHIFT_FLOW_SECRET_OPTIONAL=true).');
     }
     return true;
   }
-  return String(secretValue || '').trim() === SHARED_SECRET;
+  const candidate = String(secretValue || '').trim();
+  if (!candidate) return false;
+  for (let i = 0; i < candidates.length; i++) {
+    if (candidate === candidates[i]) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function _verifyIdToken(idToken) {
@@ -1361,9 +1378,18 @@ function _authorizeRouteAccess(route, ctx) {
   return accessContext;
 }
 
-function _respondWithError(err, route) {
+function _respondWithError(err, route, requestId) {
   if (!err) {
-    return jsonResponse({ ok: false, error: 'Unknown error' }, 500);
+    return jsonResponse(
+      {
+        ok: false,
+        where: route ? 'gas:' + route : 'gas',
+        code: 'unknown_error',
+        reason: 'Unknown error',
+        requestId: requestId || '',
+      },
+      500
+    );
   }
   const status = err && err.httpStatus ? Number(err.httpStatus) || 500 : 500;
   Logger.log(
@@ -1373,13 +1399,18 @@ function _respondWithError(err, route) {
     err && err.message ? err.message : 'Unknown error',
     err && err.detail ? err.detail : ''
   );
+  const reason = err && err.detail ? err.detail : err && err.message ? err.message : 'Internal Server Error';
   const payload = {
     ok: false,
-    error: err && err.message ? err.message : 'Internal Server Error',
+    where: route ? 'gas:' + route : 'gas',
+    code:
+      (err && typeof err.code === 'string' && err.code) ||
+      (status === 403 ? 'forbidden' : status === 401 ? 'unauthorized' : 'error'),
+    reason: reason,
+    requestId: requestId || '',
   };
   if (err && err.detail) {
     payload.detail = err.detail;
-    payload.reason = err.detail;
   }
   if (route) payload.route = route;
   return jsonResponse(payload, status);
@@ -3059,8 +3090,11 @@ function doPost(e) {
       return jsonResponse(
         {
           ok: false,
-          error: 'Invalid JSON payload',
+          where: 'gas',
+          code: 'invalid_json',
+          reason: 'Invalid JSON payload',
           detail: String(err && err.message ? err.message : err),
+          requestId,
         },
         400
       );
@@ -3077,7 +3111,10 @@ function doPost(e) {
     return jsonResponse(
       {
         ok: false,
-        error: 'Missing route parameter',
+        where: 'gas',
+        code: 'route_missing',
+        reason: 'Missing route parameter',
+        requestId,
       },
       400
     );
@@ -3131,12 +3168,13 @@ function doPost(e) {
           result: {
             logId: logId || '',
           },
+          requestId,
         },
         200
       );
     } catch (err) {
       Logger.log(err);
-      return _respondWithError(err, route);
+      return _respondWithError(err, route, requestId);
     } finally {
       __CURRENT_REQUEST_EMAIL = '';
       __CURRENT_REQUEST_NAME = '';
@@ -3167,10 +3205,11 @@ function doPost(e) {
       return jsonResponse({
         ok: true,
         result: access,
+        requestId: ctx.requestId,
       });
     } catch (err) {
       Logger.log(err);
-      return _respondWithError(err, route);
+      return _respondWithError(err, route, ctx && ctx.requestId ? ctx.requestId : requestId);
     } finally {
       __CURRENT_REQUEST_EMAIL = '';
       __CURRENT_REQUEST_NAME = '';
@@ -3186,7 +3225,10 @@ function doPost(e) {
     return jsonResponse(
       {
         ok: false,
-        error: 'Unknown route: ' + route,
+        where: route ? 'gas:' + route : 'gas',
+        code: 'unknown_route',
+        reason: 'Unknown route: ' + route,
+        requestId,
       },
       404
     );
@@ -3197,7 +3239,7 @@ function doPost(e) {
     ctx = _buildRequestContext(e, route, body);
   } catch (err) {
     Logger.log(err);
-    return _respondWithError(err, route);
+    return _respondWithError(err, route, requestId);
   }
 
   const args = ctx.args;
@@ -3216,6 +3258,7 @@ function doPost(e) {
     return jsonResponse({
       ok: true,
       result: result === undefined ? null : result,
+      requestId: ctx.requestId,
     });
   } catch (err) {
     const action = err && err.httpStatus === 403 ? 'deny' : 'error';
@@ -3229,7 +3272,7 @@ function doPost(e) {
     if (access && access.status) meta.status = access.status;
     _audit('api', route, action, meta);
     Logger.log(err);
-    return _respondWithError(err, route);
+    return _respondWithError(err, route, ctx && ctx.requestId ? ctx.requestId : requestId);
   } finally {
     __CURRENT_REQUEST_EMAIL = '';
     __CURRENT_REQUEST_NAME = '';

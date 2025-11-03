@@ -3698,9 +3698,7 @@
         }
 
         function _rid() {
-          return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
-            (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
-          );
+          return createRequestId();
         }
 
         function invokeRemote(route, argsSnapshot, handlers) {
@@ -3713,7 +3711,7 @@
               headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
-                'X-Shiftflow-Request-Id': _rid(),
+                'X-ShiftFlow-Request-Id': _rid(),
               },
               credentials: 'include',
               body: JSON.stringify({ route: route, args: argsSnapshot }),
@@ -3754,15 +3752,18 @@
               const { success: successHandler, failure: failureHandler, userObject } = handlers;
 
               if (!res.ok) {
-                const msg = body?.error || `HTTP ${res.status} calling ${route}`;
+                const reason = typeof body?.reason === 'string' ? body.reason : '';
+                const msg = reason || `HTTP ${res.status} calling ${route}`;
                 const httpError = createError(msg, {
                   status: res.status,
                   statusText: res.statusText,
                   route,
-                  detail: body?.detail,
+                  code: body?.code,
+                  where: body?.where,
+                  requestId: body?.requestId,
                   response: body,
                 });
-                if (res.status === 403 && /Shared secret mismatch/i.test(body?.detail || '')) {
+                if (res.status === 403 && body?.code === 'shared_secret_mismatch') {
                   httpError.hint =
                     'Shared secret はブラウザではなく Functions→GAS 間で一致させてください。';
                 }
@@ -3771,9 +3772,12 @@
               }
 
               if (body.ok === false) {
-                const backendError = createError(body.error || 'Unknown backend error', {
+                const reason = typeof body.reason === 'string' ? body.reason : 'Unknown backend error';
+                const backendError = createError(reason, {
                   route,
-                  detail: body?.detail,
+                  code: body?.code,
+                  where: body?.where,
+                  requestId: body?.requestId,
                   response: body,
                 });
                 deliverFailure(failureHandler, backendError, userObject);
@@ -3899,6 +3903,12 @@
           return THEME_MEDIA && THEME_MEDIA.matches ? 'dark' : 'light';
         }
         return pref || 'light';
+      }
+      function createRequestId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          return crypto.randomUUID();
+        }
+        return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
       }
       function applyResolvedTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
@@ -4267,6 +4277,7 @@
 
       async function syncAuthSession(options) {
         const opts = options || {};
+        const requestId = createRequestId();
         let response;
         try {
           response = await fetch('/auth/session', {
@@ -4274,6 +4285,7 @@
             credentials: 'include',
             headers: {
               Accept: 'application/json',
+              'X-ShiftFlow-Request-Id': requestId,
             },
           });
         } catch (err) {
@@ -4299,7 +4311,24 @@
           setAuthToken('');
           updateAuthSessionUI(null);
           if (!opts.silent) {
-            showAuthOverlay(opts.message || (NEEDS_MANUAL_SIGNIN ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。' : 'ShiftFlow にサインインしてください。'));
+            var reason = data && typeof data.reason === 'string' ? data.reason : '';
+            var mappedMessage = (function () {
+              switch (reason) {
+                case 'idle_timeout':
+                  return 'しばらく操作がなかったためサインインが解除されました。もう一度サインインしてください。';
+                case 'absolute_timeout':
+                  return '一定時間が経過したため再度サインインが必要です。';
+                case 'no_session':
+                  return NEEDS_MANUAL_SIGNIN
+                    ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。'
+                    : 'ShiftFlow にサインインしてください。';
+                default:
+                  return NEEDS_MANUAL_SIGNIN
+                    ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。'
+                    : 'ShiftFlow にサインインしてください。';
+              }
+            })();
+            showAuthOverlay(opts.message || mappedMessage);
           }
         }
         return data;
@@ -4316,12 +4345,14 @@
         }
         let authUrl = '';
         try {
+          const requestId = createRequestId();
           const res = await fetch('/auth/start', {
             method: 'POST',
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
               Accept: 'application/json',
+              'X-ShiftFlow-Request-Id': requestId,
             },
             body: JSON.stringify({
               returnTo: opts.returnTo || window.location.href,
@@ -4331,7 +4362,13 @@
           if (res.ok && body && body.authUrl) {
             authUrl = body.authUrl;
           } else {
-            throw new Error(body && body.error ? body.error : 'AUTH_START_FAILED');
+            const errorMsg =
+              body && typeof body.reason === 'string' && body.reason
+                ? body.reason
+                : body && typeof body.error === 'string'
+                ? body.error
+                : 'AUTH_START_FAILED';
+            throw new Error(errorMsg);
           }
         } catch (err) {
           console.error('[ShiftFlow] Failed to start auth flow', err);
@@ -4359,11 +4396,13 @@
 
       async function performLogout() {
         try {
+          const requestId = createRequestId();
           await fetch('/auth/logout', {
             method: 'POST',
             credentials: 'include',
             headers: {
               Accept: 'application/json',
+              'X-ShiftFlow-Request-Id': requestId,
             },
           });
         } catch (err) {

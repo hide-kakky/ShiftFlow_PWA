@@ -1,6 +1,8 @@
 const SESSION_COOKIE_NAME = 'shiftflow_session';
 const SESSION_NAMESPACE = 'sf:sessions:';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+const SESSION_IDLE_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
+const SESSION_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_SECONDS = Math.ceil(SESSION_ABSOLUTE_TIMEOUT_MS / 1000);
 const INIT_NAMESPACE = 'sf:auth_init:';
 const INIT_TTL_SECONDS = 60 * 5; // 5 minutes
 
@@ -95,13 +97,15 @@ export async function createSession(env, session) {
   }
   const sessionId = session.id || crypto.randomUUID();
   const sessionKey = session.key || toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const now = Date.now();
   const record = {
     id: sessionId,
     hash: await sha256Base64(sessionKey),
     user: session.user || {},
     tokens: session.tokens || {},
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
+    lastAccessAt: now,
   };
   await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(record), {
     expirationTtl: SESSION_TTL_SECONDS,
@@ -122,10 +126,12 @@ export async function readSession(env, sessionId) {
 
 export async function touchSession(env, sessionId, record) {
   if (!env?.APP_KV || !sessionId || !record) return;
-  const updated = { ...record, updatedAt: Date.now() };
+  const now = Date.now();
+  const updated = { ...record, updatedAt: now, lastAccessAt: now };
   await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
     expirationTtl: SESSION_TTL_SECONDS,
   });
+  return updated;
 }
 
 export async function destroySession(env, sessionId) {
@@ -146,10 +152,12 @@ export async function verifySession(env, cookieHeader) {
 
 export async function updateSessionTokens(env, sessionId, record, tokens) {
   if (!env?.APP_KV || !sessionId || !record) return;
+  const now = Date.now();
   const updated = {
     ...record,
-    tokens: { ...(record.tokens || {}), ...tokens, updatedAt: Date.now() },
-    updatedAt: Date.now(),
+    tokens: { ...(record.tokens || {}), ...tokens, updatedAt: now },
+    updatedAt: now,
+    lastAccessAt: now,
   };
   await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
     expirationTtl: SESSION_TTL_SECONDS,
@@ -188,6 +196,29 @@ export function calculateIdTokenExpiry(idToken) {
   if (!payload || !payload.exp) return null;
   return payload.exp * 1000;
 }
+
+export function evaluateSessionTimeout(record, now = Date.now()) {
+  if (!record) {
+    return { expired: true, reason: 'invalid', idleDeadline: 0, absoluteDeadline: 0 };
+  }
+  const createdAt = Number(record.createdAt || 0) || 0;
+  const lastAccessAt =
+    Number(record.lastAccessAt || record.updatedAt || createdAt || 0) || createdAt || 0;
+  const idleDeadline = lastAccessAt + SESSION_IDLE_TIMEOUT_MS;
+  const absoluteDeadline = createdAt + SESSION_ABSOLUTE_TIMEOUT_MS;
+  if (absoluteDeadline <= now) {
+    return { expired: true, reason: 'absolute', idleDeadline, absoluteDeadline };
+  }
+  if (idleDeadline <= now) {
+    return { expired: true, reason: 'idle', idleDeadline, absoluteDeadline };
+  }
+  return { expired: false, reason: null, idleDeadline, absoluteDeadline };
+}
+
+export {
+  SESSION_IDLE_TIMEOUT_MS,
+  SESSION_ABSOLUTE_TIMEOUT_MS,
+};
 
 export async function refreshGoogleTokens(env, refreshToken) {
   const clientId = env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '';
