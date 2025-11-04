@@ -138,12 +138,23 @@ export async function onRequest({ request, env }) {
 
   if (!tokenRes.ok) {
     const detail = await tokenRes.text();
+    console.error('[ShiftFlow][Auth]', 'OAuth token exchange failed', {
+      where: 'auth-callback',
+      requestId,
+      status: tokenRes.status,
+      detail: detail ? detail.slice(0, 200) : '',
+    });
     return renderError(`Google 認証に失敗しました: ${detail}`, requestId);
   }
 
   const tokenPayload = await tokenRes.json();
   const idToken = tokenPayload.id_token;
   if (!idToken) {
+    console.error('[ShiftFlow][Auth]', 'Missing ID token in token response', {
+      where: 'auth-callback',
+      requestId,
+      tokenPayload: JSON.stringify(tokenPayload || {}).slice(0, 200),
+    });
     return renderError('Google から ID トークンを受信できませんでした。', requestId);
   }
 
