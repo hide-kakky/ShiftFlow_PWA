@@ -4341,10 +4341,20 @@
         const shouldPreOpenWindow = manualMode || opts.external;
         let authWindow = null;
         if (shouldPreOpenWindow) {
-          authWindow = window.open('about:blank', '_blank', 'noopener');
+          authWindow = window.open('about:blank', '_blank');
           if (!authWindow && manualMode) {
             showAuthOverlay('ブラウザで認証を開けませんでした。Safari で再度お試しください。');
             return;
+          }
+          if (authWindow) {
+            try {
+              authWindow.opener = null;
+              authWindow.document.write(
+                '<!doctype html><title>ShiftFlow 認証</title><p style="font-family:-apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:24px;">Google 認証画面を開いています…</p>'
+              );
+            } catch (_err) {
+              // ignore
+            }
           }
         }
         let authUrl = '';
@@ -4376,9 +4386,7 @@
           }
         } catch (err) {
           console.error('[ShiftFlow] Failed to start auth flow', err);
-          if (authWindow && !authWindow.closed) {
-            authWindow.close();
-          }
+          if (authWindow && !authWindow.closed) authWindow.close();
           if (manualMode) {
             const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
             if (fallbackTarget) {
@@ -4391,9 +4399,7 @@
           return;
         }
         if (!authUrl) {
-          if (authWindow && !authWindow.closed) {
-            authWindow.close();
-          }
+          if (authWindow && !authWindow.closed) authWindow.close();
           if (manualMode) {
             const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
             if (fallbackTarget) {
@@ -4407,10 +4413,19 @@
         }
         if (authWindow && !authWindow.closed) {
           showAuthOverlay('ブラウザで Google 認証画面を開きました。認証が完了したら ShiftFlow に戻ってください。');
-          authWindow.location.replace(authUrl);
+          try {
+            authWindow.location.replace(authUrl);
+          } catch (_err) {
+            authWindow.location.href = authUrl;
+          }
         } else if (manualMode || opts.external) {
           showAuthOverlay('ブラウザで Google 認証画面を開きました。認証が完了したら ShiftFlow に戻ってください。');
-          window.open(authUrl, '_blank', 'noopener');
+          const fallbackWindow = window.open(authUrl, '_blank');
+          if (fallbackWindow) {
+            try {
+              fallbackWindow.opener = null;
+            } catch (_err) {}
+          }
         } else {
           window.location.assign(authUrl);
         }
