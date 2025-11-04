@@ -438,6 +438,11 @@
         color: rgba(255, 255, 255, 0.92);
         font-size: 0.75rem;
       }
+      .pwa-footer__button:disabled,
+      .pwa-footer__button.is-disabled {
+        opacity: 0.45;
+        pointer-events: none;
+      }
       .pwa-footer__button:focus-visible {
         outline: 3px solid rgba(255, 255, 255, 0.4);
         outline-offset: 2px;
@@ -2209,21 +2214,13 @@
               <span id="auth-session-email" class="auth-session__email"></span>
             </div>
           </div>
-          <h1 class="auth-card__title">ShiftFlow にサインイン</h1>
-          <p class="auth-card__subtitle">Google Workspace のアカウントを使用して認証を完了してください。</p>
+          <h1 class="auth-card__title">ShiftFlow 認証を開始</h1>
+          <p class="auth-card__subtitle">組織の Google Workspace アカウントで利用者認証を行います。</p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-card__actions">
             <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
               <span class="material-icons">login</span>
-              <span>Google で続行</span>
-            </button>
-            <button
-              id="btn-auth-browser"
-              class="auth-button auth-button--secondary d-none"
-              type="button"
-            >
-              <span class="material-icons-outlined">open_in_new</span>
-              <span>ブラウザで認証を開く</span>
+              <span>Google Workspace 認証を開始</span>
             </button>
             <button
               id="btn-auth-logout"
@@ -2234,7 +2231,6 @@
               <span>サインアウト</span>
             </button>
           </div>
-          <p class="auth-card__subtitle auth-card__hint">社外の Google アカウントではアクセスできません。サインインに失敗する場合は IT 担当へお問い合わせください。</p>
         </section>
       </div>
     </div>
@@ -2335,6 +2331,10 @@
             <span class="material-icons-outlined" aria-hidden="true">mail</span>
             <span>メッセ</span>
           </button>
+          <button type="button" class="pwa-footer__button is-disabled" id="btn-mobile-logout" aria-label="ログアウト" disabled>
+            <span class="material-icons-outlined" aria-hidden="true">logout</span>
+            <span>ログアウト</span>
+          </button>
         </nav>
       </footer>
     </section>
@@ -2352,7 +2352,14 @@
           </span>
         </a>
         <div class="navbar-nav ms-auto flex-row align-items-center gap-2 order-md-last">
-          <!-- ログアウトボタンはGASの組み込み認証では不要なため削除 -->
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-light btn-icon-only d-none"
+            id="btn-header-logout"
+            title="ログアウト"
+          >
+            <span class="material-icons-outlined align-middle">logout</span>
+          </button>
           <button
             type="button"
             class="btn btn-sm btn-outline-light btn-icon-only"
@@ -3653,9 +3660,9 @@
             return;
           }
           if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
-            console.info('[ShiftFlow] auth required, prompting sign-in.');
+            console.info('[ShiftFlow] auth required, prompting authentication.');
             clearAuthToken();
-            var overlayMessage = '再度サインインしてください。';
+            var overlayMessage = '再度 Google Workspace 認証を開始してください。';
             if (error && error.response && error.response.reason) {
               overlayMessage = String(error.response.reason);
             } else if (error && error.response && error.response.error) {
@@ -4185,10 +4192,9 @@
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
         const errorEl = byId('auth-error');
-        const browserBtn = byId('btn-auth-browser');
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
-          displayMessage = 'ShiftFlow にサインインしてください。';
+          displayMessage = 'ShiftFlow を利用するには組織の Google Workspace 認証が必要です。';
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
@@ -4198,14 +4204,6 @@
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
         }
-        if (browserBtn) {
-          const shouldShow =
-            HAS_GAS_WEB_APP_URL &&
-            (NEEDS_MANUAL_SIGNIN ||
-              IS_SAFARI ||
-              (displayMessage && displayMessage.indexOf('ブラウザで認証') >= 0));
-          browserBtn.classList.toggle('d-none', !shouldShow);
-        }
         if (errorEl) {
           if (displayMessage) {
             errorEl.textContent = displayMessage;
@@ -4214,6 +4212,16 @@
             errorEl.textContent = '';
             errorEl.classList.remove('is-visible');
           }
+        }
+        const primaryButton = byId('btn-auth-google');
+        if (primaryButton && (!AUTH_SESSION || !AUTH_SESSION.authenticated)) {
+          setTimeout(function () {
+            try {
+              primaryButton.focus();
+            } catch (_err) {
+              /* noop */
+            }
+          }, 50);
         }
       }
 
@@ -4248,6 +4256,8 @@
         const emailEl = byId('auth-session-email');
         const avatarEl = byId('auth-session-avatar');
         const logoutBtn = byId('btn-auth-logout');
+        const headerLogoutBtn = byId('btn-header-logout');
+        const mobileLogoutBtn = byId('btn-mobile-logout');
 
         const isLoggedIn = !!(session && session.authenticated);
         if (container) {
@@ -4255,6 +4265,14 @@
         }
         if (logoutBtn) {
           logoutBtn.classList.toggle('d-none', !isLoggedIn);
+        }
+        if (headerLogoutBtn) {
+          headerLogoutBtn.classList.toggle('d-none', !isLoggedIn);
+          headerLogoutBtn.disabled = !isLoggedIn;
+        }
+        if (mobileLogoutBtn) {
+          mobileLogoutBtn.disabled = !isLoggedIn;
+          mobileLogoutBtn.classList.toggle('is-disabled', !isLoggedIn);
         }
         if (isLoggedIn && session.user) {
           const name = session.user.name || '';
@@ -4290,7 +4308,7 @@
           });
         } catch (err) {
           if (!opts.silent) {
-            showAuthOverlay('サインイン状態を確認できませんでした。接続を確認してください。');
+            showAuthOverlay('認証状態を確認できませんでした。接続を確認してください。');
           }
           throw err;
         }
@@ -4315,17 +4333,17 @@
             var mappedMessage = (function () {
               switch (reason) {
                 case 'idle_timeout':
-                  return 'しばらく操作がなかったためサインインが解除されました。もう一度サインインしてください。';
+                  return '一定時間操作がなかったため認証を再取得する必要があります。もう一度認証を開始してください。';
                 case 'absolute_timeout':
-                  return '一定時間が経過したため再度サインインが必要です。';
+                  return '長時間経過したため再度 Google Workspace 認証が必要です。';
                 case 'no_session':
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。'
-                    : 'ShiftFlow にサインインしてください。';
+                    ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
+                    : '組織の Google Workspace 認証を開始してください。';
                 default:
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。'
-                    : 'ShiftFlow にサインインしてください。';
+                    ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
+                    : '組織の Google Workspace 認証を開始してください。';
               }
             })();
             showAuthOverlay(opts.message || mappedMessage);
@@ -4335,23 +4353,21 @@
       }
 
       async function startAuthFlow(options) {
-        const opts = options || {};
+        const opts = { external: true, ...(options || {}) };
         const returnTo = opts.returnTo || window.location.href;
         const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
         const shouldPreOpenWindow = manualMode || opts.external;
         let authWindow = null;
         if (shouldPreOpenWindow) {
-          authWindow = window.open('about:blank', '_blank');
+          authWindow = window.open('', '_blank');
           if (!authWindow && manualMode) {
-            showAuthOverlay('ブラウザで認証を開けませんでした。Safari で再度お試しください。');
+            showAuthOverlay('認証ページを開けませんでした。Safari で再度お試しください。');
             return;
           }
           if (authWindow) {
             try {
               authWindow.opener = null;
-              authWindow.document.write(
-                '<!doctype html><title>ShiftFlow 認証</title><p style="font-family:-apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:24px;">Google 認証画面を開いています…</p>'
-              );
+              authWindow.focus();
             } catch (_err) {
               // ignore
             }
@@ -4390,12 +4406,12 @@
           if (manualMode) {
             const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
             if (fallbackTarget) {
-              showAuthOverlay('ブラウザで認証ページを開きました。認証を完了してからこの画面に戻ってください。');
+              showAuthOverlay('組織の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
           }
-          showAuthOverlay('サインインを開始できませんでした。しばらくしてから再度お試しください。');
+          showAuthOverlay('認証を開始できませんでした。しばらくしてから再度お試しください。');
           return;
         }
         if (!authUrl) {
@@ -4403,28 +4419,45 @@
           if (manualMode) {
             const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
             if (fallbackTarget) {
-              showAuthOverlay('サインイン URL を取得できませんでした。ブラウザで認証ページを開きました。');
+              showAuthOverlay('認証 URL を取得できませんでした。組織の認証ページを別タブで開きました。');
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
           }
-          showAuthOverlay('サインイン URL を取得できませんでした。');
+          showAuthOverlay('認証 URL を取得できませんでした。');
           return;
         }
         if (authWindow && !authWindow.closed) {
-          showAuthOverlay('ブラウザで Google 認証画面を開きました。認証が完了したら ShiftFlow に戻ってください。');
-          try {
-            authWindow.location.replace(authUrl);
-          } catch (_err) {
-            authWindow.location.href = authUrl;
-          }
+          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+          setTimeout(() => {
+            try {
+              authWindow.location.replace(authUrl);
+            } catch (_err) {
+              authWindow.location.href = authUrl;
+            }
+            try {
+              authWindow.focus();
+            } catch (_err) {}
+          }, 0);
         } else if (manualMode || opts.external) {
-          showAuthOverlay('ブラウザで Google 認証画面を開きました。認証が完了したら ShiftFlow に戻ってください。');
-          const fallbackWindow = window.open(authUrl, '_blank');
+          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+          const fallbackWindow = window.open('', '_blank');
           if (fallbackWindow) {
             try {
               fallbackWindow.opener = null;
+              setTimeout(() => {
+                try {
+                  fallbackWindow.location.replace(authUrl);
+                } catch (_err) {
+                  fallbackWindow.location.href = authUrl;
+                }
+                try {
+                  fallbackWindow.focus();
+                } catch (_err2) {}
+              }, 0);
             } catch (_err) {}
+          } else {
+            window.open(authUrl, '_blank');
           }
         } else {
           window.location.assign(authUrl);
@@ -4447,17 +4480,22 @@
         }
         clearAuthToken();
         updateAuthSessionUI(null);
-        showAuthOverlay('サインアウトしました。もう一度サインインしてください。');
+        showAuthOverlay('サインアウトしました。再度 Google Workspace 認証を開始してください。');
       }
 
       function attachAuthEventHandlers() {
         on('btn-auth-google', 'click', function (event) {
           event.preventDefault();
-          startAuthFlow({});
-        });
-        on('btn-auth-browser', 'click', function (event) {
-          event.preventDefault();
           startAuthFlow({ external: true, returnTo: window.location.href });
+        });
+        on('btn-header-logout', 'click', function (event) {
+          event.preventDefault();
+          performLogout();
+        });
+        on('btn-mobile-logout', 'click', function (event) {
+          event.preventDefault();
+          if (event.currentTarget && event.currentTarget.disabled) return;
+          performLogout();
         });
         on('btn-auth-logout', 'click', function (event) {
           event.preventDefault();
@@ -4472,11 +4510,15 @@
           session = await syncAuthSession({ silent: true });
         } catch (err) {
           console.warn('[ShiftFlow] Initial auth sync failed', err);
-          showAuthOverlay('サインイン状態を確認できませんでした。時間をおいて再度お試しください。');
+          showAuthOverlay('認証状態を確認できませんでした。時間をおいて再度お試しください。');
           return;
         }
         if (!session || !session.authenticated) {
-          showAuthOverlay(NEEDS_MANUAL_SIGNIN ? 'ShiftFlow にサインインするにはブラウザで認証を開いてください。' : 'ShiftFlow にサインインしてください。');
+          showAuthOverlay(
+            NEEDS_MANUAL_SIGNIN
+              ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
+              : '組織の Google Workspace 認証を開始してください。'
+          );
           return;
         }
 
@@ -4553,7 +4595,7 @@
             if (isAuthError && isAuthError(err)) {
               clearAuthToken();
               updateAuthSessionUI(null);
-              showAuthOverlay('セッションが切れました。もう一度サインインしてください。');
+            showAuthOverlay('セッションが切れました。再度 Google Workspace 認証を開始してください。');
               syncAuthSession({ silent: true }).catch(function () {});
               return;
             }
