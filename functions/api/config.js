@@ -71,6 +71,7 @@ export function readFeatureFlags(env) {
     d1Read: parseBooleanFlag(env?.CFG_D1_READ),
     d1Write: parseBooleanFlag(env?.CFG_D1_WRITE),
     d1Primary: parseBooleanFlag(env?.CFG_D1_PRIMARY),
+    useJwks: parseBooleanFlag(env?.CFG_USE_JWKS),
   };
 }
 

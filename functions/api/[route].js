@@ -8,9 +8,9 @@ import {
   updateSessionTokens,
   touchSession,
 } from '../utils/session';
+import { verifyGoogleIdToken } from '../utils/googleIdToken';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
-const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
 const ACTIVE_ACCESS_CACHE_TTL_MS = 3 * 60 * 1000;
@@ -408,6 +408,7 @@ function readAccessCache(cacheKey) {
   }
   const context = { ...entry.context };
   context.cached = true;
+  context.cacheHit = true;
   return context;
 }
 
@@ -426,6 +427,7 @@ function writeAccessCache(cacheKey, context, ttlMs, tokenDetails) {
   }
   const contextCopy = { ...context };
   delete contextCopy.cached;
+  delete contextCopy.cacheHit;
   ACCESS_CACHE.set(cacheKey, {
     context: contextCopy,
     expiresAt,
@@ -480,15 +482,28 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     return null;
   }
   if (!row) {
+    logAuthInfo('No D1 access record found', { requestId, email });
     return null;
   }
   const storedSubject = typeof row.auth_subject === 'string' ? row.auth_subject.trim() : '';
   if (storedSubject && tokenDetails.sub && storedSubject !== tokenDetails.sub) {
-    logAuthInfo('D1 auth subject mismatch; falling back to GAS', {
+    const mismatchContext = {
+      allowed: false,
+      status: 'pending',
+      role: 'guest',
+      email: row.email || tokenDetails.email || '',
+      displayName: row.display_name || tokenDetails.name || '',
+      reason: '登録済みの Google アカウントと一致しません。管理者に連絡してください。',
+      userId: row.user_id || '',
+      authSubject: storedSubject,
+      source: 'd1',
+      reasonCode: 'subject_mismatch',
+    };
+    logAuthInfo('D1 auth subject mismatch; rejecting token', {
       requestId,
-      email: row.email || email,
+      email: mismatchContext.email,
     });
-    return null;
+    return mismatchContext;
   }
   const userStatusRaw =
     row.user_status != null && row.user_status !== ''
@@ -516,11 +531,12 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     status,
     role,
     email: row.email || tokenDetails.email || '',
-    displayName: row.display_name || '',
+    displayName: row.display_name || tokenDetails.name || '',
     reason: allowed ? '' : deriveStatusReason(status),
     userId: row.user_id || '',
     authSubject: storedSubject,
     source: 'd1',
+    reasonCode: allowed ? 'active' : status || 'unknown',
   };
   logAuthInfo('Resolved access context via D1', {
     requestId,
@@ -2818,66 +2834,6 @@ function captureDiagnostics(config, level, message, meta) {
   }
 }
 
-async function fetchTokenInfo(idToken, config) {
-  if (!idToken) {
-    throw new Error('Missing Authorization bearer token.');
-  }
-  const tokenUrl = `${TOKENINFO_ENDPOINT}?id_token=${encodeURIComponent(idToken)}`;
-  const response = await fetch(tokenUrl, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) {
-    throw new Error(`Token verification failed (HTTP ${response.status})`);
-  }
-  let data;
-  try {
-    data = await response.json();
-  } catch (_err) {
-    throw new Error('Token verification returned a non-JSON response.');
-  }
-
-  if (!data || !data.aud || String(data.aud) !== config.googleClientId) {
-    throw new Error('ID token audience mismatch.');
-  }
-  if (!GOOGLE_ISSUERS.has(String(data.iss || ''))) {
-    throw new Error('ID token issuer is not Google.');
-  }
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const expSeconds = Number(data.exp || 0);
-  if (expSeconds && nowSeconds >= expSeconds) {
-    throw new Error('ID token has expired.');
-  }
-  const sub = String(data.sub || '').trim();
-  if (!sub) {
-    throw new Error('ID token is missing subject (sub).');
-  }
-  const email = String(data.email || '').trim();
-  if (!email) {
-    throw new Error('ID token is missing email.');
-  }
-  const emailVerifiedRaw = data.email_verified;
-  const emailVerified =
-    emailVerifiedRaw === true ||
-    emailVerifiedRaw === 'true' ||
-    emailVerifiedRaw === 1 ||
-    emailVerifiedRaw === '1';
-  return {
-    rawToken: idToken,
-    sub,
-    email,
-    emailVerified,
-    name: data.name || data.given_name || '',
-    picture: data.picture || '',
-    hd: data.hd || '',
-    aud: data.aud,
-    iss: data.iss,
-    iat: Number(data.iat || 0),
-    exp: expSeconds,
-    iatMs: Number(data.iat || 0) > 0 ? Number(data.iat) * 1000 : undefined,
-    expMs: expSeconds > 0 ? expSeconds * 1000 : undefined,
-  };
-}
 
 async function resolveAccessContext(config, tokenDetails, requestId, clientMeta, options = {}) {
   const cacheKey = resolveAccessCacheKey(tokenDetails);
@@ -2889,6 +2845,8 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
   const flags = config.flags || {};
   const db = options && options.db ? options.db : null;
   const allowD1 = !!(db && (flags.d1Primary || flags.d1Read));
+  let fallbackReason = 'ShiftFlow に登録されていません。管理者に連絡してください。';
+  let fallbackReasonCode = 'not_registered';
   if (allowD1) {
     const d1Context = await resolveAccessContextFromD1(db, tokenDetails, requestId);
     if (d1Context) {
@@ -2899,142 +2857,39 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
       }
       return d1Context;
     }
+    logAuthInfo('Falling back after D1 returned no access context', {
+      requestId,
+      email: tokenDetails.email || '',
+    });
+  } else {
+    logAuthError('D1 access control disabled; denying access', {
+      requestId,
+      email: tokenDetails.email || '',
+    });
+    fallbackReason = 'アクセス制御ストアが一時的に利用できません。管理者に連絡してください。';
+    fallbackReasonCode = 'd1_unavailable';
   }
-
-  const url = new URL(config.gasUrl);
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-ShiftFlow-Sub': tokenDetails.sub,
-    'X-ShiftFlow-Email': tokenDetails.email,
-    'X-ShiftFlow-Request-Id': requestId,
-  };
-  const hasRawToken = typeof tokenDetails.rawToken === 'string' && tokenDetails.rawToken.trim() !== '';
-  const authorizationHeader = hasRawToken ? `Bearer ${tokenDetails.rawToken.trim()}` : '';
-  if (authorizationHeader) {
-    headers.Authorization = authorizationHeader;
-  }
-  const primarySharedSecret = getPrimarySharedSecret(config);
-  if (primarySharedSecret) headers['X-ShiftFlow-Secret'] = primarySharedSecret;
-  if (tokenDetails.name) headers['X-ShiftFlow-Name'] = tokenDetails.name;
-  if (tokenDetails.hd) headers['X-ShiftFlow-Domain'] = tokenDetails.hd;
-  if (tokenDetails.iat) headers['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
-  if (tokenDetails.exp) headers['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
-  if (clientMeta.ip) headers['X-ShiftFlow-Client-IP'] = clientMeta.ip;
-  if (clientMeta.userAgent) headers['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
-  const bodyPayload = {
-    route: 'resolveAccessContext',
-    args: [],
-  };
-  if (authorizationHeader) {
-    bodyPayload.authorization = authorizationHeader;
-    bodyPayload.headers = { Authorization: authorizationHeader };
-  }
-  const body = JSON.stringify(bodyPayload);
-
-  logAuthInfo('Calling resolveAccessContext upstream', {
-    requestId,
-    route: 'resolveAccessContext',
-    gasHost: url.host,
-    gasPath: url.pathname,
+  const fallbackContext = {
+    allowed: false,
+    status: 'pending',
+    role: 'guest',
     email: tokenDetails.email || '',
-    hasAuthorization: !!authorizationHeader,
-  });
-  let response;
-  try {
-    response = await fetchPreservingAuth(
-      url.toString(),
-      {
-        method: 'POST',
-        headers,
-        body,
-      },
-      4,
-      { config, requestId, route: 'resolveAccessContext' }
-    );
-  } catch (err) {
-    if (err && err.isRedirect) {
-      const redirectError = new Error(
-        'resolveAccessContext received a redirect instead of JSON. Authentication may be required.'
-      );
-      redirectError.httpStatus = err.httpStatus;
-      redirectError.redirectLocation = err.redirectLocation;
-      redirectError.isRedirect = true;
-      redirectError.responseHeaders = err.responseHeaders || {};
-      throw redirectError;
-    }
-    throw err;
-  }
-  logAuthInfo('resolveAccessContext upstream status', {
-    requestId,
-    route: 'resolveAccessContext',
-    status: response.status,
-    contentType: response.headers.get('Content-Type') || '',
-    location: response.headers.get('Location') || '',
-  });
-  const text = await response.text();
-  let payload;
-  try {
-    if (isLikelyHtmlDocument(text)) {
-      const error = new Error('resolveAccessContext returned HTML content.');
-      error.httpStatus = response.status;
-      error.rawResponseSnippet = text.slice(0, 512);
-      error.responseHeaders = Object.fromEntries(response.headers.entries());
-      error.isHtml = true;
-      throw error;
-    }
-    payload = JSON.parse(stripXssiPrefix(text));
-  } catch (_err) {
-    const snippet = typeof text === 'string' ? text.slice(0, 512) : '';
-    const error = _err instanceof Error ? _err : new Error('resolveAccessContext returned a non-JSON payload.');
-    error.httpStatus = response.status;
-    error.rawResponseSnippet = snippet;
-    error.responseHeaders = Object.fromEntries(response.headers.entries());
-    throw error;
-  }
-
-  if (!response.ok) {
-    const detail =
-      payload && payload.error
-        ? `${payload.error}${payload.detail ? `: ${payload.detail}` : ''}`
-        : `HTTP ${response.status}`;
-    const error = new Error(`resolveAccessContext failed (${detail})`);
-    error.httpStatus = response.status;
-    error.rawResponseSnippet =
-      payload && typeof payload === 'object' ? JSON.stringify(payload).slice(0, 512) : '';
-    error.responseHeaders = Object.fromEntries(response.headers.entries());
-    throw error;
-  }
-  if (!payload || payload.ok === false) {
-    const reason =
-      payload && payload.error
-        ? payload.error
-        : 'resolveAccessContext returned an unexpected response.';
-    throw new Error(reason);
-  }
-  const result = payload.result || {};
-  const normalizedStatus = normalizeUserStatusValue(
-    result.status || (result.allowed ? 'active' : 'pending')
-  );
-  const allowed = !!result.allowed && normalizedStatus === 'active';
-  const role = normalizeRoleValue(result.role || '') || 'guest';
-  const reason = allowed ? '' : result.reason || deriveStatusReason(normalizedStatus);
-  const context = {
-    allowed,
-    status: normalizedStatus || 'unknown',
-    role,
-    email: result.email || tokenDetails.email,
-    displayName: result.displayName || '',
-    reason,
-    userId: result.userId || '',
-    authSubject: result.authSubject || '',
-    source: 'gas',
+    displayName: tokenDetails.name || '',
+    reason: fallbackReason,
+    userId: '',
+    authSubject: '',
+    source: 'fallback',
+    reasonCode: fallbackReasonCode,
   };
-  if (allowed) {
-    writeAccessCache(cacheKey, context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
-  } else if (cacheKey) {
+  if (cacheKey) {
     ACCESS_CACHE.delete(cacheKey);
   }
-  return context;
+  logAuthInfo('Access context fallback applied', {
+    requestId,
+    email: fallbackContext.email,
+    reasonCode: fallbackContext.reasonCode,
+  });
+  return fallbackContext;
 }
 
 export async function onRequest(context) {
@@ -3245,7 +3100,10 @@ export async function onRequest(context) {
 
   if (flags.cfAuth) {
     try {
-      tokenDetails = await fetchTokenInfo(token, config);
+      tokenDetails = await verifyGoogleIdToken(env, config, token);
+      if (tokenDetails && typeof tokenDetails.exp === 'number' && !tokenDetails.expMs) {
+        tokenDetails.expMs = Number(tokenDetails.exp) * 1000;
+      }
     } catch (err) {
       logAuthError('Token verification failed', {
         requestId,
@@ -3353,12 +3211,14 @@ export async function onRequest(context) {
     );
   }
   if (!accessContext.allowed || accessContext.status !== 'active') {
-    logAuthInfo('Access denied by GAS context', {
+    logAuthInfo('Access denied by access policy', {
       requestId,
       route,
       email: tokenDetails.email || '',
       status: accessContext.status,
       reason: accessContext.reason || '',
+      source: accessContext.source || '',
+      reasonCode: accessContext.reasonCode || '',
     });
     captureDiagnostics(config, 'warn', 'access_denied', {
       event: 'access_denied',
@@ -3369,6 +3229,8 @@ export async function onRequest(context) {
       reason: accessContext.reason || '',
       clientIp: clientMeta.ip,
       cfRay: clientMeta.cfRay,
+      source: accessContext.source || '',
+      reasonCode: accessContext.reasonCode || '',
     });
     return errorResponse(
       403,
@@ -3377,7 +3239,11 @@ export async function onRequest(context) {
       'cf-api',
       'access_denied',
       accessContext.reason || '承認待ち、または利用停止の可能性があります。',
-      { status: accessContext.status },
+      {
+        status: accessContext.status,
+        source: accessContext.source || '',
+        reasonCode: accessContext.reasonCode || '',
+      },
       mergeHeaders()
     );
   }

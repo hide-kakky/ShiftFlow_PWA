@@ -1,5 +1,6 @@
 import { loadConfig } from '../api/config';
 import { createPkcePair, persistAuthInit } from '../utils/session';
+import { resolveCallbackUrl } from '../utils/redirect';
 
 function resolveRequestId(request) {
   const header =
@@ -81,8 +82,8 @@ export async function onRequest({ request, env }) {
     ? config.allowedOrigins.filter(Boolean)
     : [];
   const isOriginAllowed = allowedOrigins.includes(origin);
-  const redirectBase = isOriginAllowed ? origin : allowedOrigins[0] || origin;
-  const normalizedBase = redirectBase.replace(/\/+$/, '');
+  const callbackUrl = resolveCallbackUrl(origin, config);
+  const normalizedBase = callbackUrl.replace(/\/auth\/callback$/, '');
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -147,7 +148,7 @@ export async function onRequest({ request, env }) {
 
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: `${normalizedBase}/auth/callback`,
+    redirect_uri: callbackUrl,
     response_type: 'code',
     scope: scopes.join(' '),
     state,

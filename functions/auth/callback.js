@@ -6,8 +6,8 @@ import {
   calculateIdTokenExpiry,
   updateSessionTokens,
 } from '../utils/session';
-
-const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
+import { verifyGoogleIdToken } from '../utils/googleIdToken';
+import { resolveCallbackUrl } from '../utils/redirect';
 
 function resolveRequestId(request) {
   const header =
@@ -73,6 +73,7 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const config = loadConfig(env);
   const origin = url.origin;
+  const callbackUrl = resolveCallbackUrl(origin, config);
   let requestId = resolveRequestId(request);
   const error = url.searchParams.get('error');
   if (error) {
@@ -131,7 +132,7 @@ export async function onRequest({ request, env }) {
       code,
       code_verifier: codeVerifier,
       grant_type: 'authorization_code',
-      redirect_uri: `${origin}/auth/callback`,
+      redirect_uri: callbackUrl,
     }),
   });
 
@@ -146,21 +147,17 @@ export async function onRequest({ request, env }) {
     return renderError('Google から ID トークンを受信できませんでした。', requestId);
   }
 
-  const tokenInfoRes = await fetch(`${TOKENINFO_ENDPOINT}?id_token=${encodeURIComponent(idToken)}`);
-  if (!tokenInfoRes.ok) {
-    const detail = await tokenInfoRes.text();
-    return renderError(`ID トークンの検証に失敗しました: ${detail}`, requestId);
-  }
-  const tokenInfo = await tokenInfoRes.json();
-  if (tokenInfo.aud !== clientId) {
-    return renderError('無効なクライアント ID が指定されました。', requestId);
-  }
-  if (tokenInfo.iss !== 'https://accounts.google.com' && tokenInfo.iss !== 'accounts.google.com') {
-    return renderError('無効な発行者からのトークンです。', requestId);
-  }
-  if (tokenInfo.email_verified !== 'true') {
+  let tokenInfo;
+  try {
+    tokenInfo = await verifyGoogleIdToken(env, config, idToken);
+  } catch (err) {
+    console.warn('[ShiftFlow][Auth]', 'ID token verification failed', {
+      where: 'auth-callback',
+      requestId,
+      message: err && err.message ? err.message : String(err),
+    });
     return renderError(
-      'Google アカウントのメールが未確認です。Google アカウント設定を確認してください。',
+      err && err.message ? err.message : 'ID トークンの検証に失敗しました。',
       requestId
     );
   }
@@ -168,6 +165,7 @@ export async function onRequest({ request, env }) {
   const now = Date.now();
   const tokenExpiry =
     calculateIdTokenExpiry(idToken) ||
+    (tokenInfo.exp ? Number(tokenInfo.exp) * 1000 : null) ||
     (typeof tokenPayload.expires_in === 'number'
       ? now + Number(tokenPayload.expires_in) * 1000
       : now + 3600 * 1000);
@@ -193,12 +191,13 @@ export async function onRequest({ request, env }) {
   const cookie = buildSessionCookie(cookieValue);
 
   const normalizedReturnPath = normalizeReturnPath(returnTo || '/', origin);
+  const normalizedBase = callbackUrl.replace(/\/auth\/callback$/, '');
   console.info('[ShiftFlow][Auth]', 'Return path normalized', {
     where: 'auth-callback',
     normalizedReturn: normalizedReturnPath,
     requestId,
   });
-  const destination = origin + normalizedReturnPath;
+  const destination = normalizedBase + normalizedReturnPath;
   const headers = {
     Location: destination,
     'Set-Cookie': cookie,
