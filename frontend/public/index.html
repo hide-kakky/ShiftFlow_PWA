@@ -4336,13 +4336,8 @@
 
       async function startAuthFlow(options) {
         const opts = options || {};
-        if (NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL) {
-          const returnTo = opts.returnTo || window.location.href;
-          const target = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
-          showAuthOverlay('ホーム画面からブラウザで認証を完了してください。');
-          window.open(target, '_blank', 'noopener');
-          return;
-        }
+        const returnTo = opts.returnTo || window.location.href;
+        const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
         let authUrl = '';
         try {
           const requestId = createRequestId();
@@ -4355,7 +4350,7 @@
               'X-ShiftFlow-Request-Id': requestId,
             },
             body: JSON.stringify({
-              returnTo: opts.returnTo || window.location.href,
+              returnTo,
             }),
           });
           const body = await res.json();
@@ -4372,22 +4367,31 @@
           }
         } catch (err) {
           console.error('[ShiftFlow] Failed to start auth flow', err);
-          showAuthOverlay(
-            HAS_GAS_WEB_APP_URL
-              ? 'サインインを開始できませんでした。ブラウザで認証を開いて完了してください。'
-              : 'サインインを開始できませんでした。しばらくしてから再度お試しください。'
-          );
+          if (manualMode) {
+            const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
+            if (fallbackTarget) {
+              showAuthOverlay('ブラウザで認証ページを開きました。認証を完了してからこの画面に戻ってください。');
+              window.open(fallbackTarget, '_blank', 'noopener');
+              return;
+            }
+          }
+          showAuthOverlay('サインインを開始できませんでした。しばらくしてから再度お試しください。');
           return;
         }
         if (!authUrl) {
-          showAuthOverlay(
-            HAS_GAS_WEB_APP_URL
-              ? 'サインイン URL を取得できませんでした。ブラウザで認証を開いて完了してください。'
-              : 'サインイン URL を取得できませんでした。'
-          );
+          if (manualMode) {
+            const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
+            if (fallbackTarget) {
+              showAuthOverlay('サインイン URL を取得できませんでした。ブラウザで認証ページを開きました。');
+              window.open(fallbackTarget, '_blank', 'noopener');
+              return;
+            }
+          }
+          showAuthOverlay('サインイン URL を取得できませんでした。');
           return;
         }
-        if (opts.external) {
+        if (manualMode || opts.external) {
+          showAuthOverlay('ブラウザで Google 認証画面を開きました。認証が完了したら ShiftFlow に戻ってください。');
           window.open(authUrl, '_blank', 'noopener');
         } else {
           window.location.assign(authUrl);
@@ -4420,13 +4424,7 @@
         });
         on('btn-auth-browser', 'click', function (event) {
           event.preventDefault();
-          if (HAS_GAS_WEB_APP_URL) {
-            var target = buildGasAuthUrl(window.location.href) || GAS_WEB_APP_URL;
-            showAuthOverlay('ブラウザで認証を開きました。認証を完了してからこの画面に戻ってください。');
-            window.open(target, '_blank', 'noopener');
-          } else {
-            notify('ブラウザで認証を開く URL が設定されていません。', false);
-          }
+          startAuthFlow({ external: true, returnTo: window.location.href });
         });
         on('btn-auth-logout', 'click', function (event) {
           event.preventDefault();
