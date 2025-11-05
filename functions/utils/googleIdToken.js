@@ -1,6 +1,7 @@
 const JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
 const TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
+const CLOCK_SKEW_SECONDS = 120;
 
 let cachedJwks = null;
 let cachedJwksExpiry = 0;
@@ -121,8 +122,17 @@ async function verifyWithJwks(idToken, clientId) {
     throw new Error('ID token issuer is not Google.');
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
-  if (parsed.payload.exp && nowSeconds >= Number(parsed.payload.exp)) {
+  const expSeconds = Number(parsed.payload.exp || 0);
+  if (expSeconds && nowSeconds - CLOCK_SKEW_SECONDS >= expSeconds) {
     throw new Error('ID token has expired.');
+  }
+  const iatSeconds = Number(parsed.payload.iat || 0);
+  if (iatSeconds && iatSeconds > nowSeconds + CLOCK_SKEW_SECONDS) {
+    throw new Error('ID token was issued in the future.');
+  }
+  const nbfSeconds = Number(parsed.payload.nbf || 0);
+  if (nbfSeconds && nowSeconds + CLOCK_SKEW_SECONDS < nbfSeconds) {
+    throw new Error('ID token is not yet valid.');
   }
   if (!parsed.payload.sub) {
     throw new Error('ID token is missing subject (sub).');
@@ -175,8 +185,16 @@ async function verifyViaTokenInfo(idToken, clientId) {
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expSeconds = Number(data.exp || 0);
-  if (expSeconds && nowSeconds >= expSeconds) {
+  if (expSeconds && nowSeconds - CLOCK_SKEW_SECONDS >= expSeconds) {
     throw new Error('ID token has expired.');
+  }
+  const iatSeconds = Number(data.iat || 0);
+  if (iatSeconds && iatSeconds > nowSeconds + CLOCK_SKEW_SECONDS) {
+    throw new Error('ID token was issued in the future.');
+  }
+  const nbfSeconds = Number(data.nbf || 0);
+  if (nbfSeconds && nowSeconds + CLOCK_SKEW_SECONDS < nbfSeconds) {
+    throw new Error('ID token is not yet valid.');
   }
   const sub = String(data.sub || '').trim();
   if (!sub) {

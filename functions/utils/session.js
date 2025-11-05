@@ -1,10 +1,11 @@
-const SESSION_COOKIE_NAME = 'shiftflow_session';
+const SESSION_COOKIE_NAME = 'SESSION';
 const SESSION_NAMESPACE = 'sf:sessions:';
 const SESSION_IDLE_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
-const SESSION_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_ABSOLUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const SESSION_TTL_SECONDS = Math.ceil(SESSION_ABSOLUTE_TIMEOUT_MS / 1000);
 const INIT_NAMESPACE = 'sf:auth_init:';
 const INIT_TTL_SECONDS = 60 * 5; // 5 minutes
+const DEFAULT_COOKIE_DOMAIN = 'shiftflow.pages.dev';
 
 function toBase64Url(bytes) {
   const binString = String.fromCharCode(...new Uint8Array(bytes));
@@ -34,17 +35,22 @@ export function getSessionCookieName() {
 
 export function buildSessionCookie(value, opts = {}) {
   const params = [];
+  const domain = opts.domain || DEFAULT_COOKIE_DOMAIN;
+  const sameSite = opts.sameSite || 'None';
   params.push(`${SESSION_COOKIE_NAME}=${value}`);
+  params.push(`Domain=${domain}`);
   params.push('Path=/');
   params.push('HttpOnly');
   params.push('Secure');
   params.push(`Max-Age=${opts.maxAge ?? SESSION_TTL_SECONDS}`);
-  params.push(`SameSite=${opts.sameSite ?? 'Lax'}`);
+  params.push(`SameSite=${sameSite}`);
   return params.join('; ');
 }
 
-export function buildExpiredSessionCookie() {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Lax`;
+export function buildExpiredSessionCookie(opts = {}) {
+  const domain = opts.domain || DEFAULT_COOKIE_DOMAIN;
+  const sameSite = opts.sameSite || 'None';
+  return `${SESSION_COOKIE_NAME}=; Domain=${domain}; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=${sameSite}`;
 }
 
 export function parseCookies(header) {

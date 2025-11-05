@@ -1,6 +1,9 @@
 import { loadConfig } from '../api/config';
 import { createPkcePair, persistAuthInit } from '../utils/session';
-import { resolveCallbackUrl } from '../utils/redirect';
+
+const CANONICAL_DOMAIN = 'shiftflow.pages.dev';
+const CALLBACK_URL = `https://${CANONICAL_DOMAIN}/auth/callback`;
+const COOKIE_MAX_AGE = 60 * 5; // 5 minutes
 
 function resolveRequestId(request) {
   const header =
@@ -15,46 +18,15 @@ function resolveRequestId(request) {
   return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-function jsonResponse(status, payload, origin, requestId) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true',
-  };
-  if (requestId) {
-    headers['X-ShiftFlow-Request-Id'] = requestId;
-  }
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers,
-  });
-}
-
-function errorResponse(status, origin, requestId, code, reason) {
-  return jsonResponse(
-    status,
-    {
-      ok: false,
-      where: 'auth-start',
-      code,
-      reason,
-      requestId,
-    },
-    origin,
-    requestId
-  );
-}
-
-function normalizeReturnPath(rawValue, baseOrigin) {
+function normalizeReturnPath(rawValue) {
   const fallback = '/';
-  if (!baseOrigin) return fallback;
+  if (!rawValue) return fallback;
   const MAX_LENGTH = 1024;
-  const trimmed = typeof rawValue === 'string' ? rawValue.trim() : '';
-  const base = baseOrigin.replace(/\/+$/, '');
+  const trimmed = rawValue.trim();
   if (!trimmed) return fallback;
   try {
-    const resolved = new URL(trimmed, base);
-    if (resolved.origin !== base) {
+    const resolved = new URL(trimmed, `https://${CANONICAL_DOMAIN}`);
+    if (resolved.hostname !== CANONICAL_DOMAIN) {
       return fallback;
     }
     let candidate = (resolved.pathname || '/') + (resolved.search || '') + (resolved.hash || '');
@@ -73,70 +45,62 @@ function normalizeReturnPath(rawValue, baseOrigin) {
   }
 }
 
+function cookie(name, value, { maxAge } = {}) {
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    `Domain=${CANONICAL_DOMAIN}`,
+    'Path=/',
+    'HttpOnly',
+    'Secure',
+    'SameSite=None',
+  ];
+  if (typeof maxAge === 'number') {
+    parts.push(`Max-Age=${maxAge}`);
+  }
+  return parts.join('; ');
+}
+
 export async function onRequest({ request, env }) {
-  const url = new URL(request.url);
-  const requestId = resolveRequestId(request);
+  const requestUrl = new URL(request.url);
   const config = loadConfig(env);
-  const origin = url.origin;
-  const allowedOrigins = Array.isArray(config.allowedOrigins)
-    ? config.allowedOrigins.filter(Boolean)
-    : [];
-  const isOriginAllowed = allowedOrigins.includes(origin);
-  const callbackUrl = resolveCallbackUrl(origin, config);
-  const normalizedBase = callbackUrl.replace(/\/auth\/callback$/, '');
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'POST,OPTIONS',
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'X-ShiftFlow-Request-Id': requestId,
-      },
-    });
-  }
-  if (request.method !== 'POST') {
-    return errorResponse(405, origin, requestId, 'method_not_allowed', 'Method Not Allowed');
-  }
-  const clientId = config.googleClientId;
-  const clientSecret =
-    env?.GOOGLE_OAUTH_CLIENT_SECRET ||
-    env?.GOOGLE_CLIENT_SECRET ||
-    env?.GOOGLE_OAUTH_CLIENT_SECRET_JSON ||
-    '';
-  if (!clientId || !clientSecret) {
-    return errorResponse(
-      500,
-      origin,
-      requestId,
-      'oauth_config_missing',
-      'Google OAuth credentials are not configured. Configure GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.'
-    );
+  const clientId = config.googleClientId || env?.GOOGLE_OAUTH_CLIENT_ID || '';
+  if (!clientId) {
+    const headers = new Headers({ Location: '/signin?e=config' });
+    return new Response(null, { status: 302, headers });
   }
 
-  let body = {};
-  try {
-    body = await request.json();
-  } catch (_err) {
-    body = {};
-  }
-  const rawReturn = typeof body.returnTo === 'string' ? body.returnTo : '';
-  const normalizedReturnPath = normalizeReturnPath(rawReturn || '/', normalizedBase);
-  console.info('[ShiftFlow][Auth]', 'Return path normalized', {
-    where: 'auth-start',
-    normalizedReturn: normalizedReturnPath,
-    requestId,
-  });
-
+  const requestId = resolveRequestId(request);
   const { verifier, challenge } = await createPkcePair();
   const state = crypto.randomUUID().replace(/-/g, '');
-  await persistAuthInit(env, state, {
-    codeVerifier: verifier,
-    issuedAt: Date.now(),
-    returnTo: normalizedReturnPath,
-    requestId,
-  });
+  let returnToInput =
+    requestUrl.searchParams.get('returnTo') || requestUrl.searchParams.get('return_to') || '';
+  if (!returnToInput && request.method === 'POST') {
+    try {
+      const body = await request.clone().json();
+      if (body && typeof body.returnTo === 'string') {
+        returnToInput = body.returnTo;
+      }
+    } catch (_err) {
+      // ignore body parse errors
+    }
+  }
+  const returnTo = normalizeReturnPath(returnToInput) || '/';
+
+  try {
+    await persistAuthInit(env, state, {
+      codeVerifier: verifier,
+      issuedAt: Date.now(),
+      returnTo,
+      requestId,
+    });
+  } catch (err) {
+    console.error('[auth/start] persistAuthInit failed', {
+      rid: requestId,
+      message: err && err.message ? err.message : String(err),
+    });
+    const headers = new Headers({ Location: '/signin?e=server' });
+    return new Response(null, { status: 302, headers });
+  }
 
   const scopes = [
     'openid',
@@ -146,9 +110,9 @@ export async function onRequest({ request, env }) {
     'https://www.googleapis.com/auth/userinfo.profile',
   ];
 
-  const params = new URLSearchParams({
+  const authParams = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: callbackUrl,
+    redirect_uri: CALLBACK_URL,
     response_type: 'code',
     scope: scopes.join(' '),
     state,
@@ -159,11 +123,21 @@ export async function onRequest({ request, env }) {
     code_challenge_method: 'S256',
   });
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  return jsonResponse(
-    200,
-    { ok: true, authUrl, state, requestId },
-    origin,
-    requestId
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${authParams.toString()}`;
+
+  const headers = new Headers({ Location: authUrl });
+  headers.append('Set-Cookie', cookie('OAUTH_STATE', state, { maxAge: COOKIE_MAX_AGE }));
+  headers.append(
+    'Set-Cookie',
+    cookie('PKCE_CODE_VERIFIER', verifier, { maxAge: COOKIE_MAX_AGE })
   );
+
+  console.info('[auth/start] 302 -> google; cookies issued', {
+    rid: requestId,
+    stateLength: state.length,
+    verifierLength: verifier.length,
+    returnTo,
+  });
+
+  return new Response(null, { status: 302, headers });
 }

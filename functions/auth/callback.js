@@ -3,54 +3,29 @@ import {
   consumeAuthInit,
   createSession,
   buildSessionCookie,
+  parseCookies,
   calculateIdTokenExpiry,
   updateSessionTokens,
 } from '../utils/session';
 import { verifyGoogleIdToken } from '../utils/googleIdToken';
-import { resolveCallbackUrl } from '../utils/redirect';
 
-function resolveRequestId(request) {
-  const header =
-    request.headers.get('X-ShiftFlow-Request-Id') ||
-    request.headers.get('x-shiftflow-request-id') ||
-    '';
-  const trimmed = header.trim();
-  if (trimmed) return trimmed;
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+const CANONICAL_DOMAIN = 'shiftflow.pages.dev';
+const CALLBACK_URL = `https://${CANONICAL_DOMAIN}/auth/callback`;
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+
+function expireCookie(name) {
+  return `${name}=; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
 }
 
-function htmlResponse(status, body, requestId, headers = {}) {
-  const finalHeaders = {
-    'Content-Type': 'text/html; charset=utf-8',
-    ...headers,
-  };
-  if (requestId) {
-    finalHeaders['X-ShiftFlow-Request-Id'] = requestId;
-  }
-  return new Response(body, {
-    status,
-    headers: finalHeaders,
-  });
-}
-
-function renderError(message, requestId) {
-  const content = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>Sign-in error</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:0;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;}main{background:rgba(15,23,42,0.75);backdrop-filter:blur(18px);padding:48px;border-radius:28px;box-shadow:0 20px 60px rgba(15,23,42,0.35);max-width:420px;text-align:center;}h1{margin:0 0 12px;font-size:24px;font-weight:600;}p{margin:0 0 20px;line-height:1.7;}a{color:#93c5fd;text-decoration:none;font-weight:600;}a:hover{text-decoration:underline;}</style></head><body><main><h1>サインインに失敗しました</h1><p>${message}</p><a href="/" rel="nofollow">戻る</a></main></body></html>`;
-  return htmlResponse(400, content, requestId);
-}
-
-function normalizeReturnPath(rawValue, baseOrigin) {
+function normalizeReturnPath(rawValue) {
   const fallback = '/';
-  if (!baseOrigin) return fallback;
+  if (!rawValue) return fallback;
   const MAX_LENGTH = 1024;
-  const trimmed = typeof rawValue === 'string' ? rawValue.trim() : '';
-  const base = baseOrigin.replace(/\/+$/, '');
+  const trimmed = rawValue.trim();
   if (!trimmed) return fallback;
   try {
-    const resolved = new URL(trimmed, base);
-    if (resolved.origin !== base) {
+    const resolved = new URL(trimmed, `https://${CANONICAL_DOMAIN}`);
+    if (resolved.hostname !== CANONICAL_DOMAIN) {
       return fallback;
     }
     let candidate = (resolved.pathname || '/') + (resolved.search || '') + (resolved.hash || '');
@@ -69,109 +44,152 @@ function normalizeReturnPath(rawValue, baseOrigin) {
   }
 }
 
+function redirect(path) {
+  const headers = new Headers({ Location: path });
+  headers.append('Set-Cookie', expireCookie('OAUTH_STATE'));
+  headers.append('Set-Cookie', expireCookie('PKCE_CODE_VERIFIER'));
+  return new Response(null, { status: 302, headers });
+}
+
 export async function onRequest({ request, env }) {
+  const rid =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+
   const url = new URL(request.url);
-  const config = loadConfig(env);
-  const origin = url.origin;
-  const callbackUrl = resolveCallbackUrl(origin, config);
-  let requestId = resolveRequestId(request);
-  const error = url.searchParams.get('error');
-  if (error) {
-    const description = url.searchParams.get('error_description') || '認証を完了できませんでした。';
-    return renderError(description, requestId);
-  }
-
-  const state = url.searchParams.get('state');
   const code = url.searchParams.get('code');
-  if (!state || !code) {
-    return renderError('不正なリクエストです。もう一度お試しください。', requestId);
+  const state = url.searchParams.get('state');
+
+  console.info('[auth/callback] IN', { rid, hasCode: Boolean(code), hasState: Boolean(state) });
+  if (!code || !state) {
+    return redirect('/signin?e=missing');
   }
 
-  const initPayload = await consumeAuthInit(env, state);
-  if (!initPayload) {
-    console.warn('[ShiftFlow][Auth]', 'State payload not found or already consumed', {
-      where: 'auth-callback',
-      requestId,
+  const rawCookies = request.headers.get('Cookie') || '';
+  const cookies = parseCookies(rawCookies);
+  const stateCookie = cookies.OAUTH_STATE || '';
+  const pkceCookie = cookies.PKCE_CODE_VERIFIER || '';
+
+  if (stateCookie && stateCookie !== state) {
+    console.warn('[auth/callback] state cookie mismatch', { rid });
+    return redirect('/signin?e=state');
+  }
+
+  let initPayload = null;
+  try {
+    initPayload = await consumeAuthInit(env, state);
+  } catch (err) {
+    console.error('[auth/callback] consumeAuthInit failed', {
+      rid,
+      message: err && err.message ? err.message : String(err),
     });
-    return renderError('サインイン・セッションが期限切れになりました。再度操作してください。', requestId);
   }
 
-  if (initPayload.requestId && typeof initPayload.requestId === 'string') {
-    const trimmed = initPayload.requestId.trim();
-    if (trimmed) {
-      requestId = trimmed;
-    }
-  }
+  const viaCookie = Boolean(stateCookie && pkceCookie && stateCookie === state);
+  const codeVerifier = viaCookie ? pkceCookie : initPayload?.codeVerifier || '';
+  const returnTo = normalizeReturnPath(initPayload?.returnTo || '/');
+  const requestId =
+    (initPayload && typeof initPayload.requestId === 'string' && initPayload.requestId.trim()) ||
+    rid;
 
-  const { codeVerifier, returnTo } = initPayload;
+  console.info('[auth/callback] state restored', {
+    rid,
+    viaCookie,
+    fromKv: Boolean(initPayload),
+    found: Boolean(codeVerifier),
+  });
+
   if (!codeVerifier) {
-    console.warn('[ShiftFlow][Auth]', 'Missing code verifier in state payload', {
-      where: 'auth-callback',
-      requestId,
-    });
-    return renderError('サインイン・セッションが無効です。もう一度お試しください。', requestId);
+    return redirect('/signin?e=state');
   }
-  const clientId = config.googleClientId;
+
+  const config = loadConfig(env);
+  const clientId = config.googleClientId || env?.GOOGLE_OAUTH_CLIENT_ID || '';
   const clientSecret =
     env?.GOOGLE_OAUTH_CLIENT_SECRET ||
     env?.GOOGLE_CLIENT_SECRET ||
     env?.GOOGLE_OAUTH_CLIENT_SECRET_JSON ||
     '';
-  if (!clientId || !clientSecret) {
-    return renderError('サーバー設定が不完全です。管理者に連絡してください。', requestId);
+
+  if (!clientId) {
+    console.error('[auth/callback] missing clientId', { rid });
+    return redirect('/signin?e=config');
   }
 
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      code_verifier: codeVerifier,
-      grant_type: 'authorization_code',
-      redirect_uri: callbackUrl,
-    }),
-  });
+  console.info('[auth/callback] token exchange START', { rid });
 
-  if (!tokenRes.ok) {
-    const detail = await tokenRes.text();
-    console.error('[ShiftFlow][Auth]', 'OAuth token exchange failed', {
-      where: 'auth-callback',
-      requestId,
-      status: tokenRes.status,
-      detail: detail ? detail.slice(0, 200) : '',
+  let tokenResponse;
+  try {
+    tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+        code,
+        code_verifier: codeVerifier,
+        grant_type: 'authorization_code',
+        redirect_uri: CALLBACK_URL,
+      }),
     });
-    return renderError(`Google 認証に失敗しました: ${detail}`, requestId);
+  } catch (err) {
+    console.error('[auth/callback] token exchange failed (network)', {
+      rid,
+      message: err && err.message ? err.message : String(err),
+    });
+    return redirect('/signin?e=token');
   }
 
-  const tokenPayload = await tokenRes.json();
+  console.info('[auth/callback] token exchange DONE', { rid, status: tokenResponse.status });
+
+  if (!tokenResponse.ok) {
+    let detail = '';
+    try {
+      detail = (await tokenResponse.text()).slice(0, 200);
+    } catch (_err) {
+      detail = '';
+    }
+    console.error('[auth/callback] token exchange error', { rid, status: tokenResponse.status, detail });
+    return redirect('/signin?e=token');
+  }
+
+  let tokenPayload;
+  try {
+    tokenPayload = await tokenResponse.json();
+  } catch (err) {
+    console.error('[auth/callback] token payload parse failed', {
+      rid,
+      message: err && err.message ? err.message : String(err),
+    });
+    return redirect('/signin?e=token');
+  }
+
   const idToken = tokenPayload.id_token;
   if (!idToken) {
-    console.error('[ShiftFlow][Auth]', 'Missing ID token in token response', {
-      where: 'auth-callback',
-      requestId,
-      tokenPayload: JSON.stringify(tokenPayload || {}).slice(0, 200),
-    });
-    return renderError('Google から ID トークンを受信できませんでした。', requestId);
+    console.error('[auth/callback] missing id_token', { rid });
+    return redirect('/signin?e=token');
   }
 
   let tokenInfo;
   try {
     tokenInfo = await verifyGoogleIdToken(env, config, idToken);
   } catch (err) {
-    console.warn('[ShiftFlow][Auth]', 'ID token verification failed', {
-      where: 'auth-callback',
-      requestId,
+    console.warn('[auth/callback] id_token verify failed', {
+      rid,
       message: err && err.message ? err.message : String(err),
     });
-    return renderError(
-      err && err.message ? err.message : 'ID トークンの検証に失敗しました。',
-      requestId
-    );
+    return redirect('/signin?e=verify');
   }
+
+  console.info('[auth/callback] id_token verify', {
+    rid,
+    ok: true,
+    aud: tokenInfo.aud,
+    iss: tokenInfo.iss,
+    hd: tokenInfo.hd || '',
+    exp: tokenInfo.exp || null,
+  });
 
   const now = Date.now();
   const tokenExpiry =
@@ -198,28 +216,27 @@ export async function onRequest({ request, env }) {
   };
 
   const { sessionId, sessionKey, record } = await createSession(env, sessionData);
-  const cookieValue = `${sessionId}.${sessionKey}`;
-  const cookie = buildSessionCookie(cookieValue);
-
-  const normalizedReturnPath = normalizeReturnPath(returnTo || '/', origin);
-  const normalizedBase = callbackUrl.replace(/\/auth\/callback$/, '');
-  console.info('[ShiftFlow][Auth]', 'Return path normalized', {
-    where: 'auth-callback',
-    normalizedReturn: normalizedReturnPath,
-    requestId,
-  });
-  const destination = normalizedBase + normalizedReturnPath;
-  const headers = {
-    Location: destination,
-    'Set-Cookie': cookie,
-    'X-ShiftFlow-Request-Id': requestId,
-  };
-
-  // Update record with calculated expiry (createSession already persisted but ensure expiry set)
   await updateSessionTokens(env, sessionId, record, sessionData.tokens);
 
-  return new Response(null, {
-    status: 302,
-    headers,
+  const sessionValue = `${sessionId}.${sessionKey}`;
+  const sessionCookie = buildSessionCookie(sessionValue, {
+    maxAge: SESSION_MAX_AGE,
+    sameSite: 'None',
+    domain: CANONICAL_DOMAIN,
   });
+
+  const destination = `https://${CANONICAL_DOMAIN}${returnTo}`;
+  const headers = new Headers({ Location: destination });
+  headers.append('Set-Cookie', sessionCookie);
+  headers.append('Set-Cookie', expireCookie('OAUTH_STATE'));
+  headers.append('Set-Cookie', expireCookie('PKCE_CODE_VERIFIER'));
+
+  console.info('[auth/callback] session COOKIE SET -> redirect', {
+    rid,
+    destination,
+    cookie: `SESSION; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=None`,
+    requestId,
+  });
+
+  return new Response(null, { status: 302, headers });
 }

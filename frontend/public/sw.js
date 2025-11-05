@@ -53,8 +53,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (url.pathname.startsWith('/auth/')) {
+    return;
+  }
+
   if (url.pathname === '/config') {
-    event.respondWith(fetchFreshConfig(event.request));
     return;
   }
 
@@ -124,26 +127,6 @@ function isCacheableResponse(response) {
 
 function shouldHandleAsApi(pathname) {
   return API_REVALIDATE_PATHS.some((prefix) => pathname.startsWith(prefix));
-}
-
-async function fetchFreshConfig(request) {
-  try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response && response.ok) {
-      return response;
-    }
-    throw new Error(`Unexpected response for ${request.url}: ${response && response.status}`);
-  } catch (_err) {
-    const cache = await caches.open(APP_SHELL_CACHE);
-    const cached = await cache.match(request);
-    if (cached) {
-      return cached;
-    }
-    return new Response('', {
-      status: 503,
-      statusText: 'Service Unavailable',
-    });
-  }
 }
 
 async function shouldBroadcastUpdate(request, freshResponse, cachedResponse) {
