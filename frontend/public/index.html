@@ -4352,116 +4352,64 @@
         return data;
       }
 
-      async function startAuthFlow(options) {
+      function normalizeReturnTo(rawValue) {
+        var fallback = '/';
+        var value = typeof rawValue === 'string' ? rawValue.trim() : '';
+        if (!value) return fallback;
+        try {
+          var candidate = new URL(value, window.location.origin);
+          if (candidate.origin !== window.location.origin) {
+            return fallback;
+          }
+          var normalized =
+            (candidate.pathname || '/') + (candidate.search || '') + (candidate.hash || '');
+          return normalized || fallback;
+        } catch (_err) {
+          if (value.charAt(0) === '/') {
+            return value;
+          }
+          return fallback;
+        }
+      }
+
+      function buildAuthStartUrl(returnTo) {
+        var normalized = normalizeReturnTo(returnTo);
+        var url = new URL('/auth/start', window.location.origin);
+        if (normalized) {
+          url.searchParams.set('returnTo', normalized);
+        }
+        return url.toString();
+      }
+
+      function startAuthFlow(options) {
         const opts = { external: true, ...(options || {}) };
-        const returnTo = opts.returnTo || window.location.href;
         const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
         const shouldPreOpenWindow = manualMode || opts.external;
-        let authWindow = null;
+        const returnTo = opts.returnTo || window.location.href;
+        const startUrl = buildAuthStartUrl(returnTo);
+        const fallbackTarget = manualMode ? buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL : '';
         if (shouldPreOpenWindow) {
-          authWindow = window.open('', '_blank');
-          if (!authWindow && manualMode) {
-            showAuthOverlay('認証ページを開けませんでした。Safari で再度お試しください。');
-            return;
-          }
-          if (authWindow) {
-            try {
-              authWindow.opener = null;
-              authWindow.focus();
-            } catch (_err) {
-              // ignore
-            }
-          }
-        }
-        let authUrl = '';
-        try {
-          const requestId = createRequestId();
-          const res = await fetch('/auth/start', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-              'X-ShiftFlow-Request-Id': requestId,
-            },
-            body: JSON.stringify({
-              returnTo,
-            }),
-          });
-          const body = await res.json();
-          if (res.ok && body && body.authUrl) {
-            authUrl = body.authUrl;
-          } else {
-            const errorMsg =
-              body && typeof body.reason === 'string' && body.reason
-                ? body.reason
-                : body && typeof body.error === 'string'
-                ? body.error
-                : 'AUTH_START_FAILED';
-            throw new Error(errorMsg);
-          }
-        } catch (err) {
-          console.error('[ShiftFlow] Failed to start auth flow', err);
-          if (authWindow && !authWindow.closed) authWindow.close();
-          if (manualMode) {
-            const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
-            if (fallbackTarget) {
+          const authWindow = window.open(startUrl, '_blank', 'noopener');
+          if (!authWindow) {
+            if (manualMode && fallbackTarget) {
               showAuthOverlay('組織の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
+            showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+            window.location.assign(startUrl);
+            return;
           }
-          showAuthOverlay('認証を開始できませんでした。しばらくしてから再度お試しください。');
+          try {
+            authWindow.opener = null;
+            authWindow.focus();
+          } catch (_err) {}
+          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
           return;
         }
-        if (!authUrl) {
-          if (authWindow && !authWindow.closed) authWindow.close();
-          if (manualMode) {
-            const fallbackTarget = buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL;
-            if (fallbackTarget) {
-              showAuthOverlay('認証 URL を取得できませんでした。組織の認証ページを別タブで開きました。');
-              window.open(fallbackTarget, '_blank', 'noopener');
-              return;
-            }
-          }
-          showAuthOverlay('認証 URL を取得できませんでした。');
-          return;
-        }
-        if (authWindow && !authWindow.closed) {
-          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
-          setTimeout(() => {
-            try {
-              authWindow.location.replace(authUrl);
-            } catch (_err) {
-              authWindow.location.href = authUrl;
-            }
-            try {
-              authWindow.focus();
-            } catch (_err) {}
-          }, 0);
-        } else if (manualMode || opts.external) {
-          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
-          const fallbackWindow = window.open('', '_blank');
-          if (fallbackWindow) {
-            try {
-              fallbackWindow.opener = null;
-              setTimeout(() => {
-                try {
-                  fallbackWindow.location.replace(authUrl);
-                } catch (_err) {
-                  fallbackWindow.location.href = authUrl;
-                }
-                try {
-                  fallbackWindow.focus();
-                } catch (_err2) {}
-              }, 0);
-            } catch (_err) {}
-          } else {
-            window.open(authUrl, '_blank');
-          }
-        } else {
-          window.location.assign(authUrl);
-        }
+
+        showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+        window.location.assign(startUrl);
       }
 
       async function performLogout() {
