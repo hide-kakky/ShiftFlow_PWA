@@ -1,6 +1,6 @@
 export function loadConfig(env) {
   const cfOrigin = (env?.CF_ORIGIN || '').trim();
-  const gasUrl = (env?.GAS_EXEC_URL || env?.GAS_WEB_APP_URL || '').trim();
+  const rawGasUrl = (env?.GAS_EXEC_URL || env?.GAS_WEB_APP_URL || '').trim();
   const googleClientId = (env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '').trim();
   const primarySecret = (env?.SHIFT_FLOW_SHARED_SECRET || env?.GAS_SHARED_SECRET || '').trim();
   const nextSecret = (env?.SHIFT_FLOW_SHARED_SECRET_NEXT || '').trim();
@@ -10,26 +10,25 @@ export function loadConfig(env) {
   if (!cfOrigin) {
     throw new Error('CF_ORIGIN is not configured. Set it in Cloudflare Pages environment variables.');
   }
-  if (!gasUrl) {
-    throw new Error(
-      'GAS_EXEC_URL is not configured. Set it in Cloudflare Pages environment variables.'
-    );
-  }
-  try {
-    const parsedGasUrl = new URL(gasUrl);
-    if (
-      parsedGasUrl.hostname.endsWith('googleusercontent.com') &&
-      parsedGasUrl.pathname.includes('/macros/echo')
-    ) {
-      throw new Error(
-        'GAS_EXEC_URL が macros/echo エンドポイントを指しています。Apps Script の Web アプリ (/exec) URL を指定してください。'
-      );
+  let gasUrl = '';
+  if (rawGasUrl) {
+    try {
+      const parsedGasUrl = new URL(rawGasUrl);
+      if (
+        parsedGasUrl.hostname.endsWith('googleusercontent.com') &&
+        parsedGasUrl.pathname.includes('/macros/echo')
+      ) {
+        throw new Error(
+          'GAS_EXEC_URL が macros/echo エンドポイントを指しています。Apps Script の Web アプリ (/exec) URL を指定してください。'
+        );
+      }
+      gasUrl = parsedGasUrl.toString();
+    } catch (err) {
+      if (!(err instanceof TypeError)) {
+        throw err;
+      }
+      throw new Error('GAS_EXEC_URL に有効な URL を指定してください。');
     }
-  } catch (err) {
-    if (!(err instanceof TypeError)) {
-      throw err;
-    }
-    throw new Error('GAS_EXEC_URL に有効な URL を指定してください。');
   }
   if (!googleClientId) {
     throw new Error(
@@ -63,14 +62,22 @@ function parseBooleanFlag(value) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
 }
 
+function readBooleanFlag(env, key, defaultValue = false) {
+  const raw = env ? env[key] : undefined;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return defaultValue;
+  }
+  return parseBooleanFlag(raw);
+}
+
 export function readFeatureFlags(env) {
   return {
     cfAuth: parseBooleanFlag(env?.CFG_CF_AUTH),
     cacheBootstrap: parseBooleanFlag(env?.CFG_CACHE_BOOTSTRAP),
     cacheHome: parseBooleanFlag(env?.CFG_CACHE_HOME),
-    d1Read: parseBooleanFlag(env?.CFG_D1_READ),
-    d1Write: parseBooleanFlag(env?.CFG_D1_WRITE),
-    d1Primary: parseBooleanFlag(env?.CFG_D1_PRIMARY),
+    d1Read: readBooleanFlag(env, 'CFG_D1_READ', true),
+    d1Write: readBooleanFlag(env, 'CFG_D1_WRITE', true),
+    d1Primary: readBooleanFlag(env, 'CFG_D1_PRIMARY', true),
     useJwks: parseBooleanFlag(env?.CFG_USE_JWKS),
   };
 }

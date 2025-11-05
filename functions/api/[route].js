@@ -824,6 +824,96 @@ function buildUserLabel(email, displayName) {
   return typeof email === 'string' ? email.trim() : '';
 }
 
+async function fetchActiveFoldersFromD1(db) {
+  const result = await db
+    .prepare(
+      `
+      SELECT DISTINCT TRIM(COALESCE(folder_id, '')) AS folder_id
+        FROM messages
+    `
+    )
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const folders = [];
+  const seen = new Set();
+  const pushFolder = (id, name) => {
+    const normalizedId = (id || '').trim();
+    if (!normalizedId || seen.has(normalizedId)) return;
+    seen.add(normalizedId);
+    folders.push({ id: normalizedId, name: name || normalizedId });
+  };
+  pushFolder('全体', '全体');
+  for (const row of rows) {
+    const value = row?.folder_id ? String(row.folder_id).trim() : '';
+    if (!value) continue;
+    pushFolder(value, value);
+  }
+  if (!folders.length) {
+    pushFolder('全体', '全体');
+    pushFolder('ブッフェ', 'ブッフェ');
+    pushFolder('レセプション', 'レセプション');
+    pushFolder('ホール', 'ホール');
+  }
+  return folders;
+}
+
+async function buildMyTasksPayload(db, rawEmail) {
+  const normalizedEmail = normalizeEmailValue(rawEmail);
+  const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
+  const totalTasks =
+    typeof totalRow?.count === 'number'
+      ? totalRow.count
+      : typeof totalRow?.['COUNT(*)'] === 'number'
+      ? totalRow['COUNT(*)']
+      : 0;
+  if (!normalizedEmail) {
+    return {
+      tasks: [],
+      meta: {
+        totalTasks,
+        matchedTasks: 0,
+        rawEmail,
+        normalizedEmail: '',
+        sampleTaskIds: [],
+        note:
+          'ログインユーザーのメールアドレスが取得できません。Webアプリの公開設定と組織ポリシーを確認してください。',
+      },
+    };
+  }
+  const assignedResult = await db
+    .prepare(
+      `
+      SELECT DISTINCT t.*
+        FROM tasks t
+        JOIN task_assignees ta ON ta.task_id = t.task_id
+       WHERE ta.email = ?1
+    `
+    )
+    .bind(normalizedEmail)
+    .all();
+  const rows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
+  const assigneeMap = await fetchAssigneesForTasks(
+    db,
+    rows.map((row) => row.task_id)
+  );
+  const tasks = rows
+    .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
+    .filter(Boolean);
+  const todayMs = startOfTodayMs();
+  tasks.sort((a, b) => compareTasksForList(a, b, todayMs));
+  return {
+    tasks,
+    meta: {
+      totalTasks,
+      matchedTasks: tasks.length,
+      rawEmail,
+      normalizedEmail,
+      sampleTaskIds: tasks.slice(0, 5).map((task) => task.id),
+      note: '',
+    },
+  };
+}
+
 async function fetchMessageAttachments(db, messageId) {
   const result = await db
     .prepare(
@@ -905,43 +995,6 @@ async function buildMessagesForUser(db, options) {
   return items;
 }
 
-const CACHE_TTL_SECONDS = 300;
-const CACHEABLE_ROUTES = {
-  getBootstrapData: {
-    flagKey: 'cacheBootstrap',
-    staleAfterSeconds: 60,
-    ttlSeconds: CACHE_TTL_SECONDS,
-  },
-  getHomeContent: {
-    flagKey: 'cacheHome',
-    staleAfterSeconds: 60,
-    ttlSeconds: CACHE_TTL_SECONDS,
-  },
-};
-const CACHE_INVALIDATION_ROUTES = {
-  getBootstrapData: new Set([
-    'saveUserSettings',
-    'clearCache',
-    'addNewTask',
-    'updateTask',
-    'completeTask',
-    'deleteTaskById',
-    'addNewMessage',
-    'deleteMessageById',
-  ]),
-  getHomeContent: new Set([
-    'addNewTask',
-    'updateTask',
-    'completeTask',
-    'deleteTaskById',
-    'toggleMemoRead',
-    'markMemosReadBulk',
-    'markMemoAsRead',
-    'addNewMessage',
-    'deleteMessageById',
-  ]),
-};
-
 function createLegacyTokenDetails(rawToken) {
   return {
     rawToken,
@@ -958,188 +1011,6 @@ function createLegacyTokenDetails(rawToken) {
     iatMs: undefined,
     expMs: undefined,
   };
-}
-
-function shouldUseKvCache(route, flags) {
-  if (!route || !flags) return null;
-  const settings = CACHEABLE_ROUTES[route];
-  if (!settings) return null;
-  const enabled = !!flags[settings.flagKey];
-  if (!enabled) return null;
-  const ttlSeconds = Number(settings.ttlSeconds || CACHE_TTL_SECONDS);
-  const staleAfterSeconds = Number(settings.staleAfterSeconds || ttlSeconds);
-  return { ttlSeconds, staleAfterSeconds };
-}
-
-function buildKvCacheKey(route, emailOrSub) {
-  const identity = emailOrSub ? emailOrSub.toLowerCase() : 'anonymous';
-  return `shiftflow:cache:${route}:${identity}`;
-}
-
-async function readKvCache(kv, key) {
-  try {
-    const raw = await kv.get(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.body !== 'string') return null;
-    if (parsed.storedAt) {
-      parsed.storedAt = Number(parsed.storedAt) || 0;
-    } else {
-      parsed.storedAt = 0;
-    }
-    return parsed;
-  } catch (err) {
-    console.warn('[ShiftFlow][Cache] Failed to read KV cache', {
-      key,
-      error: err && err.message ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
-async function writeKvCache(kv, key, record, ttlSeconds) {
-  try {
-    await kv.put(
-      key,
-      JSON.stringify({
-        status: record.status,
-        body: record.body,
-        contentType: record.contentType,
-        storedAt: Date.now(),
-      }),
-      { expirationTtl: ttlSeconds }
-    );
-  } catch (err) {
-    console.warn('[ShiftFlow][Cache] Failed to write KV cache', {
-      key,
-      error: err && err.message ? err.message : String(err),
-    });
-  }
-}
-
-function cloneFetchInitForCache(init) {
-  if (!init || typeof init !== 'object') return {};
-  const clone = { ...init };
-  if (init.headers instanceof Headers) {
-    clone.headers = new Headers(init.headers);
-  } else if (init.headers && typeof init.headers === 'object') {
-    clone.headers = { ...init.headers };
-  } else {
-    clone.headers = {};
-  }
-  if (typeof init.body === 'string') {
-    clone.body = init.body;
-  } else if (init.body === undefined) {
-    delete clone.body;
-  } else {
-    clone.body = init.body;
-  }
-  return clone;
-}
-
-async function revalidateKvCache(options) {
-  const { env, cacheKey, cacheSettings, upstreamUrl, init, config, route } = options || {};
-  if (!env || !env.APP_KV || !cacheKey || !cacheSettings || !upstreamUrl || !init) {
-    return;
-  }
-  try {
-    const refreshInit = cloneFetchInitForCache(init);
-    const refreshRequestId = createRequestId();
-    if (refreshInit.headers instanceof Headers) {
-      refreshInit.headers.set('X-ShiftFlow-Request-Id', refreshRequestId);
-    } else if (refreshInit.headers && typeof refreshInit.headers === 'object') {
-      refreshInit.headers['X-ShiftFlow-Request-Id'] = refreshRequestId;
-    } else {
-      refreshInit.headers = { 'X-ShiftFlow-Request-Id': refreshRequestId };
-    }
-    const response = await fetchPreservingAuth(upstreamUrl, refreshInit, 4, {
-      config,
-      requestId: refreshRequestId,
-      route,
-    });
-    if (!response.ok) {
-      console.warn('[ShiftFlow][Cache] Revalidation fetch did not return OK', {
-        cacheKey,
-        status: response.status,
-        route,
-      });
-      return;
-    }
-    const cacheBodyText = await response.text();
-    await writeKvCache(
-      env.APP_KV,
-      cacheKey,
-      {
-        status: response.status,
-        body: cacheBodyText,
-        contentType: response.headers.get('content-type') || 'application/json',
-      },
-      cacheSettings.ttlSeconds
-    );
-    logAuthInfo('KV cache revalidated in background', {
-      route,
-      cacheKey,
-      requestId: refreshRequestId,
-      ttl: cacheSettings.ttlSeconds,
-    });
-  } catch (err) {
-    console.warn('[ShiftFlow][Cache] Failed to revalidate cache', {
-      cacheKey,
-      error: err && err.message ? err.message : String(err),
-      route,
-    });
-  }
-}
-
-async function invalidateKvCacheForUser(kv, routes, email) {
-  if (!kv || !Array.isArray(routes) || !routes.length) return;
-  const identity = email ? email.toLowerCase() : 'anonymous';
-  for (const route of routes) {
-    const key = buildKvCacheKey(route, identity);
-    try {
-      await kv.delete(key);
-    } catch (err) {
-      console.warn('[ShiftFlow][Cache] Failed to delete KV cache', {
-        key,
-        error: err && err.message ? err.message : String(err),
-      });
-    }
-  }
-}
-
-function resolveInvalidationTargets(route) {
-  const routes = [];
-  if (
-    CACHE_INVALIDATION_ROUTES.getBootstrapData &&
-    CACHE_INVALIDATION_ROUTES.getBootstrapData.has(route)
-  ) {
-    routes.push('getBootstrapData');
-  }
-  if (
-    CACHE_INVALIDATION_ROUTES.getHomeContent &&
-    CACHE_INVALIDATION_ROUTES.getHomeContent.has(route)
-  ) {
-    routes.push('getHomeContent');
-  }
-  return routes;
-}
-
-function buildCacheResponse(cached, origin, requestId, cacheStatus = 'HIT') {
-  const headers = new Headers({
-    ...corsHeaders(origin),
-    'Content-Type': cached.contentType || 'application/json',
-    'X-ShiftFlow-Request-Id': requestId,
-    'X-ShiftFlow-Cache': cacheStatus || 'HIT',
-  });
-  const ageMs =
-    typeof cached.storedAt === 'number' && cached.storedAt > 0
-      ? Math.max(0, Date.now() - cached.storedAt)
-      : 0;
-  headers.set('X-ShiftFlow-Cache-Age', String(ageMs));
-  return new Response(cached.body, {
-    status: cached.status || 200,
-    headers,
-  });
 }
 
 function interceptRequestBodyForRoute(route, body, context) {
@@ -1377,31 +1248,153 @@ function interceptRequestBodyForRoute(route, body, context) {
   return { body, mutated: false, dualWriteContext: null };
 }
 
-async function parseJsonResponseSafe(response) {
-  if (!response) return null;
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('application/json')) {
-    return null;
-  }
-  try {
-    const text = await response.text();
-    return JSON.parse(text);
-  } catch (_err) {
-    return null;
-  }
-}
-
 async function maybeHandleRouteWithD1(options) {
   if (!options) return null;
-  const { route, flags, db, requestId, allowedOrigin, config, tokenDetails, accessContext } =
-    options;
-  if (!db) return null;
-  const preferD1 = !!(flags && (flags.d1Primary || flags.d1Read));
-  if (!preferD1) return null;
+  const {
+    route,
+    flags,
+    db,
+    requestId,
+    allowedOrigin,
+    config,
+    tokenDetails,
+    accessContext,
+    env,
+    requestMethod,
+    parsedBody,
+    query,
+    clientMeta,
+  } = options;
+  if (!db) {
+    logAuthError('D1 database binding is missing', { requestId, route });
+    return errorResponse(
+      500,
+      allowedOrigin || '*',
+      requestId,
+      'cf-api',
+      'd1_unavailable',
+      'D1 データベース接続が設定されていません。'
+    );
+  }
   const normalizedRoute = typeof route === 'string' ? route.trim() : '';
   if (!normalizedRoute) return null;
 
   try {
+    if (normalizedRoute === 'getBootstrapData') {
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      let membership = null;
+      if (normalizedEmail) {
+        try {
+          membership = await resolveMembershipForEmail(db, normalizedEmail);
+        } catch (err) {
+          console.warn('[ShiftFlow][D1] Failed to resolve membership for bootstrap', {
+            requestId,
+            email: normalizedEmail,
+            error: err && err.message ? err.message : String(err),
+          });
+        }
+      }
+      let userRow = null;
+      if (normalizedEmail) {
+        userRow = await db
+          .prepare(
+            `
+            SELECT user_id,
+                   email,
+                   display_name,
+                   profile_image_url,
+                   theme
+              FROM users
+             WHERE lower(email) = ?1
+          `
+          )
+          .bind(normalizedEmail)
+          .first();
+      }
+      const resolvedRole =
+        membership?.role || accessContext?.role || userRow?.role || 'member';
+      const userInfo = {
+        email: userRow?.email || rawEmail || '',
+        name: userRow?.display_name || accessContext?.displayName || 'ユーザー',
+        imageUrl: userRow?.profile_image_url || PROFILE_PLACEHOLDER_URL,
+        theme: userRow?.theme || 'light',
+        role: resolvedRole,
+      };
+      const bootstrap = {
+        userInfo,
+        users: [],
+        folders: [],
+        myTasks: { tasks: [], meta: {} },
+        isManager: isManagerRole(resolvedRole),
+        theme: userInfo.theme || 'light',
+      };
+      const orgId = membership?.org_id || (await resolveDefaultOrgId(db));
+      try {
+        const usersResult = await db
+          .prepare(
+            `
+            SELECT users.email AS email,
+                   COALESCE(users.display_name, users.email) AS display_name,
+                   COALESCE(memberships.role, 'member') AS role
+              FROM memberships
+              JOIN users ON users.user_id = memberships.user_id
+             WHERE (?1 IS NULL OR memberships.org_id = ?1)
+               AND LOWER(COALESCE(memberships.status, 'active')) = 'active'
+               AND (users.is_active IS NULL OR users.is_active = 1)
+               AND LOWER(COALESCE(users.status, 'active')) = 'active'
+             ORDER BY LOWER(display_name) ASC, users.email ASC
+          `
+          )
+          .bind(orgId || null)
+          .all();
+        const rows = Array.isArray(usersResult?.results) ? usersResult.results : [];
+        bootstrap.users =
+          rows.length > 0
+            ? rows.map((row) => ({
+                email: row.email,
+                name: row.display_name || row.email || '',
+                role: row.role ? String(row.role).trim() || 'member' : 'member',
+              }))
+            : [
+                { id: '全体', name: '全体' },
+                { id: 'ブッフェ', name: 'ブッフェ' },
+                { id: 'レセプション', name: 'レセプション' },
+                { id: 'ホール', name: 'ホール' },
+              ];
+      } catch (err) {
+        bootstrap.users = [];
+        bootstrap.usersError = err && err.message ? err.message : String(err);
+      }
+      try {
+        bootstrap.folders = await fetchActiveFoldersFromD1(db);
+      } catch (err) {
+        bootstrap.folders = [];
+        bootstrap.foldersError = err && err.message ? err.message : String(err);
+      }
+      try {
+        bootstrap.myTasks = await buildMyTasksPayload(db, rawEmail);
+      } catch (err) {
+        bootstrap.myTasks = {
+          tasks: [],
+          meta: {
+            error: err && err.message ? err.message : String(err),
+          },
+        };
+      }
+      captureDiagnostics(config, 'info', 'd1_route_served', {
+        event: 'd1_route_served',
+        route: normalizedRoute,
+        requestId,
+        email: userInfo.email || '',
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: bootstrap },
+        allowedOrigin,
+        requestId
+      );
+    }
     if (normalizedRoute === 'listActiveUsers') {
       const email = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
@@ -1458,7 +1451,27 @@ async function maybeHandleRouteWithD1(options) {
         orgId: orgId || '',
         count: mapped.length,
       });
-      return jsonResponseFromD1(200, { ok: true, result: mapped }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: mapped },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'listActiveFolders') {
+      const folders = await fetchActiveFoldersFromD1(db);
+      captureDiagnostics(config, 'info', 'd1_route_served', {
+        event: 'd1_route_served',
+        route: normalizedRoute,
+        requestId,
+        count: folders.length,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: folders },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'getUserSettings') {
       const email = normalizeEmailValue(
@@ -1524,75 +1537,338 @@ async function maybeHandleRouteWithD1(options) {
         requestId,
         email: result.email,
       });
-      return jsonResponseFromD1(200, { ok: true, result }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'saveUserSettings') {
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      if (!actorEmail) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'email_required',
+          'ユーザーのメールアドレスが特定できません。'
+        );
+      }
+      const bodyObject = parsedBody && typeof parsedBody === 'object' ? { ...parsedBody } : {};
+      const interception = interceptRequestBodyForRoute(normalizedRoute, bodyObject, {
+        flags,
+        tokenDetails,
+        accessContext,
+      });
+      const ctx = interception?.dualWriteContext;
+      const payload = ctx?.payload || {};
+      if (payload.hasImageData) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'image_upload_not_supported',
+          '画像アップロードは現在サポートされていません。'
+        );
+      }
+      await updateUserSettingsInD1(db, {
+        email: actorEmail,
+        name: payload.name,
+        theme: payload.theme,
+        imageUrl: payload.imageUrl,
+        timestampMs: ctx?.timestampMs || Date.now(),
+      });
+      const updatedUser = await db
+        .prepare(
+          `
+          SELECT profile_image_url, theme
+            FROM users
+           WHERE lower(email) = ?1
+        `
+        )
+        .bind(actorEmail)
+        .first();
+      const responsePayload = {
+        success: true,
+        message: '設定を保存しました。',
+        imageUrl: updatedUser?.profile_image_url || payload.imageUrl || PROFILE_PLACEHOLDER_URL,
+        imageName: '',
+        theme: updatedUser?.theme || payload.theme || 'light',
+      };
+      captureDiagnostics(config, 'info', 'd1_user_settings_saved', {
+        event: 'd1_user_settings_saved',
+        route: normalizedRoute,
+        requestId,
+        email: actorEmail,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'listMyTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
-      const normalizedEmail = normalizeEmailValue(rawEmail);
-      const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
-      const totalTasks =
-        typeof totalRow?.count === 'number'
-          ? totalRow.count
-          : typeof totalRow?.['COUNT(*)'] === 'number'
-          ? totalRow['COUNT(*)']
-          : 0;
-      if (!normalizedEmail) {
-        const emptyPayload = {
-          tasks: [],
-          meta: {
-            totalTasks,
-            matchedTasks: 0,
-            rawEmail,
-            normalizedEmail: '',
-            sampleTaskIds: [],
-            note:
-              'ログインユーザーのメールアドレスが取得できません。Webアプリの公開設定と組織ポリシーを確認してください。',
-          },
-        };
-        return jsonResponseFromD1(200, { ok: true, result: emptyPayload }, allowedOrigin, requestId);
+      const responsePayload = await buildMyTasksPayload(db, rawEmail);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'addNewTask') {
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
       }
-      const assignedResult = await db
+      const bodyObject = parsedBody && typeof parsedBody === 'object' ? { ...parsedBody } : {};
+      const interception = interceptRequestBodyForRoute(normalizedRoute, bodyObject, {
+        flags,
+        tokenDetails,
+        accessContext,
+      });
+      const effectiveBody = interception?.body || bodyObject;
+      const argsArray = Array.isArray(effectiveBody?.args) ? effectiveBody.args : [];
+      const taskPayload =
+        argsArray.length && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+      const timestampMs =
+        interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
+          ? interception.dualWriteContext.timestampMs
+          : Date.now();
+      const taskId =
+        interception?.dualWriteContext?.taskId ||
+        normalizeIdValue(taskPayload.taskId) ||
+        generateTaskId();
+      await insertTaskIntoD1(db, {
+        taskId,
+        payload: taskPayload,
+        timestampMs,
+        authorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      captureDiagnostics(config, 'info', 'd1_task_created', {
+        event: 'd1_task_created',
+        route: normalizedRoute,
+        requestId,
+        email: tokenDetails?.email || accessContext?.email || '',
+        taskId,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'タスクを追加しました。',
+          taskId,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'updateTask') {
+      const bodyObject = parsedBody && typeof parsedBody === 'object' ? { ...parsedBody } : {};
+      const interception = interceptRequestBodyForRoute(normalizedRoute, bodyObject, {
+        flags,
+        tokenDetails,
+        accessContext,
+      });
+      const ctx = interception?.dualWriteContext;
+      const taskId = ctx?.taskId ? normalizeIdValue(ctx.taskId) : '';
+      if (!taskId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_id_required',
+          'タスク ID を指定してください。'
+        );
+      }
+      const taskRow = await db
+        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1')
+        .bind(taskId)
+        .first();
+      if (!taskRow) {
+        return jsonResponseFromD1(
+          404,
+          {
+            ok: false,
+            success: false,
+            message: '更新対象のタスクが見つかりませんでした。',
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      await updateTaskInD1(db, {
+        taskId,
+        payload: ctx?.payload || {},
+        timestampMs: ctx?.timestampMs || Date.now(),
+      });
+      captureDiagnostics(config, 'info', 'd1_task_updated', {
+        event: 'd1_task_updated',
+        route: normalizedRoute,
+        requestId,
+        taskId,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'タスクを更新しました。',
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'completeTask') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawTaskId = argsArray.length > 0 ? argsArray[0] : query?.get('taskId') || '';
+      const taskId = normalizeIdValue(rawTaskId);
+      if (!taskId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_id_required',
+          'タスク ID を指定してください。'
+        );
+      }
+      const taskRow = await db
+        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1')
+        .bind(taskId)
+        .first();
+      if (!taskRow) {
+        return jsonResponseFromD1(
+          404,
+          {
+            ok: false,
+            success: false,
+            message: '対象のタスクが見つかりません。',
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      await completeTaskInD1(db, {
+        taskId,
+        timestampMs: Date.now(),
+      });
+      captureDiagnostics(config, 'info', 'd1_task_completed', {
+        event: 'd1_task_completed',
+        route: normalizedRoute,
+        requestId,
+        taskId,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'タスクを完了にしました。',
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'deleteTaskById') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawTaskId = argsArray.length > 0 ? argsArray[0] : query?.get('taskId') || '';
+      const taskId = normalizeIdValue(rawTaskId);
+      if (!taskId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_id_required',
+          'タスク ID を指定してください。'
+        );
+      }
+      const taskRow = await db
         .prepare(
           `
-          SELECT DISTINCT t.*
-            FROM tasks t
-            JOIN task_assignees ta ON ta.task_id = t.task_id
-           WHERE ta.email = ?1
+          SELECT task_id,
+                 created_by_email
+            FROM tasks
+           WHERE task_id = ?1
         `
         )
-        .bind(normalizedEmail)
-        .all();
-      const rows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
-      const assigneeMap = await fetchAssigneesForTasks(
-        db,
-        rows.map((row) => row.task_id)
-      );
-      const tasks = rows
-        .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
-        .filter(Boolean);
-      const todayMs = startOfTodayMs();
-      tasks.sort((a, b) => compareTasksForList(a, b, todayMs));
-      const responsePayload = {
-        tasks,
-        meta: {
-          totalTasks,
-          matchedTasks: tasks.length,
-          rawEmail,
-          normalizedEmail,
-          sampleTaskIds: tasks.slice(0, 5).map((task) => task.id),
-          note: '',
+        .bind(taskId)
+        .first();
+      if (!taskRow) {
+        return jsonResponseFromD1(
+          404,
+          {
+            ok: false,
+            success: false,
+            message: '該当のタスクが見つかりませんでした。',
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const creatorEmail = normalizeEmailValue(taskRow.created_by_email || '');
+      const canDelete =
+        !creatorEmail ||
+        !currentEmail ||
+        creatorEmail === currentEmail ||
+        isManagerRole(accessContext?.role);
+      if (!canDelete) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '削除権限がありません。'
+        );
+      }
+      await deleteTaskFromD1(db, { taskId });
+      captureDiagnostics(config, 'info', 'd1_task_deleted', {
+        event: 'd1_task_deleted',
+        route: normalizedRoute,
+        requestId,
+        taskId,
+        email: currentEmail || '',
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'タスクを削除しました。',
         },
-      };
-      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'listCreatedTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
       const filterArg =
-        options.parsedBody &&
-        Array.isArray(options.parsedBody.args) &&
-        options.parsedBody.args.length
-          ? options.parsedBody.args[0] || {}
+        parsedBody &&
+        Array.isArray(parsedBody.args) &&
+        parsedBody.args.length
+          ? parsedBody.args[0] || {}
           : {};
       const statusFilterRaw =
         typeof filterArg?.status === 'string' ? filterArg.status.trim() : '';
@@ -1673,7 +1949,12 @@ async function maybeHandleRouteWithD1(options) {
           filteredCount: filtered.length,
         },
       };
-      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'listAllTasks') {
       if (!isManagerRole(accessContext?.role)) {
@@ -1688,13 +1969,16 @@ async function maybeHandleRouteWithD1(options) {
             isManager: false,
           },
         };
-        return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: responsePayload },
+          allowedOrigin,
+          requestId
+        );
       }
       const filterArg =
-        options.parsedBody &&
-        Array.isArray(options.parsedBody.args) &&
-        options.parsedBody.args.length
-          ? options.parsedBody.args[0] || {}
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args[0] || {}
           : {};
       const statusFilterRaw =
         typeof filterArg?.status === 'string' ? filterArg.status.trim() : '';
@@ -1729,19 +2013,27 @@ async function maybeHandleRouteWithD1(options) {
           isManager: true,
         },
       };
-      return jsonResponseFromD1(200, { ok: true, result: responsePayload }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'getTaskById') {
       const args =
-        options.parsedBody &&
-        Array.isArray(options.parsedBody.args) &&
-        options.parsedBody.args.length
-          ? options.parsedBody.args
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args
           : [];
-      const rawTaskId = args.length ? args[0] : options.query?.get('taskId') || '';
+      const rawTaskId = args.length ? args[0] : query?.get('taskId') || '';
       const taskId = normalizeIdValue(rawTaskId);
       if (!taskId) {
-        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: null },
+          allowedOrigin,
+          requestId
+        );
       }
       const row = await db
         .prepare(
@@ -1754,7 +2046,12 @@ async function maybeHandleRouteWithD1(options) {
         .bind(taskId)
         .first();
       if (!row) {
-        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: null },
+          allowedOrigin,
+          requestId
+        );
       }
       const assigneeMap = await fetchAssigneesForTasks(db, [taskId]);
       const summary = buildTaskRecordFromD1(row, assigneeMap.get(taskId) || []);
@@ -1777,14 +2074,249 @@ async function maybeHandleRouteWithD1(options) {
         repeatRule: summary?.repeatRule || '',
         updatedAt: summary?.updatedAt ? formatJst(summary.updatedAt, true) : '',
       };
-      return jsonResponseFromD1(200, { ok: true, result: detail }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: detail },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'addNewMessage') {
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
+      }
+      const bodyObject = parsedBody && typeof parsedBody === 'object' ? { ...parsedBody } : {};
+      const interception = interceptRequestBodyForRoute(normalizedRoute, bodyObject, {
+        flags,
+        tokenDetails,
+        accessContext,
+      });
+      const effectiveBody = interception?.body || bodyObject;
+      const argsArray = Array.isArray(effectiveBody?.args) ? effectiveBody.args : [];
+      const messagePayload =
+        argsArray.length && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+      const timestampMs =
+        interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
+          ? interception.dualWriteContext.timestampMs
+          : Date.now();
+      const messageId =
+        interception?.dualWriteContext?.messageId ||
+        normalizeIdValue(messagePayload.messageId) ||
+        generateMessageId();
+      await insertMessageIntoD1(db, {
+        messageId,
+        payload: messagePayload,
+        timestampMs,
+        authorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      const actorEmail = tokenDetails?.email || accessContext?.email || '';
+      if (actorEmail) {
+        await ensureMemoReadInD1(db, {
+          messageId,
+          timestampMs,
+          email: actorEmail,
+        });
+      }
+      captureDiagnostics(config, 'info', 'd1_message_created', {
+        event: 'd1_message_created',
+        route: normalizedRoute,
+        requestId,
+        email: actorEmail || '',
+        messageId,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'メッセージを投稿しました。',
+          memoId: messageId,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'deleteMessageById') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawMessageId =
+        argsArray.length > 0 ? argsArray[0] : query?.get('memoId') || '';
+      const messageId = normalizeIdValue(rawMessageId);
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      const messageRow = await db
+        .prepare(
+          `
+          SELECT m.message_id,
+                 m.org_id,
+                 COALESCE(u.email, '') AS author_email
+            FROM messages m
+            LEFT JOIN memberships ms ON ms.membership_id = m.author_membership_id
+            LEFT JOIN users u ON u.user_id = ms.user_id
+           WHERE m.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .first();
+      if (!messageRow) {
+        return jsonResponseFromD1(
+          404,
+          {
+            ok: false,
+            success: false,
+            reason: '対象のメッセージが見つかりません。',
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const authorEmail = normalizeEmailValue(messageRow.author_email || '');
+      const canDelete =
+        (currentEmail && authorEmail && currentEmail === authorEmail) ||
+        isManagerRole(accessContext?.role);
+      if (!canDelete) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '削除権限がありません。'
+        );
+      }
+      await deleteMessageFromD1(db, { messageId });
+      captureDiagnostics(config, 'info', 'd1_message_deleted', {
+        event: 'd1_message_deleted',
+        route: normalizedRoute,
+        requestId,
+        email: currentEmail || '',
+        messageId,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'メッセージを削除しました。',
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'markMemoAsRead') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawMessageId =
+        argsArray.length > 0 ? argsArray[0] : query?.get('memoId') || '';
+      const messageId = normalizeIdValue(rawMessageId);
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      await ensureMemoReadInD1(db, {
+        messageId,
+        timestampMs: Date.now(),
+        email: tokenDetails?.email || accessContext?.email || '',
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: 'メッセージを既読にしました。',
+          memoId: messageId,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'toggleMemoRead') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawMessageId =
+        argsArray.length > 0 ? argsArray[0] : query?.get('memoId') || '';
+      const messageId = normalizeIdValue(rawMessageId);
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      const shouldRead =
+        argsArray.length > 1 ? Boolean(argsArray[1]) : true;
+      await toggleMemoReadInD1(db, {
+        messageId,
+        shouldRead,
+        timestampMs: Date.now(),
+        email: tokenDetails?.email || accessContext?.email || '',
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: shouldRead ? 'メッセージを既読にしました。' : 'メッセージを未読に戻しました。',
+          memoId: messageId,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'markMemosReadBulk') {
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
+      const rawList = argsArray.length > 0 ? argsArray[0] : [];
+      const memoIds = Array.isArray(rawList)
+        ? rawList.map((id) => normalizeIdValue(id)).filter(Boolean)
+        : [];
+      await bulkEnsureMemoReadInD1(db, {
+        messageIds: memoIds,
+        timestampMs: Date.now(),
+        email: tokenDetails?.email || accessContext?.email || '',
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          message: `未読 ${memoIds.length} 件を既読にしました`,
+          targetCount: memoIds.length,
+        },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'getMessages') {
       const args =
-        options.parsedBody &&
-        Array.isArray(options.parsedBody.args) &&
-        options.parsedBody.args.length
-          ? options.parsedBody.args[0] || {}
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args[0] || {}
           : {};
       const folderId = typeof args?.folderId === 'string' ? args.folderId : '';
       const unreadOnly = !!args?.unreadOnly;
@@ -1797,19 +2329,27 @@ async function maybeHandleRouteWithD1(options) {
         membershipId,
       });
       const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
-      return jsonResponseFromD1(200, { ok: true, result: payload }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'getMessageById') {
       const args =
-        options.parsedBody &&
-        Array.isArray(options.parsedBody.args) &&
-        options.parsedBody.args.length
-          ? options.parsedBody.args
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args
           : [];
-      const rawMessageId = args.length ? args[0] : options.query?.get('memoId') || '';
+      const rawMessageId = args.length ? args[0] : query?.get('memoId') || '';
       const messageId = normalizeIdValue(rawMessageId);
       if (!messageId) {
-        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: null },
+          allowedOrigin,
+          requestId
+        );
       }
       const messageRow = await db
         .prepare(
@@ -1827,7 +2367,12 @@ async function maybeHandleRouteWithD1(options) {
         .bind(messageId)
         .first();
       if (!messageRow) {
-        return jsonResponseFromD1(200, { ok: true, result: null }, allowedOrigin, requestId);
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: null },
+          allowedOrigin,
+          requestId
+        );
       }
       const attachments = await fetchMessageAttachments(db, messageId);
       const readResult = await db
@@ -1883,7 +2428,12 @@ async function maybeHandleRouteWithD1(options) {
         canDelete,
         attachments,
       };
-      return jsonResponseFromD1(200, { ok: true, result: detail }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: detail },
+        allowedOrigin,
+        requestId
+      );
     }
     if (normalizedRoute === 'getHomeContent') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
@@ -1937,7 +2487,12 @@ async function maybeHandleRouteWithD1(options) {
         tasks: todays,
         messages,
       };
-      return jsonResponseFromD1(200, { ok: true, result: payload }, allowedOrigin, requestId);
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
     }
   } catch (err) {
     console.error('[ShiftFlow][D1] Route handling failed', {
@@ -1955,208 +2510,6 @@ async function maybeHandleRouteWithD1(options) {
   return null;
 }
 
-async function performDualWriteIfNeeded(options) {
-  const { env, config, route, requestId, tokenDetails, accessContext, dualWriteContext, responseJson, clientMeta } =
-    options;
-  const flags = config?.flags || {};
-  if (!flags.d1Write || !dualWriteContext) return;
-  if (!env?.DB) {
-    logAuthInfo('Dual write skipped because DB binding is missing', { route, requestId });
-    return;
-  }
-  if (!responseJson || responseJson.success === false || responseJson.ok === false) {
-    logAuthInfo('Dual write skipped due to upstream failure', {
-      route,
-      requestId,
-      success: responseJson && responseJson.success,
-    });
-    return;
-  }
-  try {
-    const userEmail = tokenDetails.email || accessContext.email || '';
-    if (dualWriteContext.type === 'message') {
-      await insertMessageIntoD1(env.DB, {
-        messageId: dualWriteContext.messageId,
-        payload: dualWriteContext.payload,
-        timestampMs: dualWriteContext.timestampMs,
-        authorEmail: tokenDetails.email,
-        role: accessContext.role,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_message_success', {
-        event: 'dual_write_message_success',
-        route,
-        requestId,
-        email: tokenDetails.email || '',
-        messageId: dualWriteContext.messageId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'task') {
-      await insertTaskIntoD1(env.DB, {
-        taskId: dualWriteContext.taskId,
-        payload: dualWriteContext.payload,
-        timestampMs: dualWriteContext.timestampMs,
-        authorEmail: tokenDetails.email,
-        role: accessContext.role,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_task_success', {
-        event: 'dual_write_task_success',
-        route,
-        requestId,
-        email: tokenDetails.email || '',
-        taskId: dualWriteContext.taskId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'task_update') {
-      await updateTaskInD1(env.DB, {
-        taskId: dualWriteContext.taskId,
-        payload: dualWriteContext.payload,
-        timestampMs: dualWriteContext.timestampMs,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_task_update_success', {
-        event: 'dual_write_task_update_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        taskId: dualWriteContext.taskId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'task_complete') {
-      await completeTaskInD1(env.DB, {
-        taskId: dualWriteContext.taskId,
-        timestampMs: dualWriteContext.timestampMs,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_task_complete_success', {
-        event: 'dual_write_task_complete_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        taskId: dualWriteContext.taskId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'memo_read_toggle') {
-      await toggleMemoReadInD1(env.DB, {
-        messageId: dualWriteContext.messageId,
-        shouldRead: dualWriteContext.shouldRead,
-        timestampMs: dualWriteContext.timestampMs,
-        email: userEmail,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_memo_read_success', {
-        event: 'dual_write_memo_read_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        messageId: dualWriteContext.messageId,
-        shouldRead: dualWriteContext.shouldRead,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'task_delete') {
-      await deleteTaskFromD1(env.DB, {
-        taskId: dualWriteContext.taskId,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_task_delete_success', {
-        event: 'dual_write_task_delete_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        taskId: dualWriteContext.taskId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'message_delete') {
-      await deleteMessageFromD1(env.DB, {
-        messageId: dualWriteContext.messageId,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_message_delete_success', {
-        event: 'dual_write_message_delete_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        messageId: dualWriteContext.messageId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'memo_mark_read') {
-      await ensureMemoReadInD1(env.DB, {
-        messageId: dualWriteContext.messageId,
-        timestampMs: dualWriteContext.timestampMs,
-        email: userEmail,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_memo_mark_read_success', {
-        event: 'dual_write_memo_mark_read_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        messageId: dualWriteContext.messageId,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'memo_mark_read_bulk') {
-      await bulkEnsureMemoReadInD1(env.DB, {
-        messageIds: Array.isArray(dualWriteContext.messageIds) ? dualWriteContext.messageIds : [],
-        timestampMs: dualWriteContext.timestampMs,
-        email: userEmail,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_memo_mark_read_bulk_success', {
-        event: 'dual_write_memo_mark_read_bulk_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        targetCount: Array.isArray(dualWriteContext.messageIds)
-          ? dualWriteContext.messageIds.length
-          : 0,
-        cfRay: clientMeta?.cfRay || '',
-      });
-    } else if (dualWriteContext.type === 'user_settings') {
-      const finalTheme =
-        dualWriteContext.payload?.theme ||
-        (responseJson && typeof responseJson.theme === 'string' ? responseJson.theme : undefined);
-      const finalName =
-        dualWriteContext.payload?.name ||
-        (responseJson && typeof responseJson.name === 'string' ? responseJson.name : undefined);
-      const finalImageUrl =
-        (responseJson && typeof responseJson.imageUrl === 'string'
-          ? responseJson.imageUrl
-          : undefined) ||
-        (dualWriteContext.payload?.imageUrl && !dualWriteContext.payload.hasImageData
-          ? dualWriteContext.payload.imageUrl
-          : undefined);
-      await updateUserSettingsInD1(env.DB, {
-        email: userEmail,
-        name: finalName,
-        theme: finalTheme,
-        imageUrl: finalImageUrl,
-        timestampMs: dualWriteContext.timestampMs,
-      });
-      captureDiagnostics(config, 'info', 'dual_write_user_settings_success', {
-        event: 'dual_write_user_settings_success',
-        route,
-        requestId,
-        email: userEmail || '',
-        theme: finalTheme || '',
-        cfRay: clientMeta?.cfRay || '',
-      });
-    }
-  } catch (err) {
-    console.error('[ShiftFlow][DualWrite] Failed to replicate to D1', {
-      route,
-      requestId,
-      entityType: dualWriteContext.type,
-      messageId: dualWriteContext.messageId,
-      taskId: dualWriteContext.taskId,
-      shouldRead: dualWriteContext.shouldRead,
-      error: err && err.message ? err.message : String(err),
-    });
-    captureDiagnostics(config, 'error', 'dual_write_failure', {
-      event: 'dual_write_failure',
-      route,
-      requestId,
-      email: tokenDetails.email || '',
-      entityType: dualWriteContext.type,
-      messageId: dualWriteContext.messageId,
-      taskId: dualWriteContext.taskId,
-      shouldRead: dualWriteContext.shouldRead,
-      detail: err && err.message ? err.message : String(err),
-      cfRay: clientMeta?.cfRay || '',
-    });
-  }
-}
 
 async function insertMessageIntoD1(db, context) {
   if (!context?.messageId) return;
@@ -2611,118 +2964,6 @@ async function resolveDefaultOrgId(db) {
   return row ? row.org_id : null;
 }
 
-async function fetchPreservingAuth(originalUrl, originalInit, remainingRedirects = 4, meta = {}) {
-  const init = { ...(originalInit || {}), redirect: 'manual' };
-  const response = await fetch(originalUrl, init);
-  if (!REDIRECT_STATUSES.has(response.status)) {
-    return response;
-  }
-  const location = normalizeRedirectUrl(originalUrl, response.headers.get('Location'));
-
-  const originHostRaw = (() => {
-    try {
-      return new URL(originalUrl).hostname;
-    } catch (_err) {
-      return '';
-    }
-  })();
-  const locationHostRaw = (() => {
-    try {
-      return location ? new URL(location).hostname : '';
-    } catch (_err) {
-      return '';
-    }
-  })();
-  const originHost = originHostRaw ? originHostRaw.toLowerCase() : '';
-  const locationHost = locationHostRaw ? locationHostRaw.toLowerCase() : '';
-
-  if (
-    location &&
-    locationHost &&
-    locationHost.endsWith('script.googleusercontent.com') &&
-    originHost &&
-    (originHost === 'script.google.com' || originHost.endsWith('.script.google.com'))
-  ) {
-    if (remainingRedirects <= 0) {
-      logAuthError('Exceeded redirect attempts when calling upstream', {
-        requestId: meta.requestId || '',
-        route: meta.route || '',
-        status: response.status,
-        location: location || '',
-        originHost,
-        locationHost,
-      });
-      const error = new Error('Too many upstream redirects.');
-      error.httpStatus = response.status;
-      error.redirectLocation = location || '';
-      error.responseHeaders = Object.fromEntries(response.headers.entries());
-      error.isRedirect = true;
-      throw error;
-    }
-    logAuthInfo('Following upstream redirect', {
-      requestId: meta.requestId || '',
-      route: meta.route || '',
-      status: response.status,
-      location,
-    });
-    captureDiagnostics(meta.config, 'info', 'upstream_redirect_followed', {
-      event: 'upstream_redirect_followed',
-      requestId: meta.requestId || '',
-      route: meta.route || '',
-      status: response.status,
-      location,
-      originHost,
-      locationHost,
-    });
-    const nextInit = { ...init };
-    delete nextInit.redirect;
-    const originalMethod = (nextInit.method || 'GET').toString().toUpperCase();
-    const shouldResetMethod =
-      response.status === 303 ||
-      ((response.status === 301 || response.status === 302) &&
-        originalMethod !== 'GET' &&
-        originalMethod !== 'HEAD');
-    if (shouldResetMethod) {
-      nextInit.method = 'GET';
-      delete nextInit.body;
-      if (nextInit.headers && typeof nextInit.headers === 'object') {
-        if (typeof nextInit.headers.delete === 'function') {
-          nextInit.headers.delete('Content-Type');
-        } else {
-          delete nextInit.headers['Content-Type'];
-          delete nextInit.headers['content-type'];
-        }
-      }
-    }
-    nextInit.redirect = 'manual';
-    return fetchPreservingAuth(location, nextInit, remainingRedirects - 1, meta);
-  }
-
-  logAuthInfo('Blocked upstream redirect', {
-    requestId: meta.requestId || '',
-    route: meta.route || '',
-    status: response.status,
-    location: location || '',
-  });
-  captureDiagnostics(meta.config, 'warn', 'upstream_redirect_blocked', {
-    event: 'upstream_redirect_blocked',
-    requestId: meta.requestId || '',
-    route: meta.route || '',
-    status: response.status,
-    location: location || '',
-    originHost,
-    locationHost,
-  });
-
-  const error = new Error('Upstream responded with a redirect.');
-  error.httpStatus = response.status;
-  error.redirectLocation = location || '';
-  error.responseHeaders = Object.fromEntries(response.headers.entries());
-  error.isRedirect = true;
-  error.isCrossOriginRedirect = originHost && locationHost && originHost !== locationHost;
-  throw error;
-}
-
 function sanitizeDiagnosticsValue(value) {
   if (value === null || value === undefined) {
     return undefined;
@@ -2912,6 +3153,9 @@ export async function onRequest(context) {
       }
     }
   }
+  flags.d1Read = true;
+  flags.d1Write = true;
+  flags.d1Primary = true;
   config.flags = flags;
   const route = params.route ? String(params.route) : '';
   const requestId = createRequestId();
@@ -3287,331 +3531,78 @@ export async function onRequest(context) {
     }
   }
 
-  const rawBearerToken =
-    typeof tokenDetails.rawToken === 'string' ? tokenDetails.rawToken.trim() : '';
-  const authorizationHeader = rawBearerToken ? `Bearer ${rawBearerToken}` : '';
-
   const originalUrl = new URL(request.url);
-  const upstreamUrl = new URL(config.gasUrl);
-  upstreamUrl.searchParams.delete('route');
-  upstreamUrl.searchParams.delete('method');
-  upstreamUrl.searchParams.delete('page');
-  originalUrl.searchParams.forEach((value, key) => {
-    if (key !== 'route') {
-      upstreamUrl.searchParams.append(key, value);
-    }
-  });
-  upstreamUrl.searchParams.set('route', route);
-  upstreamUrl.searchParams.set('__userEmail', tokenDetails.email || '');
-  upstreamUrl.searchParams.set('__userSub', tokenDetails.sub || '');
-  if (tokenDetails.name) {
-    upstreamUrl.searchParams.set('__userName', tokenDetails.name);
-  }
 
-  let dualWriteContext = null;
   let parsedJsonBody = null;
-  let rawBodyToForward = null;
-
-  const initHeaders = {
-    'X-ShiftFlow-Email': tokenDetails.email || '',
-    'X-ShiftFlow-Sub': tokenDetails.sub || '',
-    'X-ShiftFlow-Role': accessContext.role,
-    'X-ShiftFlow-User-Status': accessContext.status,
-    'X-ShiftFlow-Request-Id': requestId,
-  };
-  if (authorizationHeader) {
-    initHeaders.Authorization = authorizationHeader;
-  }
-  const upstreamSharedSecret = getPrimarySharedSecret(config);
-  if (upstreamSharedSecret) initHeaders['X-ShiftFlow-Secret'] = upstreamSharedSecret;
-  if (tokenDetails.name) {
-    initHeaders['X-ShiftFlow-Name'] = tokenDetails.name;
-  }
-  if (clientMeta.ip) initHeaders['X-ShiftFlow-Client-IP'] = clientMeta.ip;
-  if (clientMeta.userAgent) initHeaders['X-ShiftFlow-User-Agent'] = clientMeta.userAgent;
-  if (clientMeta.cfRay) initHeaders['X-ShiftFlow-CF-Ray'] = clientMeta.cfRay;
-  if (tokenDetails.iat) initHeaders['X-ShiftFlow-Token-Iat'] = String(tokenDetails.iat);
-  if (tokenDetails.exp) initHeaders['X-ShiftFlow-Token-Exp'] = String(tokenDetails.exp);
-
-  const init = {
-    method: request.method,
-    redirect: 'follow',
-    headers: initHeaders,
-  };
-
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    const contentType = request.headers.get('content-type');
-    const originalContentType = contentType || '';
-    if (originalContentType) {
-      init.headers['Content-Type'] = originalContentType;
-    }
-    rawBodyToForward = await request.text();
-    if (rawBodyToForward && originalContentType.includes('application/json')) {
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
       try {
-        parsedJsonBody = JSON.parse(rawBodyToForward) || {};
-        if (authorizationHeader) {
-          if (parsedJsonBody && typeof parsedJsonBody === 'object') {
-            if (!parsedJsonBody.authorization) {
-              parsedJsonBody.authorization = authorizationHeader;
-            }
-            if (!parsedJsonBody.headers || typeof parsedJsonBody.headers !== 'object') {
-              parsedJsonBody.headers = {};
-            }
-            if (!parsedJsonBody.headers.Authorization) {
-              parsedJsonBody.headers.Authorization = authorizationHeader;
-            }
-          }
-        }
-        const interception = interceptRequestBodyForRoute(route, parsedJsonBody, {
-          flags,
-          tokenDetails,
-          accessContext,
-        });
-        const bodyToForward = interception ? interception.body : parsedJsonBody;
-        if (interception && interception.dualWriteContext) {
-          dualWriteContext = interception.dualWriteContext;
-        }
-        parsedJsonBody = bodyToForward || {};
-        rawBodyToForward = JSON.stringify(bodyToForward);
-        init.headers['Content-Type'] = 'application/json';
-      } catch (_err) {
-        parsedJsonBody = null;
-      }
-    }
-    init.body = rawBodyToForward;
-  }
-
-  const cacheSettings = shouldUseKvCache(route, flags);
-  const hasKvStore = !!env && !!env.APP_KV;
-  const cacheIdentitySource =
-    (accessContext.email && accessContext.email.trim()) ||
-    (tokenDetails.email && tokenDetails.email.trim()) ||
-    (tokenDetails.sub && tokenDetails.sub.trim()) ||
-    'anonymous';
-  const cacheIdentity = cacheIdentitySource.toLowerCase();
-  const invalidationTargets = resolveInvalidationTargets(route);
-  let cacheKey = null;
-  let cacheStatus = 'BYPASS';
-  if (cacheSettings && hasKvStore) {
-    cacheKey = buildKvCacheKey(route, cacheIdentity);
-    const cachedRecord = await readKvCache(env.APP_KV, cacheKey);
-    if (cachedRecord) {
-      const storedAtMs = Number(cachedRecord.storedAt || 0);
-      const staleAfterMs = (cacheSettings.staleAfterSeconds || cacheSettings.ttlSeconds) * 1000;
-      const isStale = storedAtMs > 0 && Date.now() - storedAtMs > staleAfterMs;
-      if (!isStale) {
-        logAuthInfo('Serving response from KV cache', {
+        const raw = await request.text();
+        parsedJsonBody = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        logAuthError('Failed to parse JSON body', {
           requestId,
           route,
-          cacheKey,
+          message: err && err.message ? err.message : String(err),
         });
-        const cachedResponse = buildCacheResponse(
-          cachedRecord,
+        return errorResponse(
+          400,
           allowedOrigin || config.allowedOrigins[0] || '*',
           requestId,
-          'HIT'
-        );
-        if (sessionCookieHeader) {
-          cachedResponse.headers.set('Set-Cookie', sessionCookieHeader);
-        }
-        return cachedResponse;
-      }
-      cacheStatus = 'STALE';
-      logAuthInfo('Serving stale response from KV cache', {
-        requestId,
-        route,
-        cacheKey,
-      });
-      if (typeof waitUntil === 'function') {
-        const refreshInit = cloneFetchInitForCache(init);
-        waitUntil(
-          revalidateKvCache({
-            env,
-            cacheKey,
-            cacheSettings,
-            upstreamUrl: upstreamUrl.toString(),
-            init: refreshInit,
-            config,
-            route,
-          })
+          'cf-api',
+          'invalid_json',
+          'リクエストボディの JSON 解析に失敗しました。',
+          null,
+          mergeHeaders()
         );
       }
-      const staleResponse = buildCacheResponse(
-        cachedRecord,
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        requestId,
-        'STALE'
-      );
-      if (sessionCookieHeader) {
-        staleResponse.headers.set('Set-Cookie', sessionCookieHeader);
-      }
-      return staleResponse;
-    }
-    cacheStatus = 'MISS';
-  }
-
-  if ((flags.d1Primary || flags.d1Read) && env && env.DB) {
-    const d1Response = await maybeHandleRouteWithD1({
-      route,
-      flags,
-      db: env.DB,
-      requestId,
-      allowedOrigin: allowedOrigin || config.allowedOrigins[0] || '*',
-      config,
-      tokenDetails,
-      accessContext,
-      requestMethod: request.method,
-      parsedBody: parsedJsonBody,
-      query: originalUrl.searchParams,
-      clientMeta,
-    });
-    if (d1Response) {
-      return d1Response;
+    } else if (request.headers.has('content-length')) {
+      // Non-JSON bodies are currently unsupported for API routes.
+      const raw = await request.text();
+      parsedJsonBody = { raw };
+    } else {
+      parsedJsonBody = {};
     }
   }
 
-  let upstreamResponse;
-  try {
-    upstreamResponse = await fetchPreservingAuth(upstreamUrl.toString(), init, 4, {
-      config,
-      requestId,
-      route,
-    });
-  } catch (err) {
-    if (err && err.isRedirect) {
-      logAuthError('GAS returned redirect', {
-        requestId,
-        route,
-        email: tokenDetails.email || '',
-        status: err.httpStatus || '',
-        location: err.redirectLocation || '',
-      });
-      captureDiagnostics(config, 'error', 'gas_redirected', {
-        event: 'gas_redirected',
-        requestId,
-        route,
-        email: tokenDetails.email || '',
-        status: err.httpStatus || '',
-        location: err.redirectLocation || '',
-        clientIp: clientMeta.ip,
-        cfRay: clientMeta.cfRay,
-      });
-      return errorResponse(
-        401,
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        requestId,
-        'cf-api',
-        'gas_redirected',
-        'Google アカウントの認証が必要です。',
-        {
-          detail:
-            'Apps Script が認証リダイレクトを返しました。ブラウザで GAS_EXEC_URL を開いて Google アカウントの承認を完了してください。',
-        },
-        mergeHeaders()
-      );
-    }
-    logAuthError('Failed to reach GAS', {
+  const d1Response = await maybeHandleRouteWithD1({
+    route,
+    flags,
+    db: env && env.DB ? env.DB : null,
+    requestId,
+    allowedOrigin: allowedOrigin || config.allowedOrigins[0] || '*',
+    config,
+    tokenDetails,
+    accessContext,
+    requestMethod: request.method,
+    parsedBody: parsedJsonBody,
+    query: originalUrl.searchParams,
+    clientMeta,
+    env,
+  });
+
+  if (!d1Response) {
+    captureDiagnostics(config, 'error', 'route_not_implemented', {
+      event: 'route_not_implemented',
       requestId,
       route,
       email: tokenDetails.email || '',
-      message: err && err.message ? err.message : String(err),
-    });
-    captureDiagnostics(config, 'error', 'gas_unreachable', {
-      event: 'gas_unreachable',
-      requestId,
-      route,
-      email: tokenDetails.email || '',
-      detail: err && err.message ? err.message : String(err),
-      clientIp: clientMeta.ip,
-      cfRay: clientMeta.cfRay,
     });
     return errorResponse(
-      502,
+      501,
       allowedOrigin || config.allowedOrigins[0] || '*',
       requestId,
       'cf-api',
-      'gas_unreachable',
-      err && err.message ? err.message : String(err || 'fetch failed'),
+      'route_not_implemented',
+      '指定されたルートは現在利用できません。',
       null,
       mergeHeaders()
     );
   }
 
-  const responseForCache = cacheSettings && hasKvStore ? upstreamResponse.clone() : null;
-
-  if (hasKvStore && invalidationTargets.length && upstreamResponse.ok) {
-    await invalidateKvCacheForUser(env.APP_KV, invalidationTargets, cacheIdentitySource);
-  }
-
-  if (
-    cacheSettings &&
-    hasKvStore &&
-    cacheKey &&
-    cacheStatus === 'MISS' &&
-    upstreamResponse.ok &&
-    responseForCache
-  ) {
-    try {
-      const cacheBodyText = await responseForCache.text();
-      await writeKvCache(
-        env.APP_KV,
-        cacheKey,
-        {
-          status: upstreamResponse.status,
-          body: cacheBodyText,
-          contentType: upstreamResponse.headers.get('content-type') || 'application/json',
-        },
-        cacheSettings.ttlSeconds
-      );
-      logAuthInfo('Stored response in KV cache', {
-        requestId,
-        route,
-        cacheKey,
-        ttl: cacheSettings.ttlSeconds,
-      });
-    } catch (err) {
-      console.warn('[ShiftFlow][Cache] Failed to cache response', {
-        cacheKey,
-        error: err && err.message ? err.message : String(err),
-      });
-    }
-  }
-
-  let inspectedResponseJson = null;
-  if (dualWriteContext) {
-    inspectedResponseJson = await parseJsonResponseSafe(upstreamResponse.clone());
-    await performDualWriteIfNeeded({
-      env,
-      config,
-      route,
-      requestId,
-      tokenDetails,
-      accessContext,
-      dualWriteContext,
-      responseJson: inspectedResponseJson,
-      clientMeta,
-    });
-  }
-
-  const baseCors = corsHeaders(allowedOrigin || config.allowedOrigins[0] || '*');
-  const responseHeaders = new Headers({
-    ...baseCors,
-    'X-ShiftFlow-Request-Id': requestId,
-  });
-  responseHeaders.set('X-ShiftFlow-Cache', cacheStatus);
-  responseHeaders.set('X-ShiftFlow-Cache-Age', '0');
-  upstreamResponse.headers.forEach((value, key) => {
-    const lower = key.toLowerCase();
-    if (lower.startsWith('access-control')) return;
-    responseHeaders.set(key, value);
-  });
   if (sessionCookieHeader) {
-    responseHeaders.set('Set-Cookie', sessionCookieHeader);
+    d1Response.headers.set('Set-Cookie', sessionCookieHeader);
   }
-  const bodyBuffer = await upstreamResponse.arrayBuffer();
-
-  return new Response(bodyBuffer, {
-    status: upstreamResponse.status,
-    headers: responseHeaders,
-  });
+  return d1Response;
 }
