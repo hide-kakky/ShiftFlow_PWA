@@ -1,0 +1,67 @@
+{
+  "Rules": [
+    {
+      "ID": "attachments-transition-to-ia",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "attachments/"
+      },
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "InfrequentAccess"
+        }
+      ]
+    },
+    {
+      "ID": "profiles-expire-after-30-days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "profiles/"
+      },
+      "Expiration": {
+        "Days": 30
+      }
+    },
+    {
+      "ID": "temp-expire-and-abort-mpu",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "temp/"
+      },
+      "Expiration": {
+        "Days": 1
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    },
+    {
+      "ID": "thumbnails-expire-after-30-days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "thumbnails/"
+      },
+      "Expiration": {
+        "Days": 30
+      }
+    },
+    {
+      "ID": "logs-expire-after-90-days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "logs/"
+      },
+      "Expiration": {
+        "Days": 90
+      }
+    },
+    {
+      "ID": "global-abort-incomplete-mpu",
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    }
+  ]
+}

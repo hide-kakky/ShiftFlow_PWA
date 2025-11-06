@@ -19,6 +19,29 @@ const CORS_EXPOSE_HEADERS = 'X-ShiftFlow-Request-Id,X-ShiftFlow-Cache';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
 const SENSITIVE_META_KEYWORDS = ['secret', 'authorization', 'authheader', 'token'];
+const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const MESSAGE_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
+const MESSAGE_ATTACHMENT_LIMIT = 3;
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+]);
+const MIME_EXTENSION_MAP = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+};
 
 function sanitizeLogMeta(meta) {
   if (!meta || typeof meta !== 'object') {
@@ -553,6 +576,164 @@ function jsonResponseFromD1(status, payload, origin, requestId, extraHeaders) {
     'X-ShiftFlow-Backend': 'D1',
     ...(extraHeaders || {}),
   });
+}
+
+function sanitizeFileBaseName(name, fallback = 'file') {
+  if (typeof name !== 'string') return fallback;
+  const trimmed = name.trim();
+  if (!trimmed) return fallback;
+  const segments = trimmed.split(/[\\/]/).filter(Boolean);
+  const lastSegment = segments.length ? segments[segments.length - 1] : trimmed;
+  const withoutExt =
+    lastSegment.includes('.') && lastSegment.lastIndexOf('.') > 0
+      ? lastSegment.slice(0, lastSegment.lastIndexOf('.'))
+      : lastSegment;
+  const normalized = withoutExt.replace(/[^0-9A-Za-z_.-]+/g, '_').replace(/_+/g, '_');
+  const candidate = normalized || fallback;
+  return candidate.slice(0, 64);
+}
+
+function guessExtensionFromMime(mimeType) {
+  if (!mimeType) return '';
+  const normalized = mimeType.trim().toLowerCase();
+  return MIME_EXTENSION_MAP[normalized] || '';
+}
+
+function decodeDataUri(dataUri) {
+  if (typeof dataUri !== 'string') return null;
+  const trimmed = dataUri.trim();
+  if (!trimmed) return null;
+  const commaIndex = trimmed.indexOf(',');
+  if (!trimmed.startsWith('data:') || commaIndex === -1) return null;
+  const header = trimmed.slice(5, commaIndex);
+  const dataPart = trimmed.slice(commaIndex + 1).trim();
+  if (!dataPart) return null;
+  const metaParts = header.split(';').map((part) => part.trim()).filter(Boolean);
+  let mimeType = metaParts.length ? metaParts[0] : '';
+  const isBase64 = metaParts.includes('base64');
+  if (!isBase64) return null;
+  if (!mimeType) mimeType = 'application/octet-stream';
+  let binaryString;
+  try {
+    binaryString = atob(dataPart.replace(/\s+/g, ''));
+  } catch (_err) {
+    return null;
+  }
+  const length = binaryString.length;
+  const bytes = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return {
+    mimeType: mimeType.toLowerCase(),
+    bytes,
+  };
+}
+
+async function computeSha256Hex(buffer) {
+  if (!(buffer instanceof ArrayBuffer)) {
+    throw new Error('ArrayBuffer is required for checksum calculation.');
+  }
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  const view = new Uint8Array(digest);
+  let hex = '';
+  view.forEach((byte) => {
+    hex += byte.toString(16).padStart(2, '0');
+  });
+  return hex;
+}
+
+function buildAttachmentDownloadPath(attachmentId) {
+  const id = normalizeIdValue(attachmentId);
+  if (!id) return '';
+  return `/api/downloadAttachment?attachmentId=${encodeURIComponent(id)}`;
+}
+
+function extractAttachmentIdFromUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const parsed =
+      url.startsWith('http://') || url.startsWith('https://') ? new URL(url) : new URL(url, 'https://dummy.local');
+    let pathname = parsed.pathname || '';
+    if (pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    if (pathname !== '/api/downloadAttachment') {
+      return '';
+    }
+    const id = parsed.searchParams.get('attachmentId');
+    return normalizeIdValue(id);
+  } catch (_err) {
+    return '';
+  }
+}
+
+function generateAttachmentId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  return 'att_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+function buildContentDisposition(filename) {
+  if (!filename || typeof filename !== 'string') {
+    return 'inline';
+  }
+  const asciiName = filename.replace(/[^0-9A-Za-z()._\- ]+/g, '_').replace(/"/g, '');
+  const utf8 = encodeURIComponent(filename);
+  return `inline; filename="${asciiName || 'file'}"; filename*=UTF-8''${utf8}`;
+}
+
+async function storeDataUriInR2(env, options) {
+  if (!env || !env.R2) {
+    const err = new Error('R2 bucket is not configured.');
+    err.code = 'r2_unavailable';
+    throw err;
+  }
+  const dataUri = typeof options?.dataUri === 'string' ? options.dataUri : '';
+  const parsed = decodeDataUri(dataUri);
+  if (!parsed) {
+    const err = new Error('Invalid image data.');
+    err.code = 'invalid_data_uri';
+    throw err;
+  }
+  const mimeType = parsed.mimeType;
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
+    const err = new Error('Unsupported MIME type.');
+    err.code = 'unsupported_mime_type';
+    throw err;
+  }
+  const byteLength = parsed.bytes.byteLength;
+  const maxBytes = Number(options?.maxBytes) || PROFILE_IMAGE_MAX_BYTES;
+  if (byteLength > maxBytes) {
+    const err = new Error('File size exceeds allowed limit.');
+    err.code = 'file_too_large';
+    throw err;
+  }
+  const attachmentId = normalizeIdValue(options?.attachmentId) || generateAttachmentId();
+  const fileNameHint = typeof options?.fileNameHint === 'string' ? options.fileNameHint : '';
+  const baseName = sanitizeFileBaseName(fileNameHint || attachmentId);
+  const extension = guessExtensionFromMime(mimeType) || 'bin';
+  const finalFileName = `${baseName}.${extension}`;
+  const keyPrefix = typeof options?.keyPrefix === 'string' && options.keyPrefix ? options.keyPrefix : 'uploads';
+  const key = `${keyPrefix}/${attachmentId}/${finalFileName}`;
+  const buffer = parsed.bytes.buffer.slice(parsed.bytes.byteOffset, parsed.bytes.byteOffset + parsed.bytes.byteLength);
+  const checksum = await computeSha256Hex(buffer);
+  await env.R2.put(key, buffer, {
+    httpMetadata: {
+      contentType: mimeType,
+      cacheControl: 'public, max-age=31536000',
+      contentDisposition: buildContentDisposition(finalFileName),
+    },
+  });
+  return {
+    attachmentId,
+    key,
+    mimeType,
+    size: byteLength,
+    checksum,
+    fileName: finalFileName,
+  };
 }
 
 function getPrimarySharedSecret(config) {
@@ -1233,6 +1414,7 @@ function interceptRequestBodyForRoute(route, body, context) {
       name: typeof payload.name === 'string' ? payload.name : undefined,
       theme: typeof payload.theme === 'string' ? payload.theme : undefined,
       imageUrl: typeof payload.imageUrl === 'string' ? payload.imageUrl : undefined,
+      imageData: typeof payload.imageData === 'string' ? payload.imageData : undefined,
       hasImageData: typeof payload.imageData === 'string' && payload.imageData.length > 0,
     };
     return {
@@ -1565,24 +1747,149 @@ async function maybeHandleRouteWithD1(options) {
         accessContext,
       });
       const ctx = interception?.dualWriteContext;
-      const payload = ctx?.payload || {};
-      if (payload.hasImageData) {
+      const payload = ctx?.payload ? { ...ctx.payload } : {};
+      const timestampMs =
+        ctx?.timestampMs && Number.isFinite(ctx.timestampMs) ? ctx.timestampMs : Date.now();
+      const hasImageData = typeof payload.imageData === 'string' && payload.imageData.trim();
+      const membership = await resolveMembershipForEmail(db, actorEmail);
+      const userRow = await db
+        .prepare(
+          `
+          SELECT user_id,
+                 profile_image_url
+            FROM users
+           WHERE lower(email) = ?1
+        `
+        )
+        .bind(actorEmail)
+        .first();
+      if (!userRow) {
         return errorResponse(
-          400,
+          404,
           allowedOrigin,
           requestId,
           'cf-api',
-          'image_upload_not_supported',
-          '画像アップロードは現在サポートされていません。'
+          'user_not_found',
+          '対象のユーザーが見つかりません。'
         );
       }
-      await updateUserSettingsInD1(db, {
-        email: actorEmail,
-        name: payload.name,
-        theme: payload.theme,
-        imageUrl: payload.imageUrl,
-        timestampMs: ctx?.timestampMs || Date.now(),
-      });
+      const previousAttachmentId = extractAttachmentIdFromUrl(userRow.profile_image_url || '');
+      let newAttachmentId = '';
+      let newAttachmentUploaded = false;
+      let attachmentFileName = '';
+      if (hasImageData) {
+        let upload = null;
+        try {
+          upload = await storeDataUriInR2(env, {
+            dataUri: payload.imageData,
+            maxBytes: PROFILE_IMAGE_MAX_BYTES,
+            keyPrefix: membership?.org_id
+              ? `orgs/${membership.org_id}/profiles`
+              : 'profiles',
+            fileNameHint: actorEmail ? actorEmail.split('@')[0] : 'profile',
+          });
+          const orgId =
+            membership?.org_id ||
+            (await resolveDefaultOrgId(db)) ||
+            null;
+          const storagePath = buildAttachmentDownloadPath(upload.attachmentId);
+          await insertAttachmentRecord(db, {
+            attachmentId: upload.attachmentId,
+            orgId,
+            fileName: upload.fileName,
+            mimeType: upload.mimeType,
+            sizeBytes: upload.size,
+            storagePath,
+            checksum: upload.checksum,
+            createdAtMs: timestampMs,
+            createdByMembershipId: membership?.membership_id || null,
+            extra: {
+              r2Key: upload.key,
+              category: 'profile_image',
+              uploadedAtMs: timestampMs,
+              ownerEmail: actorEmail,
+            },
+          });
+          payload.imageUrl = storagePath;
+          attachmentFileName = upload.fileName;
+          payload.imageName = upload.fileName;
+          newAttachmentId = upload.attachmentId;
+          newAttachmentUploaded = true;
+        } catch (err) {
+          if (upload && upload.key && env && env.R2) {
+            try {
+              await env.R2.delete(upload.key);
+            } catch (cleanupErr) {
+              console.warn('[ShiftFlow][R2] Failed to roll back profile image upload', {
+                requestId,
+                message:
+                  cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
+              });
+            }
+          }
+          console.warn('[ShiftFlow][Profile] Image upload failed', {
+            requestId,
+            email: actorEmail,
+            message: err && err.message ? err.message : String(err),
+            code: err && err.code ? err.code : '',
+          });
+          const code = err && err.code ? err.code : 'image_upload_failed';
+          let status = code === 'r2_unavailable' ? 500 : 400;
+          let reason = '画像のアップロードに失敗しました。';
+          if (code === 'invalid_data_uri') {
+            reason = '画像データの形式が正しくありません。';
+          } else if (code === 'unsupported_mime_type') {
+            reason = '未対応の画像形式です。PNG/JPEG 等の画像を使用してください。';
+          } else if (code === 'file_too_large') {
+            reason = '画像が大きすぎます。2MB 以下の画像を選択してください。';
+          } else if (code === 'r2_unavailable') {
+            reason = 'ファイルストレージが一時的に利用できません。後ほど再試行してください。';
+          }
+          return errorResponse(
+            status,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            code,
+            reason
+          );
+        }
+      }
+      delete payload.imageData;
+      try {
+        await updateUserSettingsInD1(db, {
+          email: actorEmail,
+          name: payload.name,
+          theme: payload.theme,
+          imageUrl: payload.imageUrl,
+          timestampMs,
+        });
+      } catch (err) {
+        if (newAttachmentUploaded && newAttachmentId) {
+          await deleteAttachmentRecords(db, env, [newAttachmentId]);
+        }
+        console.error('[ShiftFlow][Profile] Failed to save settings', {
+          requestId,
+          email: actorEmail,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'save_failed',
+          '設定の保存に失敗しました。'
+        );
+      }
+      if (
+        newAttachmentUploaded &&
+        previousAttachmentId &&
+        newAttachmentId &&
+        previousAttachmentId !== newAttachmentId
+      ) {
+        await deleteAttachmentRecords(db, env, [previousAttachmentId]);
+      }
       const updatedUser = await db
         .prepare(
           `
@@ -1597,7 +1904,7 @@ async function maybeHandleRouteWithD1(options) {
         success: true,
         message: '設定を保存しました。',
         imageUrl: updatedUser?.profile_image_url || payload.imageUrl || PROFILE_PLACEHOLDER_URL,
-        imageName: '',
+        imageName: newAttachmentUploaded ? attachmentFileName : payload.imageName || '',
         theme: updatedUser?.theme || payload.theme || 'light',
       };
       captureDiagnostics(config, 'info', 'd1_user_settings_saved', {
@@ -1842,7 +2149,7 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteTaskFromD1(db, { taskId });
+      await deleteTaskFromD1(db, env, { taskId });
       captureDiagnostics(config, 'info', 'd1_task_deleted', {
         event: 'd1_task_deleted',
         route: normalizedRoute,
@@ -2101,7 +2408,7 @@ async function maybeHandleRouteWithD1(options) {
       const effectiveBody = interception?.body || bodyObject;
       const argsArray = Array.isArray(effectiveBody?.args) ? effectiveBody.args : [];
       const messagePayload =
-        argsArray.length && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+        argsArray.length && typeof argsArray[0] === 'object' ? { ...argsArray[0] } : {};
       const timestampMs =
         interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
           ? interception.dualWriteContext.timestampMs
@@ -2110,6 +2417,132 @@ async function maybeHandleRouteWithD1(options) {
         interception?.dualWriteContext?.messageId ||
         normalizeIdValue(messagePayload.messageId) ||
         generateMessageId();
+      const actorEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedActorEmail = normalizeEmailValue(actorEmail);
+      const membership = normalizedActorEmail ? await resolveMembershipForEmail(db, normalizedActorEmail) : null;
+      const rawAttachments = Array.isArray(messagePayload.attachments) ? messagePayload.attachments : [];
+      const preparedAttachments = [];
+      const uploadKeysForRollback = [];
+      if (rawAttachments.length) {
+        if (rawAttachments.length > MESSAGE_ATTACHMENT_LIMIT) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'attachment_limit_exceeded',
+            `添付は最大 ${MESSAGE_ATTACHMENT_LIMIT} 件までです。`
+          );
+        }
+        let resolvedOrgId = membership?.org_id || null;
+        if (!resolvedOrgId) {
+          resolvedOrgId = await resolveDefaultOrgId(db);
+        }
+        for (let index = 0; index < rawAttachments.length; index += 1) {
+          const rawAttachment = rawAttachments[index] || {};
+          const dataUri = typeof rawAttachment.dataUri === 'string' ? rawAttachment.dataUri : '';
+          if (!dataUri) {
+            if (uploadKeysForRollback.length && env && env.R2) {
+              try {
+                await env.R2.delete(uploadKeysForRollback);
+              } catch (cleanupErr) {
+                console.warn('[ShiftFlow][R2] Failed to roll back attachment uploads', {
+                  requestId,
+                  message:
+                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
+                });
+              }
+            }
+            return errorResponse(
+              400,
+              allowedOrigin,
+              requestId,
+              'cf-api',
+              'attachment_data_missing',
+              `添付ファイル ${index + 1} のデータが取得できません。`
+            );
+          }
+          let upload = null;
+          try {
+            upload = await storeDataUriInR2(env, {
+              dataUri,
+              maxBytes: MESSAGE_ATTACHMENT_MAX_BYTES,
+              keyPrefix: membership?.org_id
+                ? `orgs/${membership.org_id}/messages`
+                : 'messages',
+              fileNameHint:
+                typeof rawAttachment.name === 'string' && rawAttachment.name
+                  ? rawAttachment.name
+                  : `attachment_${index + 1}`,
+            });
+            uploadKeysForRollback.push(upload.key);
+            preparedAttachments.push({
+              attachmentId: upload.attachmentId,
+              fileName: upload.fileName,
+              mimeType: upload.mimeType,
+              sizeBytes: upload.size,
+              checksum: upload.checksum,
+              storagePath: buildAttachmentDownloadPath(upload.attachmentId),
+              createdAtMs: timestampMs,
+              createdByMembershipId: membership?.membership_id || null,
+              orgId: resolvedOrgId || null,
+              extra: {
+                r2Key: upload.key,
+                category: 'message_attachment',
+                messageId,
+                uploadedAtMs: timestampMs,
+                ownerEmail: normalizedActorEmail,
+                originalName:
+                  typeof rawAttachment.name === 'string' ? rawAttachment.name : '',
+              },
+            });
+          } catch (err) {
+            if (upload && upload.key && env && env.R2) {
+              try {
+                await env.R2.delete(upload.key);
+              } catch (cleanupErr) {
+                console.warn('[ShiftFlow][R2] Failed to roll back attachment upload', {
+                  requestId,
+                  message:
+                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
+                });
+              }
+            }
+            if (uploadKeysForRollback.length && env && env.R2) {
+              try {
+                await env.R2.delete(uploadKeysForRollback);
+              } catch (cleanupErr) {
+                console.warn('[ShiftFlow][R2] Failed to roll back attachment uploads', {
+                  requestId,
+                  message:
+                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
+                });
+              }
+            }
+            const code = err && err.code ? err.code : 'attachment_upload_failed';
+            let status = code === 'r2_unavailable' ? 500 : 400;
+            let reason = '添付ファイルのアップロードに失敗しました。';
+            if (code === 'invalid_data_uri') {
+              reason = `添付ファイル ${index + 1} のデータ形式が不正です。`;
+            } else if (code === 'unsupported_mime_type') {
+              reason = `添付ファイル ${index + 1} は未対応の形式です。`;
+            } else if (code === 'file_too_large') {
+              reason = `添付ファイル ${index + 1} が大きすぎます。4MB 以下にしてください。`;
+            } else if (code === 'r2_unavailable') {
+              reason = 'ファイルストレージが一時的に利用できません。後ほど再試行してください。';
+            }
+            return errorResponse(status, allowedOrigin, requestId, 'cf-api', code, reason);
+          }
+        }
+        messagePayload.attachments = preparedAttachments.map((attachment) => ({
+          name: attachment.fileName,
+          mimeType: attachment.mimeType,
+          size: attachment.sizeBytes,
+          url: attachment.storagePath,
+        }));
+      } else {
+        delete messagePayload.attachments;
+      }
       await insertMessageIntoD1(db, {
         messageId,
         payload: messagePayload,
@@ -2117,7 +2550,43 @@ async function maybeHandleRouteWithD1(options) {
         authorEmail: tokenDetails?.email || accessContext?.email || '',
         role: accessContext?.role,
       });
-      const actorEmail = tokenDetails?.email || accessContext?.email || '';
+      if (preparedAttachments.length) {
+        try {
+          for (const attachment of preparedAttachments) {
+            await insertAttachmentRecord(db, attachment);
+            await db
+              .prepare(
+                `
+                INSERT OR REPLACE INTO message_attachments (message_id, attachment_id)
+                VALUES (?1, ?2)
+              `
+              )
+              .bind(messageId, attachment.attachmentId)
+              .run();
+          }
+        } catch (err) {
+          console.error('[ShiftFlow][Message] Failed to persist attachments', {
+            requestId,
+            messageId,
+            email: normalizedActorEmail || '',
+            message: err && err.message ? err.message : String(err),
+          });
+          await deleteMessageFromD1(db, env, { messageId });
+          await deleteAttachmentRecords(
+            db,
+            env,
+            preparedAttachments.map((attachment) => attachment.attachmentId)
+          );
+          return errorResponse(
+            500,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'attachment_persist_failed',
+            'メッセージの添付ファイル保存に失敗しました。'
+          );
+        }
+      }
       if (actorEmail) {
         await ensureMemoReadInD1(db, {
           messageId,
@@ -2131,6 +2600,7 @@ async function maybeHandleRouteWithD1(options) {
         requestId,
         email: actorEmail || '',
         messageId,
+        attachments: preparedAttachments.length,
       });
       return jsonResponseFromD1(
         200,
@@ -2201,7 +2671,7 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteMessageFromD1(db, { messageId });
+      await deleteMessageFromD1(db, env, { messageId });
       captureDiagnostics(config, 'info', 'd1_message_deleted', {
         event: 'd1_message_deleted',
         route: normalizedRoute,
@@ -2493,6 +2963,196 @@ async function maybeHandleRouteWithD1(options) {
         allowedOrigin,
         requestId
       );
+    }
+    if (normalizedRoute === 'downloadAttachment') {
+      const originForResponses = allowedOrigin || config.allowedOrigins[0] || '*';
+      if (requestMethod && requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+        return errorResponse(
+          405,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は GET/HEAD にのみ対応しています。'
+        );
+      }
+      if (!env || !env.R2) {
+        return errorResponse(
+          500,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'r2_unavailable',
+          'ファイルストレージが一時的に利用できません。'
+        );
+      }
+      const attachmentIdArg =
+        query?.get('attachmentId') ||
+        (Array.isArray(parsedBody?.args) && parsedBody.args.length ? parsedBody.args[0] : '');
+      const attachmentId = normalizeIdValue(attachmentIdArg);
+      if (!attachmentId) {
+        return errorResponse(
+          400,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_id_required',
+          '添付ファイル ID を指定してください。'
+        );
+      }
+      const attachmentRow = await db
+        .prepare(
+          `
+          SELECT attachment_id,
+                 org_id,
+                 file_name,
+                 content_type,
+                 size_bytes,
+                 extra_json,
+                 storage_path
+            FROM attachments
+           WHERE attachment_id = ?1
+        `
+        )
+        .bind(attachmentId)
+        .first();
+      if (!attachmentRow) {
+        return errorResponse(
+          404,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_not_found',
+          '指定された添付ファイルが見つかりません。'
+        );
+      }
+      const extras = safeParseJson(attachmentRow.extra_json || null, {});
+      const r2Key = typeof extras?.r2Key === 'string' ? extras.r2Key.trim() : '';
+      if (!r2Key) {
+        console.warn('[ShiftFlow][R2] Attachment missing R2 key', {
+          requestId,
+          attachmentId,
+        });
+        return errorResponse(
+          410,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_missing_object',
+          'ファイルが削除されている可能性があります。'
+        );
+      }
+      const normalizedEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      if (!membership || !membership.org_id) {
+        return errorResponse(
+          403,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_forbidden',
+          '添付ファイルにアクセスする権限がありません。'
+        );
+      }
+      const attachmentOrgId =
+        attachmentRow.org_id ||
+        (typeof extras?.orgId === 'string' ? extras.orgId : null);
+      if (
+        attachmentOrgId &&
+        attachmentOrgId !== membership.org_id &&
+        !isManagerRole(accessContext?.role)
+      ) {
+        return errorResponse(
+          403,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_forbidden',
+          '添付ファイルにアクセスする権限がありません。'
+        );
+      }
+      let object = null;
+      try {
+        object =
+          requestMethod === 'HEAD' ? await env.R2.head(r2Key) : await env.R2.get(r2Key);
+      } catch (err) {
+        console.error('[ShiftFlow][R2] Failed to read attachment', {
+          requestId,
+          attachmentId,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          502,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_fetch_failed',
+          '添付ファイルの取得に失敗しました。'
+        );
+      }
+      if (!object) {
+        console.warn('[ShiftFlow][R2] Attachment object missing', {
+          requestId,
+          attachmentId,
+          r2Key,
+        });
+        return errorResponse(
+          410,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_missing_object',
+          'ファイルが削除されている可能性があります。'
+        );
+      }
+      const sizeCandidate =
+        typeof object.size === 'number' && Number.isFinite(object.size)
+          ? object.size
+          : typeof attachmentRow.size_bytes === 'number'
+          ? attachmentRow.size_bytes
+          : null;
+      const mimeType =
+        attachmentRow.content_type ||
+        (object.httpMetadata && object.httpMetadata.contentType) ||
+        'application/octet-stream';
+      const fileName =
+        attachmentRow.file_name ||
+        (typeof extras?.originalName === 'string' && extras.originalName) ||
+        `${attachmentId}.bin`;
+      const headers = new Headers({
+        ...corsHeaders(originForResponses),
+        'Content-Type': mimeType,
+        'Cache-Control': 'private, max-age=300',
+        'Content-Disposition': buildContentDisposition(fileName),
+        'X-ShiftFlow-Request-Id': requestId,
+        'X-ShiftFlow-Backend': 'R2',
+      });
+      if (sizeCandidate != null) {
+        headers.set('Content-Length', String(sizeCandidate));
+      }
+      const etag = object.httpEtag || object.etag || '';
+      if (etag) {
+        headers.set('ETag', etag);
+      }
+      const uploadedAt =
+        object.uploaded instanceof Date
+          ? object.uploaded
+          : object.uploaded
+          ? new Date(object.uploaded)
+          : null;
+      if (uploadedAt && !Number.isNaN(uploadedAt.getTime())) {
+        headers.set('Last-Modified', uploadedAt.toUTCString());
+      }
+      if (requestMethod === 'HEAD') {
+        return new Response(null, {
+          status: 200,
+          headers,
+        });
+      }
+      return new Response(object.body, {
+        status: 200,
+        headers,
+      });
     }
   } catch (err) {
     console.error('[ShiftFlow][D1] Route handling failed', {
@@ -2874,23 +3534,61 @@ async function bulkEnsureMemoReadInD1(db, context) {
   }
 }
 
-async function deleteTaskFromD1(db, context) {
+async function deleteTaskFromD1(db, env, context) {
   if (!context?.taskId) return;
   const taskId = normalizeIdValue(context.taskId);
   if (!taskId) return;
+  const attachmentResult = await db
+    .prepare(
+      `
+      SELECT a.attachment_id
+        FROM task_attachments ta
+        JOIN attachments a ON a.attachment_id = ta.attachment_id
+       WHERE ta.task_id = ?1
+    `
+    )
+    .bind(taskId)
+    .all();
+  const attachmentIds = Array.isArray(attachmentResult?.results)
+    ? attachmentResult.results
+        .map((row) => normalizeIdValue(row?.attachment_id))
+        .filter(Boolean)
+    : [];
   await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
   await db.prepare('DELETE FROM task_attachments WHERE task_id = ?1').bind(taskId).run();
+  if (attachmentIds.length) {
+    await deleteAttachmentRecords(db, env, attachmentIds);
+  }
   await db.prepare('DELETE FROM tasks WHERE task_id = ?1').bind(taskId).run();
 }
 
-async function deleteMessageFromD1(db, context) {
+async function deleteMessageFromD1(db, env, context) {
   if (!context?.messageId) return;
   const messageId = normalizeIdValue(context.messageId);
   if (!messageId) return;
+  const attachmentResult = await db
+    .prepare(
+      `
+      SELECT a.attachment_id
+        FROM message_attachments ma
+        JOIN attachments a ON a.attachment_id = ma.attachment_id
+       WHERE ma.message_id = ?1
+    `
+    )
+    .bind(messageId)
+    .all();
+  const attachmentIds = Array.isArray(attachmentResult?.results)
+    ? attachmentResult.results
+        .map((row) => normalizeIdValue(row?.attachment_id))
+        .filter(Boolean)
+    : [];
   await db.prepare('DELETE FROM message_reads WHERE message_id = ?1').bind(messageId).run();
   await db.prepare('DELETE FROM message_attachments WHERE message_id = ?1')
     .bind(messageId)
     .run();
+  if (attachmentIds.length) {
+    await deleteAttachmentRecords(db, env, attachmentIds);
+  }
   await db.prepare('DELETE FROM messages WHERE message_id = ?1').bind(messageId).run();
 }
 
@@ -2935,6 +3633,78 @@ async function updateUserSettingsInD1(db, context) {
     .prepare(`UPDATE users SET ${updates.join(', ')} WHERE lower(email) = ?1`)
     .bind(email, ...values)
     .run();
+}
+
+async function insertAttachmentRecord(db, details) {
+  if (!db || !details || !details.attachmentId) return;
+  const extraPayload =
+    details.extra && typeof details.extra === 'object' && Object.keys(details.extra).length
+      ? JSON.stringify(details.extra)
+      : null;
+  await db
+    .prepare(
+      `
+      INSERT OR REPLACE INTO attachments (
+        attachment_id,
+        org_id,
+        file_name,
+        content_type,
+        size_bytes,
+        storage_path,
+        checksum,
+        created_at_ms,
+        created_by_membership_id,
+        extra_json
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+    `
+    )
+    .bind(
+      details.attachmentId,
+      details.orgId || null,
+      details.fileName || null,
+      details.mimeType || null,
+      typeof details.sizeBytes === 'number' ? details.sizeBytes : null,
+      details.storagePath || null,
+      details.checksum || null,
+      typeof details.createdAtMs === 'number' ? details.createdAtMs : Date.now(),
+      details.createdByMembershipId || null,
+      extraPayload
+    )
+    .run();
+}
+
+async function deleteAttachmentRecords(db, env, attachmentIds) {
+  if (!db || !Array.isArray(attachmentIds) || !attachmentIds.length) return;
+  const uniqueIds = Array.from(new Set(attachmentIds.map((id) => normalizeIdValue(id)).filter(Boolean)));
+  if (!uniqueIds.length) return;
+  const placeholders = uniqueIds.map((_, idx) => `?${idx + 1}`).join(', ');
+  const selectStatement = `
+    SELECT attachment_id, extra_json
+      FROM attachments
+     WHERE attachment_id IN (${placeholders})
+  `;
+  const result = await db.prepare(selectStatement).bind(...uniqueIds).all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const r2Keys = [];
+  for (const row of rows) {
+    const extra = safeParseJson(row?.extra_json || null, {});
+    const key = typeof extra?.r2Key === 'string' ? extra.r2Key.trim() : '';
+    if (key) {
+      r2Keys.push(key);
+    }
+  }
+  await db.prepare(`DELETE FROM attachments WHERE attachment_id IN (${placeholders})`).bind(...uniqueIds).run();
+  if (env && env.R2 && r2Keys.length) {
+    try {
+      await env.R2.delete(r2Keys);
+    } catch (err) {
+      console.warn('[ShiftFlow][R2] Failed to delete objects', {
+        count: r2Keys.length,
+        message: err && err.message ? err.message : String(err),
+      });
+    }
+  }
 }
 
 async function resolveMembershipForEmail(db, email) {

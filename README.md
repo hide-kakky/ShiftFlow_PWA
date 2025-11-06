@@ -118,3 +118,48 @@
 - `requestId` をログ間で突き合わせると、Functions ⇔ GAS 双方の処理を追跡しやすい。
 - 認証回りの改修後は `resolveAccessContext` → `getBootstrapData` の 302/200 ログが順番通り出ることを必ず確認する。
 
+---
+
+## R2 ライフサイクル & バックアップ運用
+
+### ライフサイクルポリシー
+
+- `infra/r2/lifecycle.json` に本番バケット向けのルールを定義済み。
+  - `attachments/`: 削除せず 90 日後に Infrequent Access へ自動遷移。
+  - `profiles/`: 30 日後に削除（最新版のみを保持する想定）。
+  - `temp/`: 24 時間で削除＋未完了 MPU を 1 日で強制中断。
+  - `thumbnails/`: 30 日で削除（キャッシュ扱い）。
+  - `logs/`: 90 日で削除。
+  - グローバルルールで全オブジェクトの未完了 MPU を 1 日で強制中断。
+- 適用コマンド例（dev/prod でそれぞれ実行）:
+
+  ```bash
+  wrangler r2 bucket lifecycle put app-r2-dev --file infra/r2/lifecycle.json
+  wrangler r2 bucket lifecycle put app-r2-prod --file infra/r2/lifecycle.json
+  ```
+
+### Cron Worker によるバックアップ
+
+- `workers/r2-backup/` は R2 → 別バケット（別リージョン推奨）への日次差分コピーと週次フル検証を行う Worker。
+  - 日次: `0 13 * * *` (UTC) のスケジュールで実行し、`BACKUP_INCLUDE_PREFIXES` に一致するキーのみコピー。
+  - 週次フル検証: `0 14 * * 0` (UTC) で、バックアップ側と突合し不足分を再コピー。
+  - 進捗は `BACKUP_STATE`（KV）に保存し、再実行時に差分のみを走査。
+  - `BACKUP_EXCLUDE_PREFIXES` で `temp/` や `thumbnails/` をバックアップ対象から除外。
+  - `MAX_OBJECTS_PER_RUN`／`MAX_PUT_OPERATIONS_PER_RUN` で 1 回あたりの処理上限を制御（Cron 実行時間 15 分上限対策）。
+
+#### セットアップ手順
+
+1. バックアップ用 R2 バケット（地域を分ける）と KV ネームスペースを作成。
+2. `workers/r2-backup/wrangler.toml` を編集し、バケット名・KV ID・スケジュールを実環境値に書き換え。
+3. 必要に応じて `BACKUP_INCLUDE_PREFIXES` / `BACKUP_EXCLUDE_PREFIXES` を調整。
+4. `wrangler deploy --config workers/r2-backup/wrangler.toml` でデプロイ。
+5. `wrangler tail --config workers/r2-backup/wrangler.toml` で初回実行のログを確認。
+
+### 運用ポイント
+
+- バックアップ元・先どちらにもライフサイクル適用を忘れずに（バックアップ側は削除ポリシーを緩めて長期保持）。
+- コスト最適化:
+  - 添付（`attachments/`）は Infrequent Access の利用で保管コストを抑制。
+  - サムネイルや一時ファイル（`thumbnails/`, `temp/`）は短期保持に限定し、生成コスト > 保存コストにならないよう整理。
+- 週次フル検証時のログを定期的にチェックし、欠損オブジェクトが出ていないか監査。
+- 将来的に監査ログが増える場合は `logs/` プレフィックスを別バケットに切り出す運用も検討。

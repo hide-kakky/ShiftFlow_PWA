@@ -1,0 +1,28 @@
+name = "shiftflow-r2-backup"
+main = "src/index.js"
+compatibility_date = "2025-11-02"
+usage_model = "bundled"
+workers_dev = false
+
+[triggers]
+crons = ["0 13 * * *", "0 14 * * 0"]
+
+[[r2_buckets]]
+binding = "PRIMARY_BUCKET"
+bucket_name = "app-r2-prod"
+
+[[r2_buckets]]
+binding = "BACKUP_BUCKET"
+bucket_name = "app-r2-prod-backup"
+
+[[kv_namespaces]]
+binding = "BACKUP_STATE"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+[vars]
+FULL_VERIFICATION_CRON = "0 14 * * 0"
+BACKUP_INCLUDE_PREFIXES = "attachments/,profiles/,logs/"
+BACKUP_EXCLUDE_PREFIXES = "temp/,thumbnails/"
+MAX_OBJECTS_PER_RUN = "5000"
+MAX_PUT_OPERATIONS_PER_RUN = "1000"

@@ -100,6 +100,7 @@ const ROUTE_PERMISSIONS = {
   completeTask: ['admin', 'manager', 'member'],
   deleteTaskById: ['admin', 'manager', 'member'],
   getTaskById: ['admin', 'manager', 'member'],
+  downloadAttachment: ['admin', 'manager', 'member'],
   getUserSettings: ['admin', 'manager', 'member', 'guest'],
   saveUserSettings: ['admin', 'manager', 'member'],
   listActiveUsers: ['admin', 'manager'],
