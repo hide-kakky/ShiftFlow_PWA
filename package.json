@@ -15,5 +15,8 @@
     "seed:dev": "wrangler d1 execute app_d1_dev --remote --file seeds/090_organizations.sql && wrangler d1 execute app_d1_dev --remote --file seeds/120_messages.sql && wrangler d1 execute app_d1_dev --remote --file seeds/130_message_reads.sql",
     "seed:prod": "wrangler d1 execute app_d1_prod --remote --file seeds/090_organizations.sql && wrangler d1 execute app_d1_prod --remote --file seeds/120_messages.sql && wrangler d1 execute app_d1_prod --remote --file seeds/130_message_reads.sql",
     "qc:prod": "wrangler d1 execute app_d1_prod --remote --file migrations/qc_checks.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.4"
   }
 }
