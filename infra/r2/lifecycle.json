@@ -6,10 +6,12 @@
       "Filter": {
         "Prefix": "attachments/"
       },
-      "Transition": {
-        "Days": 90,
-        "StorageClass": "InfrequentAccess"
-      }
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "InfrequentAccess"
+        }
+      ]
     },
     {
       "ID": "profiles-expire-after-30-days",
