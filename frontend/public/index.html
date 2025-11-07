@@ -7305,6 +7305,179 @@
         };
       })();
 
+      const TaskFormController = (function () {
+        const SELECTORS = {
+          save: 'saveTaskButton',
+          title: 'taskTitle',
+          due: 'taskDueDate',
+          priority: 'taskPriority',
+          repeat: 'taskRepeatType',
+        };
+        const MODAL_ID = 'newTaskModal';
+
+        function applyRepeatRule(repeatType) {
+          switch (repeatType) {
+            case 'daily':
+              return 'DAILY';
+            case 'weekly':
+              return 'WEEKLY';
+            case 'monthly':
+              return 'MONTHLY';
+            default:
+              return '';
+          }
+        }
+
+        function buildPayload() {
+          var assignees = getSelectedAssignees();
+          if (assignees.length === 0) {
+            notify('担当者を1名以上選択してください。', false);
+            return null;
+          }
+          var titleEl = byId(SELECTORS.title);
+          var dueEl = byId(SELECTORS.due);
+          var priorityEl = byId(SELECTORS.priority);
+          var repeatEl = byId(SELECTORS.repeat);
+          var title = titleEl ? titleEl.value : '';
+          var dueDate = dueEl ? dueEl.value : '';
+          if (!title || !dueDate) {
+            notify('タイトルと期限は必須です。', false);
+            return null;
+          }
+          return {
+            title: title,
+            dueDate: dueDate,
+            priority: priorityEl ? priorityEl.value : '中',
+            assignees: assignees,
+            repeatRule: applyRepeatRule(repeatEl ? repeatEl.value : 'none'),
+          };
+        }
+
+        function handleSuccess(btn) {
+          return function (res) {
+            setButtonLoading(btn, false);
+            if (res && res.success) {
+              var modalEl = byId(MODAL_ID);
+              var modal =
+                modalEl &&
+                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+              if (modal) modal.hide();
+              notify('タスクを作成しました。', true);
+            } else {
+              notify((res && res.message) || 'タスクの作成に失敗しました。', false);
+            }
+            loadHome();
+            loadMyTasks();
+            if (TASK_STATE.from.loaded) loadCreatedTasks();
+            if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
+          };
+        }
+
+        function handleFailure(btn) {
+          return function (err) {
+            setButtonLoading(btn, false);
+            notify('タスクの作成に失敗しました: ' + err.message, false);
+          };
+        }
+
+        function handleSave(event) {
+          if (event) event.preventDefault();
+          var btn = byId(SELECTORS.save);
+          if (!btn) return;
+          var payload = buildPayload();
+          if (!payload) return;
+          setButtonLoading(btn, true);
+          google.script.run
+            .withSuccessHandler(handleSuccess(btn))
+            .withFailureHandler(handleFailure(btn))
+            .addNewTask(payload);
+        }
+
+        function init() {
+          on(SELECTORS.save, 'click', handleSave);
+        }
+
+        return {
+          init,
+        };
+      })();
+
+      const MessageFormController = (function () {
+        const SELECTORS = {
+          save: 'saveMessageButton',
+          title: 'messageTitle',
+          body: 'messageBody',
+          priority: 'messagePriority',
+          folder: 'messageFolder',
+        };
+        const MODAL_ID = 'newMessageModal';
+
+        function buildPayload() {
+          var titleEl = byId(SELECTORS.title);
+          var bodyEl = byId(SELECTORS.body);
+          var priorityEl = byId(SELECTORS.priority);
+          var folderEl = byId(SELECTORS.folder);
+          var title = titleEl ? titleEl.value : '';
+          var body = bodyEl ? bodyEl.value : '';
+          if (!title || !body) {
+            notify('件名と本文は必須です。', false);
+            return null;
+          }
+          return {
+            title: title,
+            body: body,
+            priority: priorityEl ? priorityEl.value : '中',
+            folderId: folderEl ? folderEl.value : '',
+            attachments: pendingMessageAttachments.slice(),
+          };
+        }
+
+        function handleSuccess(btn) {
+          return function (res) {
+            setButtonLoading(btn, false);
+            if (res && res.success) {
+              var modalEl = byId(MODAL_ID);
+              var modal =
+                modalEl &&
+                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+              if (modal) modal.hide();
+              MessageAttachmentController.reset();
+            }
+            notify(res && res.message ? res.message : '完了', res && res.success !== false);
+            loadHome();
+            loadMessages();
+          };
+        }
+
+        function handleFailure(btn) {
+          return function (err) {
+            setButtonLoading(btn, false);
+            notify('メッセージの投稿に失敗しました: ' + err.message, false);
+          };
+        }
+
+        function handleSave(event) {
+          if (event) event.preventDefault();
+          var btn = byId(SELECTORS.save);
+          if (!btn) return;
+          var payload = buildPayload();
+          if (!payload) return;
+          setButtonLoading(btn, true);
+          google.script.run
+            .withSuccessHandler(handleSuccess(btn))
+            .withFailureHandler(handleFailure(btn))
+            .addNewMessage(payload);
+        }
+
+        function init() {
+          on(SELECTORS.save, 'click', handleSave);
+        }
+
+        return {
+          init,
+        };
+      })();
+
       // ===== 設定 =====
       function loadSettings() {
         return new Promise(function (resolve) {
@@ -7468,88 +7641,6 @@
         }
       }
 
-      // ===== 保存ハンドラ =====
-      function attachSaveHandlers() {
-        on('saveTaskButton', 'click', function () {
-          var btn = byId('saveTaskButton');
-          var assignees = getSelectedAssignees();
-          if (assignees.length === 0) {
-            notify('担当者を1名以上選択してください。', false);
-            return;
-          }
-          var task = {
-            title: byId('taskTitle').value,
-            dueDate: byId('taskDueDate').value,
-            priority: byId('taskPriority').value,
-            assignees: assignees,
-          };
-          if (!task.title || !task.dueDate) {
-            notify('タイトルと期限は必須です。', false);
-            return;
-          }
-          var repeatTypeEl = byId('taskRepeatType');
-          var repeatType = repeatTypeEl ? repeatTypeEl.value : 'none';
-          if (repeatType === 'daily') task.repeatRule = 'DAILY';
-          else if (repeatType === 'weekly') task.repeatRule = 'WEEKLY';
-          else if (repeatType === 'monthly') task.repeatRule = 'MONTHLY';
-          else task.repeatRule = '';
-
-          setButtonLoading(btn, true);
-          google.script.run
-            .withSuccessHandler(function (res) {
-              setButtonLoading(btn, false);
-              if (res && res.success) {
-                var inst = bootstrap.Modal.getInstance(byId('newTaskModal'));
-                if (inst) inst.hide();
-                notify('タスクを作成しました。', true);
-              } else {
-                notify((res && res.message) || 'タスクの作成に失敗しました。', false);
-              }
-              loadHome();
-              loadMyTasks();
-              if (TASK_STATE.from.loaded) loadCreatedTasks();
-              if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
-            })
-            .withFailureHandler(function (e) {
-              setButtonLoading(btn, false);
-              notify('タスクの作成に失敗しました: ' + e.message, false);
-            })
-            .addNewTask(task);
-        });
-        on('saveMessageButton', 'click', function () {
-          var btn = byId('saveMessageButton');
-          var messageData = {
-            title: byId('messageTitle').value,
-            body: byId('messageBody').value,
-            priority: byId('messagePriority').value,
-            folderId: byId('messageFolder').value,
-            attachments: pendingMessageAttachments.slice(),
-          };
-          if (!messageData.title || !messageData.body) {
-            notify('件名と本文は必須です。', false);
-            return;
-          }
-          setButtonLoading(btn, true);
-          google.script.run
-            .withSuccessHandler(function (res) {
-              setButtonLoading(btn, false);
-              if (res && res.success) {
-                var inst = bootstrap.Modal.getInstance(byId('newMessageModal'));
-                if (inst) inst.hide();
-                MessageAttachmentController.reset();
-              }
-              notify(res.message || '完了', res.success !== false);
-              loadHome();
-              loadMessages();
-            })
-            .withFailureHandler(function (e) {
-              setButtonLoading(btn, false);
-              notify('メッセージの投稿に失敗しました: ' + e.message, false);
-            })
-            .addNewMessage(messageData);
-        });
-      }
-
       // ===== ビューナビゲーション・フォーム初期化 =====
       const NavigationController = (function () {
         function handleViewLinkClick(event) {
@@ -7695,7 +7786,8 @@
         MessageViewController.init();
         ProfileImageController.init();
         MessageAttachmentController.init();
-        attachSaveHandlers();
+        TaskFormController.init();
+        MessageFormController.init();
 
         initPullToRefresh();
         initializeAuthGateway();
