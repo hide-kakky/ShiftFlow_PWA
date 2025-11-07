@@ -9,39 +9,23 @@ import {
   touchSession,
 } from '../utils/session';
 import { verifyGoogleIdToken } from '../utils/googleIdToken';
+import {
+  PROFILE_PLACEHOLDER_URL,
+  PROFILE_IMAGE_MAX_BYTES,
+  MESSAGE_ATTACHMENT_MAX_BYTES,
+  MESSAGE_ATTACHMENT_LIMIT,
+  ALLOWED_IMAGE_MIME_TYPES,
+  MIME_EXTENSION_MAP,
+  CORS_ALLOWED_HEADERS,
+  CORS_EXPOSE_HEADERS,
+  REDIRECT_STATUSES,
+  SENSITIVE_META_KEYWORDS,
+  ACTIVE_ACCESS_CACHE_TTL_MS,
+  DIAGNOSTIC_ROUTE,
+} from './constants';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
-const DIAGNOSTIC_ROUTE = 'logAuthProxyEvent';
 const ACCESS_CACHE = new Map();
-const ACTIVE_ACCESS_CACHE_TTL_MS = 3 * 60 * 1000;
-const CORS_ALLOWED_HEADERS = 'Content-Type,Authorization,X-ShiftFlow-Request-Id';
-const CORS_EXPOSE_HEADERS = 'X-ShiftFlow-Request-Id,X-ShiftFlow-Cache';
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
-const SENSITIVE_META_KEYWORDS = ['secret', 'authorization', 'authheader', 'token'];
-const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const MESSAGE_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
-const MESSAGE_ATTACHMENT_LIMIT = 3;
-const ALLOWED_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/svg+xml',
-  'image/avif',
-  'image/heic',
-  'image/heif',
-]);
-const MIME_EXTENSION_MAP = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-  'image/avif': 'avif',
-  'image/heic': 'heic',
-  'image/heif': 'heif',
-};
 
 function sanitizeLogMeta(meta) {
   if (!meta || typeof meta !== 'object') {
