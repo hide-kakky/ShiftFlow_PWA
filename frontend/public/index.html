@@ -6246,38 +6246,76 @@
         scheduleApiRefresh(handlerKey, handler);
       };
 
-      function bindTaskControls() {
-        $$('#taskTabs .task-tab-btn').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var tab = btn.getAttribute('data-task-tab');
-            if (!tab) return;
-            var state = TASK_STATE[tab] || {};
-            var shouldLoad = tab !== ACTIVE_TASK_TAB || !state.loaded;
-            activateTaskTab(tab, shouldLoad);
+      const TaskViewController = (function () {
+        const SEARCH_FIELDS = [
+          { id: 'task-search-my', scope: 'my' },
+          { id: 'task-search-from', scope: 'from' },
+          { id: 'task-search-all', scope: 'all' },
+        ];
+        const ASSIGNEE_FIELDS = [
+          { id: 'task-filter-from-assignee', scope: 'from' },
+          { id: 'task-filter-all-assignee', scope: 'all' },
+        ];
+
+        function handleTabClick(event) {
+          const btn = event && event.currentTarget;
+          if (!btn) return;
+          const tab = btn.getAttribute('data-task-tab');
+          if (!tab) return;
+          const state = TASK_STATE[tab] || {};
+          const shouldLoad = tab !== ACTIVE_TASK_TAB || !state.loaded;
+          activateTaskTab(tab, shouldLoad);
+        }
+
+        function attachTabHandlers() {
+          $$('#taskTabs .task-tab-btn').forEach(function (btn) {
+            btn.addEventListener('click', handleTabClick);
           });
-        });
-        on('task-search-my', 'input', function () {
-          TASK_FILTERS.my.search = (this.value || '').trim();
-          renderTaskList('my');
-        });
-        on('task-search-from', 'input', function () {
-          TASK_FILTERS.from.search = (this.value || '').trim();
-          renderTaskList('from');
-        });
-        on('task-search-all', 'input', function () {
-          TASK_FILTERS.all.search = (this.value || '').trim();
-          renderTaskList('all');
-        });
-        on('task-filter-from-assignee', 'change', function () {
-          TASK_FILTERS.from.assignee = this.value || '';
-          renderTaskList('from');
-        });
-        on('task-filter-all-assignee', 'change', function () {
-          TASK_FILTERS.all.assignee = this.value || '';
-          renderTaskList('all');
-        });
-        on('task-reload', 'click', reloadActiveTaskTab);
-      }
+        }
+
+        function updateSearchFilter(scope, value) {
+          if (!scope || !TASK_FILTERS[scope]) return;
+          TASK_FILTERS[scope].search = (value || '').trim();
+          renderTaskList(scope);
+        }
+
+        function attachSearchHandlers() {
+          SEARCH_FIELDS.forEach(function (entry) {
+            on(entry.id, 'input', function () {
+              updateSearchFilter(entry.scope, this.value);
+            });
+          });
+        }
+
+        function updateAssigneeFilter(scope, value) {
+          if (!scope || !TASK_FILTERS[scope]) return;
+          TASK_FILTERS[scope].assignee = value || '';
+          renderTaskList(scope);
+        }
+
+        function attachAssigneeHandlers() {
+          ASSIGNEE_FIELDS.forEach(function (entry) {
+            on(entry.id, 'change', function () {
+              updateAssigneeFilter(entry.scope, this.value);
+            });
+          });
+        }
+
+        function attachReloadHandler() {
+          on('task-reload', 'click', reloadActiveTaskTab);
+        }
+
+        function init() {
+          attachTabHandlers();
+          attachSearchHandlers();
+          attachAssigneeHandlers();
+          attachReloadHandler();
+        }
+
+        return {
+          init,
+        };
+      })();
 
       // ===== Messages =====
       function renderMessageCard(m, options) {
@@ -7535,7 +7573,7 @@
 
         // ナビゲーションやボタンのイベントリスナーを設定
         NavigationController.init();
-        bindTaskControls();
+        TaskViewController.init();
         bindProfileImageUploader();
         bindMessageAttachmentUploader();
         attachSaveHandlers();
