@@ -9,7 +9,10 @@ let cachedJwksExpiry = 0;
 function base64UrlDecode(input) {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized + '==='.slice((normalized.length + 3) % 4);
-  const binary = typeof atob === 'function' ? atob(padded) : Buffer.from(padded, 'base64').toString('binary');
+  if (typeof atob !== 'function') {
+    throw new Error('Base64 decoder is not available.');
+  }
+  const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
     bytes[i] = binary.charCodeAt(i);
