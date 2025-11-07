@@ -7382,45 +7382,151 @@
         });
       }
 
-      // ===== モーダル初期化 =====
-      document.addEventListener('shown.bs.modal', function (e) {
-        if (e.target && e.target.id === 'newTaskModal') {
-          byId('newTaskForm').reset();
-          byId('taskFromMsgHint').classList.add('d-none');
-          var today = new Date();
-          var y = today.getFullYear(),
-            m = ('0' + (today.getMonth() + 1)).slice(-2),
-            d = ('0' + today.getDate()).slice(-2);
-          byId('taskDueDate').value = y + '-' + m + '-' + d;
-          byId('taskPriority').value = '中';
-          var repeatTypeEl = byId('taskRepeatType');
-          if (repeatTypeEl) {
-            repeatTypeEl.value = 'none';
+      // ===== ビューナビゲーション・フォーム初期化 =====
+      const NavigationController = (function () {
+        function handleViewLinkClick(event) {
+          if (!event || !event.currentTarget) return;
+          event.preventDefault();
+          const targetView = event.currentTarget.getAttribute('data-view');
+          if (targetView) {
+            navigateTo(targetView);
           }
-          resetAssigneeList();
-          setButtonLoading(byId('saveTaskButton'), false);
-          setTimeout(function () {
-            byId('taskTitle').focus();
-          }, 60);
         }
-        if (e.target && e.target.id === 'newMessageModal') {
-          byId('newMessageForm').reset();
-          var messageFolderEl = byId('messageFolder');
-          if (messageFolderEl) {
-            var defaultFolder = getDefaultFolderId();
-            messageFolderEl.value = defaultFolder || '';
+
+        function attachViewLinks() {
+          $$('[data-view]').forEach(function (link) {
+            link.addEventListener('click', handleViewLinkClick);
+          });
+        }
+
+        function openNewTaskModal(event) {
+          if (event) event.preventDefault();
+          const hint = byId('taskFromMsgHint');
+          if (hint) {
+            hint.classList.add('d-none');
           }
-          byId('messagePriority').value = '中';
-          pendingMessageAttachments = [];
-          renderPendingMessageAttachments();
-          var msgInput = byId('message-attachment-input');
-          if (msgInput) msgInput.value = '';
-          setButtonLoading(byId('saveMessageButton'), false);
-          setTimeout(function () {
-            byId('messageTitle').focus();
-          }, 60);
+          const modalEl = byId('newTaskModal');
+          if (modalEl) {
+            new bootstrap.Modal(modalEl).show();
+          }
         }
-      });
+
+        function openNewMessageModal(event) {
+          if (event) event.preventDefault();
+          const modalEl = byId('newMessageModal');
+          if (modalEl) {
+            new bootstrap.Modal(modalEl).show();
+          }
+        }
+
+        function attachFabHandlers() {
+          on('btn-open-new-task', 'click', openNewTaskModal);
+          on('btn-open-new-msg', 'click', openNewMessageModal);
+        }
+
+        function attachMessageFilters() {
+          on('flt-msg-folder', 'change', loadMessages);
+          on('flt-msg-unread', 'change', loadMessages);
+          on('msg-search-box', 'input', debounce(loadMessages, 400));
+        }
+
+        function attachAdminMenuHandler() {
+          on('btn-admin-menu', 'click', function () {
+            notify('管理者メニューは準備中です。機能は近日追加されます。', true);
+          });
+        }
+
+        function init() {
+          attachViewLinks();
+          attachFabHandlers();
+          attachMessageFilters();
+          attachAdminMenuHandler();
+        }
+
+        return {
+          init,
+          openNewTaskModal,
+          openNewMessageModal,
+        };
+      })();
+
+      function resetTaskModalState() {
+        var taskForm = byId('newTaskForm');
+        if (taskForm) taskForm.reset();
+        var fromMsgHint = byId('taskFromMsgHint');
+        if (fromMsgHint) {
+          fromMsgHint.classList.add('d-none');
+        }
+        var today = new Date();
+        var y = today.getFullYear();
+        var m = ('0' + (today.getMonth() + 1)).slice(-2);
+        var d = ('0' + today.getDate()).slice(-2);
+        var dueInput = byId('taskDueDate');
+        if (dueInput) {
+          dueInput.value = y + '-' + m + '-' + d;
+        }
+        var prioritySelect = byId('taskPriority');
+        if (prioritySelect) {
+          prioritySelect.value = '中';
+        }
+        var repeatTypeEl = byId('taskRepeatType');
+        if (repeatTypeEl) {
+          repeatTypeEl.value = 'none';
+        }
+        resetAssigneeList();
+        var saveBtn = byId('saveTaskButton');
+        setButtonLoading(saveBtn, false);
+        setTimeout(function () {
+          var titleInput = byId('taskTitle');
+          if (titleInput) {
+            titleInput.focus();
+          }
+        }, 60);
+      }
+
+      function resetMessageModalState() {
+        var messageForm = byId('newMessageForm');
+        if (messageForm) {
+          messageForm.reset();
+        }
+        var folderSelect = byId('messageFolder');
+        if (folderSelect) {
+          var defaultFolder = getDefaultFolderId();
+          folderSelect.value = defaultFolder || '';
+        }
+        var prioritySelect = byId('messagePriority');
+        if (prioritySelect) {
+          prioritySelect.value = '中';
+        }
+        pendingMessageAttachments = [];
+        renderPendingMessageAttachments();
+        var fileInput = byId('message-attachment-input');
+        if (fileInput) {
+          fileInput.value = '';
+        }
+        var saveBtn = byId('saveMessageButton');
+        setButtonLoading(saveBtn, false);
+        setTimeout(function () {
+          var titleInput = byId('messageTitle');
+          if (titleInput) {
+            titleInput.focus();
+          }
+        }, 60);
+      }
+
+      function handleModalShown(event) {
+        var target = event && event.target;
+        if (!target) return;
+        if (target.id === 'newTaskModal') {
+          resetTaskModalState();
+          return;
+        }
+        if (target.id === 'newMessageModal') {
+          resetMessageModalState();
+        }
+      }
+
+      document.addEventListener('shown.bs.modal', handleModalShown);
 
       // ===== 初期化 =====
       window.addEventListener('load', function () {
@@ -7428,33 +7534,8 @@
         // 常に認証済みのため、ログイン画面の表示切り替えは不要。
 
         // ナビゲーションやボタンのイベントリスナーを設定
-        $$('[data-view]').forEach(function (a) {
-          a.addEventListener('click', function (e) {
-            e.preventDefault();
-            navigateTo(a.getAttribute('data-view'));
-          });
-        });
-
-        on('btn-open-new-task', 'click', function (e) {
-          e.preventDefault();
-          byId('taskFromMsgHint').classList.add('d-none');
-          new bootstrap.Modal(byId('newTaskModal')).show();
-        });
-        on('btn-open-new-msg', 'click', function (e) {
-          e.preventDefault();
-          new bootstrap.Modal(byId('newMessageModal')).show();
-        });
-
+        NavigationController.init();
         bindTaskControls();
-
-        on('flt-msg-folder', 'change', loadMessages);
-        on('flt-msg-unread', 'change', loadMessages);
-        on('msg-search-box', 'input', debounce(loadMessages, 400));
-
-        on('btn-admin-menu', 'click', function () {
-          notify('管理者メニューは準備中です。機能は近日追加されます。', true);
-        });
-
         bindProfileImageUploader();
         bindMessageAttachmentUploader();
         attachSaveHandlers();
