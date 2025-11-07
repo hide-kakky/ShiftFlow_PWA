@@ -9,7 +9,7 @@ database_id = "6ed349e4-06e1-4eab-b850-b2b99450bfda"
 
 [[kv_namespaces]]
 binding = "APP_KV"
-id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
+id = "8d1cb20b32c3432d88944d3981b4275a"
 
 [[r2_buckets]]
 binding = "R2"
@@ -23,7 +23,7 @@ database_id = "6ed349e4-06e1-4eab-b850-b2b99450bfda"
 
 [[env.preview.kv_namespaces]]
 binding = "APP_KV"
-id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
+id = "8d1cb20b32c3432d88944d3981b4275a"
 
 [[env.preview.r2_buckets]]
 binding = "R2"
