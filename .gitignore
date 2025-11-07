@@ -6,3 +6,5 @@ node_modules/
 .DS_Store
 /frontend/public/.cache
 # Cloudflare Pages は frontend/public を公開対象とし、backend/gas はローカル専用
+# Wrangler ローカル開発の生成物
+.wrangler/
