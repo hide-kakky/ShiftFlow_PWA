@@ -7049,177 +7049,261 @@
           .deleteMessageById(CURRENT_MEMO_ID);
       });
 
-      function setProfileImageLabel(text, pending) {
-        var label = byId('setting-image-name');
-        if (!label) return;
-        var value = text && String(text).trim() ? String(text).trim() : '未設定';
-        if (pending && value !== '未設定') {
-          value += '（未保存）';
-        }
-        label.textContent = value;
-        label.classList.toggle('is-pending', !!pending);
-      }
-      function updateSettingsAvatarPreview(url, opts) {
-        var img = byId('setting-avatar-preview');
-        if (!img) return;
-        var pending = !!(opts && opts.pending);
-        var override = typeof url === 'string' ? url.trim() : '';
-        if (!override) {
-          var saved = String(img.getAttribute('data-avatar-url') || '').trim();
-          var fallback = img.getAttribute('data-placeholder') || PROFILE_PLACEHOLDER_URL;
-          img.src = saved || fallback;
-          img.classList.remove('is-pending');
-          return;
-        }
-        img.src = override;
-        img.classList.toggle('is-pending', pending);
-        if (!pending) {
-          img.setAttribute('data-avatar-url', override);
-        }
-      }
+      const ProfileImageController = (function () {
+        const SELECTORS = {
+          trigger: 'btn-setting-image',
+          input: 'setting-image-file',
+          label: 'setting-image-name',
+          avatar: 'setting-avatar-preview',
+        };
 
-      function renderPendingMessageAttachments() {
-        var list = byId('message-attachment-list');
-        if (!list) return;
-        if (!Array.isArray(pendingMessageAttachments) || pendingMessageAttachments.length === 0) {
-          list.innerHTML =
-            '<li class="text-muted">添付はありません。必要に応じて画像を追加してください。</li>';
-          return;
+        function setLabel(text, pending) {
+          var label = byId(SELECTORS.label);
+          if (!label) return;
+          var value = text && String(text).trim() ? String(text).trim() : '未設定';
+          if (pending && value !== '未設定') {
+            value += '（未保存）';
+          }
+          label.textContent = value;
+          label.classList.toggle('is-pending', !!pending);
         }
-        list.innerHTML = pendingMessageAttachments
-          .map(function (att, idx) {
-            var name = esc(att && att.name ? att.name : '画像');
-            var size = humanBytes(att && att.size ? att.size : 0);
-            return (
-              '<li class="d-flex align-items-center justify-content-between gap-2 mb-1">' +
-              '<span>' +
-              name +
-              ' (' +
-              size +
-              ')</span>' +
-              '<button type="button" class="btn btn-link btn-sm text-danger p-0" data-attachment-remove="' +
-              idx +
-              '">削除</button>' +
-              '</li>'
-            );
-          })
-          .join('');
-      }
 
-      function bindProfileImageUploader() {
-        on('btn-setting-image', 'click', function () {
-          var input = byId('setting-image-file');
+        function updateAvatarPreview(url, opts) {
+          var img = byId(SELECTORS.avatar);
+          if (!img) return;
+          var pending = !!(opts && opts.pending);
+          var override = typeof url === 'string' ? url.trim() : '';
+          if (!override) {
+            var saved = String(img.getAttribute('data-avatar-url') || '').trim();
+            var fallback = img.getAttribute('data-placeholder') || PROFILE_PLACEHOLDER_URL;
+            img.src = saved || fallback;
+            img.classList.remove('is-pending');
+            return;
+          }
+          img.src = override;
+          img.classList.toggle('is-pending', pending);
+          if (!pending) {
+            img.setAttribute('data-avatar-url', override);
+          }
+        }
+
+        function resetFileInput() {
+          var input = byId(SELECTORS.input);
+          if (input) input.value = '';
+        }
+
+        function openPicker(event) {
+          if (event) event.preventDefault();
+          var input = byId(SELECTORS.input);
           if (input) input.click();
-        });
-        var input = byId('setting-image-file');
-        if (!input) return;
-        input.addEventListener('change', function () {
+        }
+
+        function handleFileSelection(event) {
+          var input = event && event.currentTarget ? event.currentTarget : byId(SELECTORS.input);
+          if (!input) return;
           var file = input.files && input.files[0];
           if (!file) return;
           if (!/^image\//i.test(file.type || '')) {
             notify('画像ファイルを選択してください。', false);
-            input.value = '';
+            resetFileInput();
             return;
           }
           if (file.size > PROFILE_IMAGE_MAX_BYTES) {
-            notify(
-              '画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。',
-              false
-            );
-            input.value = '';
+            notify('画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。', false);
+            resetFileInput();
             return;
           }
           readFileAsDataUrl(file)
             .then(function (data) {
               pendingProfileImage = { name: file.name, dataUri: data, size: file.size };
-              setProfileImageLabel(file.name, true);
-              updateSettingsAvatarPreview(data, { pending: true });
-              input.value = '';
+              setLabel(file.name, true);
+              updateAvatarPreview(data, { pending: true });
+              resetFileInput();
             })
             .catch(function () {
               notify('画像の読み込みに失敗しました。', false);
-              input.value = '';
+              resetFileInput();
             });
-        });
-      }
+        }
 
-      function bindMessageAttachmentUploader() {
-        on('btn-message-attach', 'click', function () {
-          var input = byId('message-attachment-input');
+        function resetPendingState() {
+          pendingProfileImage = null;
+          resetFileInput();
+        }
+
+        function applyLoadedSettings(settings) {
+          settings = settings || {};
+          resetPendingState();
+          var labelText = '';
+          if (settings.imageName) labelText = settings.imageName;
+          else if (settings.imageUrl && settings.imageUrl !== PROFILE_PLACEHOLDER_URL)
+            labelText = '設定済み';
+          setLabel(labelText, false);
+          updateAvatarPreview(settings.imageUrl || '', { pending: false });
+          applyUserAvatar(settings.imageUrl || '');
+        }
+
+        function applySaveResult(result) {
+          if (!result) return;
+          var payload = result || {};
+          var labelText = '';
+          if (payload.imageName) labelText = payload.imageName;
+          else if (payload.imageUrl && payload.imageUrl !== PROFILE_PLACEHOLDER_URL)
+            labelText = '設定済み';
+          setLabel(labelText, false);
+          updateAvatarPreview(payload.imageUrl || '', { pending: false });
+          applyUserAvatar(payload.imageUrl || '');
+          resetPendingState();
+        }
+
+        function init() {
+          on(SELECTORS.trigger, 'click', openPicker);
+          var input = byId(SELECTORS.input);
+          if (input) {
+            input.addEventListener('change', handleFileSelection);
+          }
+        }
+
+        return {
+          init,
+          applyLoadedSettings,
+          applySaveResult,
+          resetPendingState,
+        };
+      })();
+
+      const MessageAttachmentController = (function () {
+        const SELECTORS = {
+          trigger: 'btn-message-attach',
+          input: 'message-attachment-input',
+          list: 'message-attachment-list',
+        };
+
+        function openPicker(event) {
+          if (event) event.preventDefault();
+          var input = byId(SELECTORS.input);
           if (input) input.click();
-        });
-        var input = byId('message-attachment-input');
-        if (input) {
-          input.addEventListener('change', function () {
-            var files = Array.prototype.slice.call(input.files || []);
-            if (!files.length) return;
-            var slots = MESSAGE_ATTACHMENT_LIMIT - pendingMessageAttachments.length;
-            if (slots <= 0) {
-              notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
-              input.value = '';
-              return;
+        }
+
+        function renderList() {
+          var list = byId(SELECTORS.list);
+          if (!list) return;
+          if (!Array.isArray(pendingMessageAttachments) || pendingMessageAttachments.length === 0) {
+            list.innerHTML =
+              '<li class="text-muted">添付はありません。必要に応じて画像を追加してください。</li>';
+            return;
+          }
+          list.innerHTML = pendingMessageAttachments
+            .map(function (att, idx) {
+              var name = esc(att && att.name ? att.name : '画像');
+              var size = humanBytes(att && att.size ? att.size : 0);
+              return (
+                '<li class="d-flex align-items-center justify-content-between gap-2 mb-1">' +
+                '<span>' +
+                name +
+                ' (' +
+                size +
+                ')</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0" data-attachment-remove="' +
+                idx +
+                '">削除</button>' +
+                '</li>'
+              );
+            })
+            .join('');
+        }
+
+        function handleInputChange(event) {
+          var input = event && event.currentTarget ? event.currentTarget : byId(SELECTORS.input);
+          if (!input) return;
+          var files = Array.prototype.slice.call(input.files || []);
+          if (!files.length) return;
+          var slots = MESSAGE_ATTACHMENT_LIMIT - pendingMessageAttachments.length;
+          if (slots <= 0) {
+            notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
+            input.value = '';
+            return;
+          }
+          if (files.length > slots) {
+            notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
+            files = files.slice(0, slots);
+          }
+          var tasks = files.map(function (file) {
+            if (!/^image\//i.test(file.type || '')) {
+              notify(file.name + ' は画像ファイルではありません。', false);
+              return Promise.resolve(null);
             }
-            if (files.length > slots) {
-              notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
-              files = files.slice(0, slots);
+            if (file.size > MESSAGE_ATTACHMENT_MAX_BYTES) {
+              notify(
+                file.name + ' は ' + humanBytes(MESSAGE_ATTACHMENT_MAX_BYTES) + ' を超えています。',
+                false
+              );
+              return Promise.resolve(null);
             }
-            var tasks = files.map(function (file) {
-              if (!/^image\//i.test(file.type || '')) {
-                notify(file.name + ' は画像ファイルではありません。', false);
-                return Promise.resolve(null);
-              }
-              if (file.size > MESSAGE_ATTACHMENT_MAX_BYTES) {
-                notify(
-                  file.name +
-                    ' は ' +
-                    humanBytes(MESSAGE_ATTACHMENT_MAX_BYTES) +
-                    ' を超えています。',
-                  false
-                );
-                return Promise.resolve(null);
-              }
-              return readFileAsDataUrl(file).then(function (data) {
-                return { name: file.name, dataUri: data, size: file.size };
-              });
+            return readFileAsDataUrl(file).then(function (data) {
+              return { name: file.name, dataUri: data, size: file.size };
             });
-            Promise.all(tasks)
-              .then(function (items) {
-                items.forEach(function (item) {
-                  if (!item) return;
-                  if (pendingMessageAttachments.length >= MESSAGE_ATTACHMENT_LIMIT) return;
-                  pendingMessageAttachments.push(item);
-                });
-                renderPendingMessageAttachments();
-                input.value = '';
-              })
-              .catch(function () {
-                notify('添付画像の読み込みに失敗しました。', false);
-                input.value = '';
+          });
+          Promise.all(tasks)
+            .then(function (items) {
+              items.forEach(function (item) {
+                if (!item) return;
+                if (pendingMessageAttachments.length >= MESSAGE_ATTACHMENT_LIMIT) return;
+                pendingMessageAttachments.push(item);
               });
-          });
+              renderList();
+              input.value = '';
+            })
+            .catch(function () {
+              notify('添付画像の読み込みに失敗しました。', false);
+              input.value = '';
+            });
         }
-        var list = byId('message-attachment-list');
-        if (list) {
-          list.addEventListener('click', function (e) {
-            var target = e.target;
-            if (!target) return;
-            var btn =
-              typeof target.closest === 'function'
-                ? target.closest('[data-attachment-remove]')
-                : null;
-            if (!btn && target.getAttribute && target.hasAttribute('data-attachment-remove')) {
-              btn = target;
-            }
-            if (!btn) return;
-            e.preventDefault();
-            var idx = Number(btn.getAttribute('data-attachment-remove'));
-            if (Number.isNaN ? Number.isNaN(idx) : isNaN(idx)) return;
-            pendingMessageAttachments.splice(idx, 1);
-            renderPendingMessageAttachments();
-          });
+
+        function handleRemoveClick(event) {
+          var target = event.target;
+          if (!target) return;
+          var btn =
+            typeof target.closest === 'function'
+              ? target.closest('[data-attachment-remove]')
+              : null;
+          if (!btn && target.getAttribute && target.hasAttribute('data-attachment-remove')) {
+            btn = target;
+          }
+          if (!btn) return;
+          event.preventDefault();
+          var idx = Number(btn.getAttribute('data-attachment-remove'));
+          if (Number.isNaN ? Number.isNaN(idx) : isNaN(idx)) return;
+          pendingMessageAttachments.splice(idx, 1);
+          renderList();
         }
-        renderPendingMessageAttachments();
-      }
+
+        function reset() {
+          pendingMessageAttachments = [];
+          renderList();
+          var input = byId(SELECTORS.input);
+          if (input) input.value = '';
+        }
+
+        function init() {
+          on(SELECTORS.trigger, 'click', openPicker);
+          var input = byId(SELECTORS.input);
+          if (input) {
+            input.addEventListener('change', handleInputChange);
+          }
+          var list = byId(SELECTORS.list);
+          if (list) {
+            list.addEventListener('click', handleRemoveClick);
+          }
+          renderList();
+        }
+
+        return {
+          init,
+          reset,
+          render: renderList,
+        };
+      })();
 
       // ===== 設定 =====
       function loadSettings() {
@@ -7236,15 +7320,7 @@
                 return;
               }
               byId('setting-name').value = s.name || '';
-              pendingProfileImage = null;
-              var fileInput = byId('setting-image-file');
-              if (fileInput) fileInput.value = '';
-              var labelText = '';
-              if (s.imageName) labelText = s.imageName;
-              else if (s.imageUrl && s.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
-              setProfileImageLabel(labelText, false);
-              updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
-              applyUserAvatar(s.imageUrl || '');
+              ProfileImageController.applyLoadedSettings(s);
               var themeVal = String(s.theme || 'light').toLowerCase();
               if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
                 themeVal = 'light';
@@ -7286,16 +7362,7 @@
             if (lbl) lbl.classList.remove('d-none');
             if (sp) sp.classList.add('d-none');
             if (res && res.success) {
-              var labelText = '';
-              if (res.imageName) labelText = res.imageName;
-              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL)
-                labelText = '設定済み';
-              setProfileImageLabel(labelText, false);
-              updateSettingsAvatarPreview(res.imageUrl || '', { pending: false });
-              applyUserAvatar(res.imageUrl || '');
-              pendingProfileImage = null;
-              var fileInput = byId('setting-image-file');
-              if (fileInput) fileInput.value = '';
+              ProfileImageController.applySaveResult(res);
             }
           })
           .withFailureHandler(function (e) {
@@ -7469,10 +7536,7 @@
               if (res && res.success) {
                 var inst = bootstrap.Modal.getInstance(byId('newMessageModal'));
                 if (inst) inst.hide();
-                pendingMessageAttachments = [];
-                renderPendingMessageAttachments();
-                var input = byId('message-attachment-input');
-                if (input) input.value = '';
+                MessageAttachmentController.reset();
               }
               notify(res.message || '完了', res.success !== false);
               loadHome();
@@ -7595,12 +7659,7 @@
         if (prioritySelect) {
           prioritySelect.value = '中';
         }
-        pendingMessageAttachments = [];
-        renderPendingMessageAttachments();
-        var fileInput = byId('message-attachment-input');
-        if (fileInput) {
-          fileInput.value = '';
-        }
+        MessageAttachmentController.reset();
         var saveBtn = byId('saveMessageButton');
         setButtonLoading(saveBtn, false);
         setTimeout(function () {
@@ -7634,8 +7693,8 @@
         NavigationController.init();
         TaskViewController.init();
         MessageViewController.init();
-        bindProfileImageUploader();
-        bindMessageAttachmentUploader();
+        ProfileImageController.init();
+        MessageAttachmentController.init();
         attachSaveHandlers();
 
         initPullToRefresh();
