@@ -6317,6 +6317,79 @@
         };
       })();
 
+      const MessageViewController = (function () {
+        const SELECTORS = {
+          folder: 'flt-msg-folder',
+          unread: 'flt-msg-unread',
+          search: 'msg-search-box',
+        };
+        const debouncedSearch = debounce(function () {
+          loadMessages();
+        }, 400);
+
+        function readFolderValue() {
+          var select = byId(SELECTORS.folder);
+          if (!select) return '';
+          var value = String(select.value || '').trim();
+          if (!value || value.toLowerCase() === 'all') {
+            return '';
+          }
+          return value;
+        }
+
+        function readUnreadOnly() {
+          var checkbox = byId(SELECTORS.unread);
+          return checkbox ? !!checkbox.checked : false;
+        }
+
+        function readSearchKeyword() {
+          var input = byId(SELECTORS.search);
+          return input ? (input.value || '').trim() : '';
+        }
+
+        function getFilters() {
+          return {
+            folderId: readFolderValue(),
+            unreadOnly: readUnreadOnly(),
+            keyword: readSearchKeyword(),
+          };
+        }
+
+        function handleFilterChange(event) {
+          if (event) event.preventDefault();
+          loadMessages();
+        }
+
+        function handleSearchInput(event) {
+          if (event) event.preventDefault();
+          debouncedSearch();
+        }
+
+        function attachFilterHandlers() {
+          on(SELECTORS.folder, 'change', handleFilterChange);
+          on(SELECTORS.unread, 'change', handleFilterChange);
+          var searchInput = byId(SELECTORS.search);
+          if (searchInput) {
+            searchInput.addEventListener('input', handleSearchInput);
+          }
+        }
+
+        function init() {
+          attachFilterHandlers();
+        }
+
+        function buildCacheKey(filters) {
+          var active = filters || getFilters();
+          return getMessagesCacheKey(active.folderId, active.unreadOnly);
+        }
+
+        return {
+          init,
+          getFilters,
+          buildCacheKey,
+        };
+      })();
+
       // ===== Messages =====
       function renderMessageCard(m, options) {
         var opts = options || {};
@@ -6399,15 +6472,11 @@
       function rowMsg(m) {
         return renderMessageCard(m, { hideAction: false });
       }
-      function filterMessages(list) {
-        var folderEl = byId('flt-msg-folder');
-        var folderId = folderEl ? folderEl.value || '' : '';
-        folderId = String(folderId).trim();
-        if (!folderId || folderId.toLowerCase() === 'all') {
-          folderId = '';
-        }
-        var unreadOnly = byId('flt-msg-unread') ? !!byId('flt-msg-unread').checked : false;
-        var kw = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
+      function filterMessages(list, suppliedFilters) {
+        var filters = suppliedFilters || MessageViewController.getFilters();
+        var folderId = filters.folderId || '';
+        var unreadOnly = !!filters.unreadOnly;
+        var kw = filters.keyword || '';
         var rows = normalizeArray(list).slice();
         if (unreadOnly)
           rows = rows.filter(function (x) {
@@ -6469,15 +6538,12 @@
           }
           return Promise.resolve(false);
         }
-        var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
-        if (folderOpt != null) folderOpt = String(folderOpt).trim();
-        if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
-        var unreadOnlyFlag = !!(byId('flt-msg-unread') || {}).checked;
-        var searchKeyword = byId('msg-search-box')
-          ? (byId('msg-search-box').value || '').trim()
-          : '';
+        var filters = MessageViewController.getFilters();
+        var folderOpt = filters.folderId || '';
+        var unreadOnlyFlag = !!filters.unreadOnly;
+        var searchKeyword = filters.keyword || '';
         var useCache = !searchKeyword;
-        var cacheKey = useCache ? getMessagesCacheKey(folderOpt, unreadOnlyFlag) : null;
+        var cacheKey = useCache ? MessageViewController.buildCacheKey(filters) : null;
         var cachedRows = null;
         var skeletonStartedAt = Date.now();
         setMsgLoading(true);
@@ -7462,12 +7528,6 @@
           on('btn-open-new-msg', 'click', openNewMessageModal);
         }
 
-        function attachMessageFilters() {
-          on('flt-msg-folder', 'change', loadMessages);
-          on('flt-msg-unread', 'change', loadMessages);
-          on('msg-search-box', 'input', debounce(loadMessages, 400));
-        }
-
         function attachAdminMenuHandler() {
           on('btn-admin-menu', 'click', function () {
             notify('管理者メニューは準備中です。機能は近日追加されます。', true);
@@ -7477,7 +7537,6 @@
         function init() {
           attachViewLinks();
           attachFabHandlers();
-          attachMessageFilters();
           attachAdminMenuHandler();
         }
 
@@ -7574,6 +7633,7 @@
         // ナビゲーションやボタンのイベントリスナーを設定
         NavigationController.init();
         TaskViewController.init();
+        MessageViewController.init();
         bindProfileImageUploader();
         bindMessageAttachmentUploader();
         attachSaveHandlers();
