@@ -3,9 +3,9 @@
  * 値そのものは従来と同じで、参照場所だけを一本化している。
  */
 export const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
-export const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-export const MESSAGE_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
-export const MESSAGE_ATTACHMENT_LIMIT = 3;
+export const PROFILE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+export const MESSAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+export const MESSAGE_ATTACHMENT_LIMIT = 5;
 
 export const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',

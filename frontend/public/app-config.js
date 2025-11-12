@@ -6,9 +6,9 @@
   var existing = globalScope.SHIFT_FLOW_CONFIG || {};
   var config = Object.assign({}, existing, {
     PROFILE_PLACEHOLDER_URL: 'https://placehold.jp/150x150.png',
-    PROFILE_IMAGE_MAX_BYTES: 2 * 1024 * 1024,
-    MESSAGE_ATTACHMENT_MAX_BYTES: 4 * 1024 * 1024,
-    MESSAGE_ATTACHMENT_LIMIT: 3,
+    PROFILE_IMAGE_MAX_BYTES: 8 * 1024 * 1024,
+    MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
+    MESSAGE_ATTACHMENT_LIMIT: 5,
     AUTH_NOTICE_MESSAGE:
       'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。',
     API_BASE_PATH: '/api',
