@@ -9,6 +9,7 @@
     PROFILE_IMAGE_MAX_BYTES: 8 * 1024 * 1024,
     MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
     MESSAGE_ATTACHMENT_LIMIT: 5,
+    CANONICAL_HOSTNAME: 'shiftflow.pages.dev',
     AUTH_NOTICE_MESSAGE:
       'Google でログインしてから再試行してください。画面の「Google でログイン」ボタンから認証できます。',
     API_BASE_PATH: '/api',

@@ -3255,6 +3255,7 @@
         MESSAGE_ATTACHMENT_MAX_BYTES,
         MESSAGE_ATTACHMENT_LIMIT,
         API_BASE_PATH,
+        CANONICAL_HOSTNAME,
       } = SHIFT_FLOW_CONFIG;
       const GAS_WEB_APP_URL =
         typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
@@ -3277,6 +3278,13 @@
         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
         (typeof navigator !== 'undefined' && navigator.standalone === true);
       const NEEDS_MANUAL_SIGNIN = IS_IOS && IS_STANDALONE;
+      const CURRENT_HOSTNAME = (window.location && window.location.hostname) || '';
+      const IS_CANONICAL_HOST =
+        !CANONICAL_HOSTNAME || CURRENT_HOSTNAME === CANONICAL_HOSTNAME;
+      const NEEDS_AUTH_RELAY =
+        !!CANONICAL_HOSTNAME &&
+        CURRENT_HOSTNAME !== CANONICAL_HOSTNAME &&
+        CURRENT_HOSTNAME.endsWith('.' + CANONICAL_HOSTNAME);
       let AUTH_NOTICE_SHOWN = false;
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
@@ -4450,7 +4458,12 @@
         var normalized = normalizeReturnTo(returnTo);
         var url = new URL('/auth/start', window.location.origin);
         if (normalized) {
-          url.searchParams.set('returnTo', normalized);
+          var returnPath = normalized;
+          if (NEEDS_AUTH_RELAY) {
+            var targetUrl = (window.location.origin || '') + normalized;
+            returnPath = '/auth/relay?target=' + encodeURIComponent(targetUrl);
+          }
+          url.searchParams.set('returnTo', returnPath);
         }
         return url.toString();
       }
@@ -4458,18 +4471,12 @@
       function startAuthFlow(options) {
         const opts = { external: true, ...(options || {}) };
         const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
-        const shouldPreOpenWindow = manualMode || opts.external;
+        const shouldOpenNewTab = !manualMode && opts.external;
         const returnTo = opts.returnTo || window.location.href;
         const startUrl = buildAuthStartUrl(returnTo);
-        const fallbackTarget = manualMode ? buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL : '';
-        if (shouldPreOpenWindow) {
+        if (shouldOpenNewTab) {
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
-            if (manualMode && fallbackTarget) {
-              showAuthOverlay('Google の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
-              window.open(fallbackTarget, '_blank', 'noopener');
-              return;
-            }
             showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
             window.location.assign(startUrl);
             return;
