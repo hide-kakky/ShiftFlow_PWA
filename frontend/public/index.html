@@ -2235,7 +2235,7 @@
       </div>
     </div>
 
-    <!-- ===== Notification toast mount point ===== -->
+    <!-- COMPONENT: 通知エリア（トースト表示） -->
     <div
       id="notification-area"
       data-app-shell
@@ -2250,6 +2250,7 @@
         max-width: 520px;
       "
     ></div>
+    <!-- /COMPONENT: 通知エリア -->
 
     <!-- ===== Pull-to-refresh indicator ===== -->
     <div
@@ -2339,7 +2340,7 @@
       </footer>
     </section>
 
-    <!-- ===== Desktop header and user menu ===== -->
+    <!-- SECTION: ヘッダー（ブランド・ユーザーメニュー） -->
     <header class="navbar navbar-expand-md d-print-none" data-app-shell hidden>
       <div class="container-xl">
         <a href="#" class="navbar-brand app-brand" data-view="home" title="" data-bind-user-email>
@@ -2384,8 +2385,9 @@
         </div>
       </div>
     </header>
+    <!-- /SECTION: ヘッダー -->
 
-    <!-- ===== Desktop topbar navigation ===== -->
+    <!-- SECTION: サイドバー（デスクトップ ビュー切替ナビゲーション） -->
     <nav class="navbar navbar-expand-md topbar d-none d-md-block" data-app-shell hidden>
       <div class="container-xl">
         <ul class="navbar-nav">
@@ -2416,6 +2418,7 @@
         </ul>
       </div>
     </nav>
+    <!-- /SECTION: サイドバー（デスクトップ） -->
 
     <!-- 認証ゲート（ログイン画面）はGASが自動で表示するため、HTMLからは削除 -->
 
@@ -2446,7 +2449,7 @@
             <div id="home-unread" class="mt-2"></div>
           </section>
 
-          <!-- ----- Tasks view panel ----- -->
+          <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
           <section class="view-panel fade-container is-hidden" id="view-tasks">
             <div class="task-header mt-0">
               <div class="task-title-wrap">
@@ -2535,6 +2538,7 @@
               </div>
             </div>
           </section>
+          <!-- /COMPONENT: シフト一覧 -->
 
           <!-- ----- Messages view panel ----- -->
           <section class="view-panel fade-container is-hidden" id="view-messages">
@@ -2740,7 +2744,7 @@
       </ul>
     </div>
 
-    <!-- ===== Mobile bottom navigation ===== -->
+    <!-- SECTION: サイドバー（モバイル下部ナビゲーション） -->
     <nav class="navbar navbar-expand footer-nav d-md-none" data-app-shell hidden>
       <div class="container-fluid">
         <ul class="navbar-nav w-100 justify-content-around">
@@ -2797,6 +2801,7 @@
         </ul>
       </div>
     </nav>
+    <!-- /SECTION: サイドバー（モバイル） -->
 
     <!-- ===== Modal dialogs ===== -->
     <!-- ----- New Task modal ----- -->
@@ -2810,6 +2815,7 @@
             <h6 class="modal-title m-0">新しいタスク</h6>
           </div>
           <div class="modal-body">
+            <!-- COMPONENT: 申請フォーム（新規タスク作成） -->
             <form id="newTaskForm" class="modal-form">
               <div class="form-section">
                 <div
@@ -2886,6 +2892,7 @@
                 </div>
               </div>
             </form>
+            <!-- /COMPONENT: 申請フォーム -->
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -2983,7 +2990,7 @@
       </div>
     </div>
 
-    <!-- ----- Task detail modal ----- -->
+    <!-- COMPONENT: 承認モーダル（タスク詳細・更新） -->
     <div class="modal" id="taskDetailModal" tabindex="-1">
       <div class="modal-dialog modal-fullscreen-sm-down">
         <div class="modal-content modal-modern">
@@ -3062,6 +3069,7 @@
         </div>
       </div>
     </div>
+    <!-- /COMPONENT: 承認モーダル -->
 
     <!-- ----- Message detail modal ----- -->
     <div class="modal" id="messageDetailModal" tabindex="-1">
