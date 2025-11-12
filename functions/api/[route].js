@@ -2845,12 +2845,20 @@ async function maybeHandleRouteWithD1(options) {
       const readRows = Array.isArray(readResult?.results) ? readResult.results : [];
       const readSet = new Set();
       const readUsers = [];
+      const readEmails = [];
       for (const row of readRows) {
         const email = row?.email ? String(row.email).trim() : '';
         const displayName = row?.display_name ? String(row.display_name).trim() : '';
-        if (email) {
-          readSet.add(normalizeEmailValue(email));
-          readUsers.push(buildUserLabel(email, displayName));
+        const normalizedEmail = normalizeEmailValue(email);
+        if (normalizedEmail) {
+          readSet.add(normalizedEmail);
+          readEmails.push(normalizedEmail);
+        }
+        if (email || displayName) {
+          readUsers.push({
+            email,
+            label: buildUserLabel(email, displayName),
+          });
         }
       }
       const membership = await resolveMembershipForEmail(
@@ -2860,10 +2868,17 @@ async function maybeHandleRouteWithD1(options) {
       const orgId = messageRow?.org_id || membership?.org_id || messageRow?.author_org_id || null;
       const activeUsers = await fetchActiveUsersForOrg(db, orgId);
       const unreadUsers = [];
+      const unreadEmails = [];
       for (const user of activeUsers) {
         const normalizedEmail = normalizeEmailValue(user.email);
         if (normalizedEmail && readSet.has(normalizedEmail)) continue;
-        unreadUsers.push(buildUserLabel(user.email, user.displayName));
+        if (normalizedEmail) {
+          unreadEmails.push(normalizedEmail);
+        }
+        unreadUsers.push({
+          email: user.email,
+          label: buildUserLabel(user.email, user.displayName),
+        });
       }
       const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
       const authorEmail = normalizeEmailValue(messageRow?.author_email);
@@ -2879,6 +2894,8 @@ async function maybeHandleRouteWithD1(options) {
         comments: [],
         readUsers,
         unreadUsers,
+        readEmails,
+        unreadEmails,
         canDelete,
         attachments,
       };

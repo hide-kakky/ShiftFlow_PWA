@@ -1,6 +1,6 @@
 const SESSION_COOKIE_NAME = 'SESSION';
 const SESSION_NAMESPACE = 'sf:sessions:';
-const SESSION_IDLE_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
+const SESSION_IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SESSION_ABSOLUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const SESSION_TTL_SECONDS = Math.ceil(SESSION_ABSOLUTE_TIMEOUT_MS / 1000);
 const INIT_NAMESPACE = 'sf:auth_init:';

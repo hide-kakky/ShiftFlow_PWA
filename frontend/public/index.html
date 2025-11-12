@@ -1552,10 +1552,65 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
       }
       .attach-meta {
         font-size: 0.9rem;
         color: var(--attach-meta);
+      }
+      .attach-icon {
+        color: var(--muted);
+        font-size: 1.5rem;
+      }
+      .image-preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .image-preview-grid__item {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--card-border);
+        background: var(--card);
+        box-shadow: var(--card-shadow);
+      }
+      .image-preview-grid__item img {
+        display: block;
+        width: 100%;
+        height: 140px;
+        object-fit: cover;
+      }
+      .image-preview-grid__caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 6px 10px;
+        font-size: 0.8rem;
+        color: var(--card);
+        background: linear-gradient(180deg, transparent, rgba(5, 11, 24, 0.85));
+      }
+      .user-chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .user-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 12px;
+        background: rgba(81, 124, 178, 0.12);
+        border: 1px solid rgba(81, 124, 178, 0.2);
+        color: var(--text-900);
+        font-size: 0.85rem;
+      }
+      :root[data-theme='dark'] .user-chip {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.18);
+        color: var(--card);
       }
 
       .list-group-item {
@@ -2216,13 +2271,15 @@
               <span id="auth-session-email" class="auth-session__email"></span>
             </div>
           </div>
-          <h1 class="auth-card__title">ShiftFlow 認証を開始</h1>
-          <p class="auth-card__subtitle">組織の Google Workspace アカウントで利用者認証を行います。</p>
+          <h1 class="auth-card__title">Sign-in</h1>
+          <p class="auth-card__subtitle">
+            個人の Google アカウントで認証します。下のボタンから認証を行ってください。
+          </p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-card__actions">
             <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
               <span class="material-icons">login</span>
-              <span>Google Workspace 認証を開始</span>
+              <span>Google でログイン</span>
             </button>
             <button
               id="btn-auth-logout"
@@ -2230,7 +2287,7 @@
               type="button"
             >
               <span class="material-icons-outlined">logout</span>
-              <span>サインアウト</span>
+              <span>Sign-out</span>
             </button>
           </div>
         </section>
@@ -3095,6 +3152,7 @@
                   <h6 class="mb-2">
                     <span class="material-icons align-middle me-1">attach_file</span>添付
                   </h6>
+                  <div class="image-preview-grid d-none" id="msgImagePreview"></div>
                   <ul class="list-group attach-list" id="msgAttachList"></ul>
                 </div>
               </div>
@@ -3133,8 +3191,10 @@
               ></textarea>
               <button class="btn btn-secondary mt-2" id="btnCommentPost">コメントを投稿</button>
               <div class="mt-4">
-                <p><strong>既読:</strong> <span id="msgReadUsers"></span></p>
-                <p><strong>未読:</strong> <span id="msgUnreadUsers"></span></p>
+                <p class="mb-2"><strong>既読</strong></p>
+                <div class="user-chip-list" id="msgReadUsers"></div>
+                <p class="mb-2 mt-3"><strong>未読</strong></p>
+                <div class="user-chip-list" id="msgUnreadUsers"></div>
               </div>
             </div>
           </div>
@@ -3674,7 +3734,7 @@
           if (error && (error.authRequired || error.status === 401 || error.status === 403)) {
             console.info('[ShiftFlow] auth required, prompting authentication.');
             clearAuthToken();
-            var overlayMessage = '再度 Google Workspace 認証を開始してください。';
+            var overlayMessage = '再度 Google でログインしてください。';
             if (error && error.response && error.response.reason) {
               overlayMessage = String(error.response.reason);
             } else if (error && error.response && error.response.error) {
@@ -3842,7 +3902,9 @@
                 }
               }
 
-              deliver(successHandler, body.result, userObject);
+              var payload =
+                body && Object.prototype.hasOwnProperty.call(body, 'result') ? body.result : body;
+              deliver(successHandler, payload, userObject);
             } catch (err) {
               const wrapped =
                 err instanceof Error ? err : createError('Network error', { cause: err });
@@ -4206,7 +4268,7 @@
         const errorEl = byId('auth-error');
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
-          displayMessage = 'ShiftFlow を利用するには組織の Google Workspace 認証が必要です。';
+          displayMessage = 'ShiftFlow を利用するには Google アカウントでのサインインが必要です。';
         }
         if (document.body) {
           document.body.classList.add('auth-screen');
@@ -4345,17 +4407,17 @@
             var mappedMessage = (function () {
               switch (reason) {
                 case 'idle_timeout':
-                  return '一定時間操作がなかったため認証を再取得する必要があります。もう一度認証を開始してください。';
+                  return '一定時間操作がなかったため認証を再取得する必要があります。もう一度 Google でログインしてください。';
                 case 'absolute_timeout':
-                  return '長時間経過したため再度 Google Workspace 認証が必要です。';
+                  return '長時間経過したため再度 Google でログインしてください。';
                 case 'no_session':
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
-                    : '組織の Google Workspace 認証を開始してください。';
+                    ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+                    : 'Google でログインしてください。';
                 default:
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
-                    : '組織の Google Workspace 認証を開始してください。';
+                    ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+                    : 'Google でログインしてください。';
               }
             })();
             showAuthOverlay(opts.message || mappedMessage);
@@ -4404,11 +4466,11 @@
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
             if (manualMode && fallbackTarget) {
-              showAuthOverlay('組織の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
+              showAuthOverlay('Google の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
-            showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+            showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
             window.location.assign(startUrl);
             return;
           }
@@ -4416,11 +4478,11 @@
             authWindow.opener = null;
             authWindow.focus();
           } catch (_err) {}
-          showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+          showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
           return;
         }
 
-        showAuthOverlay('Google Workspace の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+        showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
         window.location.assign(startUrl);
       }
 
@@ -4440,7 +4502,7 @@
         }
         clearAuthToken();
         updateAuthSessionUI(null);
-        showAuthOverlay('サインアウトしました。再度 Google Workspace 認証を開始してください。');
+        showAuthOverlay('サインアウトしました。もう一度 Google でログインしてください。');
       }
 
       function attachAuthEventHandlers() {
@@ -4476,8 +4538,8 @@
         if (!session || !session.authenticated) {
           showAuthOverlay(
             NEEDS_MANUAL_SIGNIN
-              ? 'ホーム画面から開いた場合はブラウザで Google Workspace 認証を行ってください。'
-              : '組織の Google Workspace 認証を開始してください。'
+              ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+              : 'Google でログインしてください。'
           );
           return;
         }
@@ -4555,7 +4617,7 @@
             if (isAuthError && isAuthError(err)) {
               clearAuthToken();
               updateAuthSessionUI(null);
-            showAuthOverlay('セッションが切れました。再度 Google Workspace 認証を開始してください。');
+            showAuthOverlay('セッションが切れました。もう一度 Google でログインしてください。');
               syncAuthSession({ silent: true }).catch(function () {});
               return;
             }
@@ -6453,9 +6515,9 @@
           '">' +
           '<a href="#" class="' +
           linkClasses.join(' ') +
-          '" onclick="event.preventDefault(); openMessageModal(\'' +
+          '" data-message-link="' +
           m.id +
-          '\')">' +
+          '">' +
           '<div class="msg-content">' +
           '<span class="msg-icon material-icons">' +
           icon +
@@ -6604,6 +6666,23 @@
             });
           });
       }
+      (function attachMessageCardNavigation() {
+        var listEl = byId('msg-list');
+        if (!listEl) return;
+        listEl.addEventListener('click', function (event) {
+          if (!event) return;
+          if (event.target && event.target.closest('.msg-action-btn')) return;
+          var card = event.target && event.target.closest('[data-memo]');
+          if (!card) return;
+          var memoId = card.getAttribute('data-memo');
+          if (!memoId) return;
+          var anchor = event.target.closest('.msg-link');
+          if (anchor) {
+            event.preventDefault();
+          }
+          openMessageModal(memoId);
+        });
+      })();
       function toggleRead(btn, memoId, shouldRead, onComplete) {
         setButtonLoading(btn, true);
         google.script.run
@@ -6687,24 +6766,84 @@
             var name = esc(a.name || '(不明)');
             var size = humanBytes(a.size || 0);
             var mime = esc(a.mimeType || '');
-            var url = esc(a.url || '#');
+            var isImage = /^image\//i.test(String(a.mimeType || ''));
+            var icon = isImage ? 'image' : 'insert_drive_file';
+            var url = a.url ? esc(a.url) : '';
+            var linkHtml = url
+              ? '<a class="btn btn-sm btn-outline-primary" href="' +
+                url +
+                '" target="_blank" rel="noopener">開く</a>'
+              : '<span class="text-muted small">リンクなし</span>';
             return (
-              '<li class="list-group-item">' +
-              '<div class="me-2 flex-grow-1"><div>' +
+              '<li class="list-group-item attach-item">' +
+              '<span class="material-icons-outlined attach-icon" aria-hidden="true">' +
+              icon +
+              '</span>' +
+              '<div class="flex-grow-1">' +
+              '<div class="fw-semibold">' +
               name +
               '</div>' +
               '<div class="attach-meta">' +
               mime +
-              ' ・ ' +
-              size +
-              '</div></div>' +
-              '<a class="btn btn-sm btn-outline-primary" href="' +
-              url +
-              '" target="_blank" rel="noopener">開く</a>' +
+              (size ? ' ・ ' + size : '') +
+              '</div>' +
+              '</div>' +
+              linkHtml +
               '</li>'
             );
           })
           .join('');
+      }
+      function renderImagePreviewGrid(list) {
+        if (!Array.isArray(list) || list.length === 0) return '';
+        var images = list.filter(function (item) {
+          var hasImage = item && /^image\//i.test(String(item.mimeType || ''));
+          return hasImage && item.url;
+        });
+        if (!images.length) return '';
+        return images
+          .map(function (img, index) {
+            var url = esc(img.url || '');
+            var label = esc(img.name || '画像 ' + (index + 1));
+            return (
+              '<a class="image-preview-grid__item" href="' +
+              url +
+              '" target="_blank" rel="noopener">' +
+              '<img src="' +
+              url +
+              '" alt="' +
+              label +
+              '" loading="lazy">' +
+              '<span class="image-preview-grid__caption">' +
+              label +
+              '</span>' +
+              '</a>'
+            );
+          })
+          .join('');
+      }
+      function formatUserLabel(entry) {
+        if (!entry) return '';
+        if (typeof entry === 'string') return entry;
+        var label = entry.label || entry.displayName || entry.name || '';
+        var email = entry.email || entry.address || '';
+        if (label && email && label !== email) {
+          return label + ' (' + email + ')';
+        }
+        return label || email || '';
+      }
+      function renderUserChips(targetId, entries) {
+        var host = byId(targetId);
+        if (!host) return;
+        var chips = normalizeArray(entries)
+          .map(formatUserLabel)
+          .filter(function (label) {
+            return !!label;
+          })
+          .map(function (label) {
+            return '<span class="user-chip">' + esc(label) + '</span>';
+          });
+        host.innerHTML = chips.length ? chips.join('') : '<span class="text-muted">該当なし</span>';
       }
       var CURRENT_TASK_ID = null;
       function openTaskDetail(id) {
@@ -6783,9 +6922,16 @@
           .withSuccessHandler(function (res) {
             setButtonLoading(btn, false);
             notify(res && res.message ? res.message : '更新しました', res && res.success !== false);
+            var modalInst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
+            if (modalInst) modalInst.hide();
             loadHome();
             loadMyTasks();
-            openTaskDetail(CURRENT_TASK_ID);
+            if (TASK_STATE.from && TASK_STATE.from.loaded) {
+              loadCreatedTasks();
+            }
+            if (IS_MANAGER && TASK_STATE.all && TASK_STATE.all.loaded) {
+              loadAllTasks();
+            }
           })
           .withFailureHandler(function (e) {
             setButtonLoading(btn, false);
@@ -6859,13 +7005,23 @@
         }
         var attachmentsWrap = byId('msgAttachments');
         var attachList = byId('msgAttachList');
+        var previewWrap = byId('msgImagePreview');
         var att = Array.isArray(data.attachments) ? data.attachments : [];
         if (att.length) {
           if (attachList) attachList.innerHTML = renderAttachList(att);
           if (attachmentsWrap) attachmentsWrap.classList.remove('d-none');
+          if (previewWrap) {
+            var previewHtml = renderImagePreviewGrid(att);
+            previewWrap.innerHTML = previewHtml;
+            previewWrap.classList.toggle('d-none', !previewHtml);
+          }
         } else {
           if (attachmentsWrap) attachmentsWrap.classList.add('d-none');
           if (attachList) attachList.innerHTML = '';
+          if (previewWrap) {
+            previewWrap.innerHTML = '';
+            previewWrap.classList.add('d-none');
+          }
         }
         var commentsHtml = '';
         (data.comments || []).forEach(function (c) {
@@ -6902,17 +7058,35 @@
         }
         var commentsEl = byId('comments-list');
         if (commentsEl) commentsEl.innerHTML = commentsHtml;
-        var readEl = byId('msgReadUsers');
-        if (readEl) readEl.textContent = (data.readUsers || []).join(', ');
-        var unreadEl = byId('msgUnreadUsers');
-        if (unreadEl) unreadEl.textContent = (data.unreadUsers || []).join(', ');
+        renderUserChips('msgReadUsers', data.readUsers);
+        renderUserChips('msgUnreadUsers', data.unreadUsers);
         var deleteBtn = byId('deleteMessageButton');
         if (deleteBtn) deleteBtn.classList.toggle('d-none', !data.canDelete);
-        var currentDisplayName = getNameByEmail(CURRENT_USER_EMAIL);
-        if (currentDisplayName) {
-          CURRENT_MEMO_IS_READ = Array.isArray(data.readUsers)
-            ? data.readUsers.indexOf(currentDisplayName) !== -1
-            : false;
+        var normalizedCurrent = normalizeEmailValue(CURRENT_USER_EMAIL);
+        if (normalizedCurrent && Array.isArray(data.readEmails) && data.readEmails.length) {
+          CURRENT_MEMO_IS_READ = data.readEmails.some(function (email) {
+            return normalizeEmailValue(email) === normalizedCurrent;
+          });
+        } else if (Array.isArray(data.readUsers) && data.readUsers.length) {
+          CURRENT_MEMO_IS_READ = data.readUsers.some(function (entry) {
+            if (!entry) return false;
+            if (typeof entry === 'string') {
+              var displayName = getNameByEmail(CURRENT_USER_EMAIL);
+              return displayName ? entry === displayName : entry === CURRENT_USER_EMAIL;
+            }
+            var candidate = entry.email ? normalizeEmailValue(entry.email) : '';
+            if (candidate && normalizedCurrent) {
+              return candidate === normalizedCurrent;
+            }
+            if (entry.label) {
+              var label = entry.label;
+              var displayName = getNameByEmail(CURRENT_USER_EMAIL);
+              return displayName ? label === displayName : false;
+            }
+            return false;
+          });
+        } else {
+          CURRENT_MEMO_IS_READ = false;
         }
         updateMessageReadButton(CURRENT_MEMO_IS_READ);
       }

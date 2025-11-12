@@ -10,7 +10,7 @@
     MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
     MESSAGE_ATTACHMENT_LIMIT: 5,
     AUTH_NOTICE_MESSAGE:
-      'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。',
+      'Google でログインしてから再試行してください。画面の「Google でログイン」ボタンから認証できます。',
     API_BASE_PATH: '/api',
     BOOTSTRAP_CACHE_PREFIX: 'bootstrap:',
     BOOTSTRAP_CACHE_RECENT_KEY: 'bootstrap:recent',
