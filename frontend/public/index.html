@@ -51,6 +51,8 @@
     </script>
     <!-- ===== Runtime configuration endpoint (Cloudflare Functions) ===== -->
     <script src="/config"></script>
+    <!-- ===== Static application constants ===== -->
+    <script src="/app-config.js"></script>
     <!-- ===== Google Identity Services (One Tap / FedCM support) ===== -->
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
     <!-- ===== Initial bootstrap payload rendered by backend ===== -->
@@ -3181,6 +3183,19 @@
           : { tasks: [], meta: {} };
       let IS_MANAGER = !!__BOOT__.isManager;
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
+      const SHIFT_FLOW_CONFIG = window.SHIFT_FLOW_CONFIG || {};
+      const {
+        BOOTSTRAP_CACHE_PREFIX,
+        BOOTSTRAP_CACHE_RECENT_KEY,
+        BOOTSTRAP_CACHE_DEFAULT_EMAIL,
+        BOOTSTRAP_CACHE_MAX_AGE_MS,
+        AUTH_NOTICE_MESSAGE,
+        PROFILE_PLACEHOLDER_URL,
+        PROFILE_IMAGE_MAX_BYTES,
+        MESSAGE_ATTACHMENT_MAX_BYTES,
+        MESSAGE_ATTACHMENT_LIMIT,
+        API_BASE_PATH,
+      } = SHIFT_FLOW_CONFIG;
       const GAS_WEB_APP_URL =
         typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
       const HAS_GAS_WEB_APP_URL = GAS_WEB_APP_URL.length > 0;
@@ -3191,12 +3206,6 @@
       let AUTH_READY = false;
       let BOOTSTRAP_STARTED = false;
       let RESTORED_BOOTSTRAP_FROM_CACHE = false;
-      const BOOTSTRAP_CACHE_PREFIX = 'bootstrap:';
-      const BOOTSTRAP_CACHE_RECENT_KEY = 'bootstrap:recent';
-      const BOOTSTRAP_CACHE_DEFAULT_EMAIL = 'guest';
-      const BOOTSTRAP_CACHE_MAX_AGE_MS = 60 * 1000;
-      const AUTH_NOTICE_MESSAGE =
-        'Google にサインインしてから再試行してください。カード内の「Google にサインイン」ボタンから認証できます。';
       const USER_AGENT = (navigator && navigator.userAgent) || '';
       const IS_IOS = /iphone|ipad|ipod/i.test(USER_AGENT) && !(window && window.MSStream);
       const IS_ANDROID = /android/i.test(USER_AGENT);
@@ -3263,10 +3272,6 @@
         (typeof document.documentElement.dataset.themePref === 'string' &&
           document.documentElement.dataset.themePref) ||
         'light';
-      const PROFILE_PLACEHOLDER_URL = 'https://placehold.jp/150x150.png';
-      const PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-      const MESSAGE_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
-      const MESSAGE_ATTACHMENT_LIMIT = 3;
       let pendingProfileImage = null;
       let pendingMessageAttachments = [];
       if (__BOOT__.theme) themePreference = __BOOT__.theme || themePreference;
@@ -3630,7 +3635,6 @@
 
       // ----- Bridge google.script.run calls when Apps Script runtime is unavailable -----
       (function ensureGoogleScriptRun() {
-        var API_BASE_PATH = '/api';
         if (!globalThis.google) globalThis.google = {};
         if (!globalThis.google.script) globalThis.google.script = {};
         var existing = globalThis.google.script.run;

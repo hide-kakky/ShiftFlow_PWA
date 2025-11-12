@@ -1,8 +1,14 @@
-const CACHE_PREFIX = 'shiftflow-';
-const APP_SHELL_CACHE = `${CACHE_PREFIX}app-shell-v2`;
-const API_CACHE = `${CACHE_PREFIX}api-v1`;
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest'];
-const API_REVALIDATE_PATHS = ['/api/tasks', '/api/messages', '/api/home'];
+self.importScripts('/app-config.js');
+const swConfig = self.SHIFT_FLOW_CONFIG || {};
+const CACHE_PREFIX = swConfig.CACHE_PREFIX || 'shiftflow-';
+const APP_SHELL_CACHE = swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-v2`;
+const API_CACHE = swConfig.API_CACHE_KEY || `${CACHE_PREFIX}api-v1`;
+const APP_SHELL = Array.isArray(swConfig.APP_SHELL_PATHS)
+  ? swConfig.APP_SHELL_PATHS
+  : ['/', '/index.html', '/manifest.webmanifest', '/app-config.js'];
+const API_REVALIDATE_PATHS = Array.isArray(swConfig.API_REVALIDATE_PATHS)
+  ? swConfig.API_REVALIDATE_PATHS
+  : ['/api/tasks', '/api/messages', '/api/home'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
