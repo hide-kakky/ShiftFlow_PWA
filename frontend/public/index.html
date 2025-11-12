@@ -6246,38 +6246,149 @@
         scheduleApiRefresh(handlerKey, handler);
       };
 
-      function bindTaskControls() {
-        $$('#taskTabs .task-tab-btn').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var tab = btn.getAttribute('data-task-tab');
-            if (!tab) return;
-            var state = TASK_STATE[tab] || {};
-            var shouldLoad = tab !== ACTIVE_TASK_TAB || !state.loaded;
-            activateTaskTab(tab, shouldLoad);
+      const TaskViewController = (function () {
+        const SEARCH_FIELDS = [
+          { id: 'task-search-my', scope: 'my' },
+          { id: 'task-search-from', scope: 'from' },
+          { id: 'task-search-all', scope: 'all' },
+        ];
+        const ASSIGNEE_FIELDS = [
+          { id: 'task-filter-from-assignee', scope: 'from' },
+          { id: 'task-filter-all-assignee', scope: 'all' },
+        ];
+
+        function handleTabClick(event) {
+          const btn = event && event.currentTarget;
+          if (!btn) return;
+          const tab = btn.getAttribute('data-task-tab');
+          if (!tab) return;
+          const state = TASK_STATE[tab] || {};
+          const shouldLoad = tab !== ACTIVE_TASK_TAB || !state.loaded;
+          activateTaskTab(tab, shouldLoad);
+        }
+
+        function attachTabHandlers() {
+          $$('#taskTabs .task-tab-btn').forEach(function (btn) {
+            btn.addEventListener('click', handleTabClick);
           });
-        });
-        on('task-search-my', 'input', function () {
-          TASK_FILTERS.my.search = (this.value || '').trim();
-          renderTaskList('my');
-        });
-        on('task-search-from', 'input', function () {
-          TASK_FILTERS.from.search = (this.value || '').trim();
-          renderTaskList('from');
-        });
-        on('task-search-all', 'input', function () {
-          TASK_FILTERS.all.search = (this.value || '').trim();
-          renderTaskList('all');
-        });
-        on('task-filter-from-assignee', 'change', function () {
-          TASK_FILTERS.from.assignee = this.value || '';
-          renderTaskList('from');
-        });
-        on('task-filter-all-assignee', 'change', function () {
-          TASK_FILTERS.all.assignee = this.value || '';
-          renderTaskList('all');
-        });
-        on('task-reload', 'click', reloadActiveTaskTab);
-      }
+        }
+
+        function updateSearchFilter(scope, value) {
+          if (!scope || !TASK_FILTERS[scope]) return;
+          TASK_FILTERS[scope].search = (value || '').trim();
+          renderTaskList(scope);
+        }
+
+        function attachSearchHandlers() {
+          SEARCH_FIELDS.forEach(function (entry) {
+            on(entry.id, 'input', function () {
+              updateSearchFilter(entry.scope, this.value);
+            });
+          });
+        }
+
+        function updateAssigneeFilter(scope, value) {
+          if (!scope || !TASK_FILTERS[scope]) return;
+          TASK_FILTERS[scope].assignee = value || '';
+          renderTaskList(scope);
+        }
+
+        function attachAssigneeHandlers() {
+          ASSIGNEE_FIELDS.forEach(function (entry) {
+            on(entry.id, 'change', function () {
+              updateAssigneeFilter(entry.scope, this.value);
+            });
+          });
+        }
+
+        function attachReloadHandler() {
+          on('task-reload', 'click', reloadActiveTaskTab);
+        }
+
+        function init() {
+          attachTabHandlers();
+          attachSearchHandlers();
+          attachAssigneeHandlers();
+          attachReloadHandler();
+        }
+
+        return {
+          init,
+        };
+      })();
+
+      const MessageViewController = (function () {
+        const SELECTORS = {
+          folder: 'flt-msg-folder',
+          unread: 'flt-msg-unread',
+          search: 'msg-search-box',
+        };
+        const debouncedSearch = debounce(function () {
+          loadMessages();
+        }, 400);
+
+        function readFolderValue() {
+          var select = byId(SELECTORS.folder);
+          if (!select) return '';
+          var value = String(select.value || '').trim();
+          if (!value || value.toLowerCase() === 'all') {
+            return '';
+          }
+          return value;
+        }
+
+        function readUnreadOnly() {
+          var checkbox = byId(SELECTORS.unread);
+          return checkbox ? !!checkbox.checked : false;
+        }
+
+        function readSearchKeyword() {
+          var input = byId(SELECTORS.search);
+          return input ? (input.value || '').trim() : '';
+        }
+
+        function getFilters() {
+          return {
+            folderId: readFolderValue(),
+            unreadOnly: readUnreadOnly(),
+            keyword: readSearchKeyword(),
+          };
+        }
+
+        function handleFilterChange(event) {
+          if (event) event.preventDefault();
+          loadMessages();
+        }
+
+        function handleSearchInput(event) {
+          if (event) event.preventDefault();
+          debouncedSearch();
+        }
+
+        function attachFilterHandlers() {
+          on(SELECTORS.folder, 'change', handleFilterChange);
+          on(SELECTORS.unread, 'change', handleFilterChange);
+          var searchInput = byId(SELECTORS.search);
+          if (searchInput) {
+            searchInput.addEventListener('input', handleSearchInput);
+          }
+        }
+
+        function init() {
+          attachFilterHandlers();
+        }
+
+        function buildCacheKey(filters) {
+          var active = filters || getFilters();
+          return getMessagesCacheKey(active.folderId, active.unreadOnly);
+        }
+
+        return {
+          init,
+          getFilters,
+          buildCacheKey,
+        };
+      })();
 
       // ===== Messages =====
       function renderMessageCard(m, options) {
@@ -6361,15 +6472,11 @@
       function rowMsg(m) {
         return renderMessageCard(m, { hideAction: false });
       }
-      function filterMessages(list) {
-        var folderEl = byId('flt-msg-folder');
-        var folderId = folderEl ? folderEl.value || '' : '';
-        folderId = String(folderId).trim();
-        if (!folderId || folderId.toLowerCase() === 'all') {
-          folderId = '';
-        }
-        var unreadOnly = byId('flt-msg-unread') ? !!byId('flt-msg-unread').checked : false;
-        var kw = byId('msg-search-box') ? (byId('msg-search-box').value || '').trim() : '';
+      function filterMessages(list, suppliedFilters) {
+        var filters = suppliedFilters || MessageViewController.getFilters();
+        var folderId = filters.folderId || '';
+        var unreadOnly = !!filters.unreadOnly;
+        var kw = filters.keyword || '';
         var rows = normalizeArray(list).slice();
         if (unreadOnly)
           rows = rows.filter(function (x) {
@@ -6431,15 +6538,12 @@
           }
           return Promise.resolve(false);
         }
-        var folderOpt = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
-        if (folderOpt != null) folderOpt = String(folderOpt).trim();
-        if (!folderOpt || folderOpt.toLowerCase() === 'all') folderOpt = '';
-        var unreadOnlyFlag = !!(byId('flt-msg-unread') || {}).checked;
-        var searchKeyword = byId('msg-search-box')
-          ? (byId('msg-search-box').value || '').trim()
-          : '';
+        var filters = MessageViewController.getFilters();
+        var folderOpt = filters.folderId || '';
+        var unreadOnlyFlag = !!filters.unreadOnly;
+        var searchKeyword = filters.keyword || '';
         var useCache = !searchKeyword;
-        var cacheKey = useCache ? getMessagesCacheKey(folderOpt, unreadOnlyFlag) : null;
+        var cacheKey = useCache ? MessageViewController.buildCacheKey(filters) : null;
         var cachedRows = null;
         var skeletonStartedAt = Date.now();
         setMsgLoading(true);
@@ -6945,177 +7049,434 @@
           .deleteMessageById(CURRENT_MEMO_ID);
       });
 
-      function setProfileImageLabel(text, pending) {
-        var label = byId('setting-image-name');
-        if (!label) return;
-        var value = text && String(text).trim() ? String(text).trim() : '未設定';
-        if (pending && value !== '未設定') {
-          value += '（未保存）';
-        }
-        label.textContent = value;
-        label.classList.toggle('is-pending', !!pending);
-      }
-      function updateSettingsAvatarPreview(url, opts) {
-        var img = byId('setting-avatar-preview');
-        if (!img) return;
-        var pending = !!(opts && opts.pending);
-        var override = typeof url === 'string' ? url.trim() : '';
-        if (!override) {
-          var saved = String(img.getAttribute('data-avatar-url') || '').trim();
-          var fallback = img.getAttribute('data-placeholder') || PROFILE_PLACEHOLDER_URL;
-          img.src = saved || fallback;
-          img.classList.remove('is-pending');
-          return;
-        }
-        img.src = override;
-        img.classList.toggle('is-pending', pending);
-        if (!pending) {
-          img.setAttribute('data-avatar-url', override);
-        }
-      }
+      const ProfileImageController = (function () {
+        const SELECTORS = {
+          trigger: 'btn-setting-image',
+          input: 'setting-image-file',
+          label: 'setting-image-name',
+          avatar: 'setting-avatar-preview',
+        };
 
-      function renderPendingMessageAttachments() {
-        var list = byId('message-attachment-list');
-        if (!list) return;
-        if (!Array.isArray(pendingMessageAttachments) || pendingMessageAttachments.length === 0) {
-          list.innerHTML =
-            '<li class="text-muted">添付はありません。必要に応じて画像を追加してください。</li>';
-          return;
+        function setLabel(text, pending) {
+          var label = byId(SELECTORS.label);
+          if (!label) return;
+          var value = text && String(text).trim() ? String(text).trim() : '未設定';
+          if (pending && value !== '未設定') {
+            value += '（未保存）';
+          }
+          label.textContent = value;
+          label.classList.toggle('is-pending', !!pending);
         }
-        list.innerHTML = pendingMessageAttachments
-          .map(function (att, idx) {
-            var name = esc(att && att.name ? att.name : '画像');
-            var size = humanBytes(att && att.size ? att.size : 0);
-            return (
-              '<li class="d-flex align-items-center justify-content-between gap-2 mb-1">' +
-              '<span>' +
-              name +
-              ' (' +
-              size +
-              ')</span>' +
-              '<button type="button" class="btn btn-link btn-sm text-danger p-0" data-attachment-remove="' +
-              idx +
-              '">削除</button>' +
-              '</li>'
-            );
-          })
-          .join('');
-      }
 
-      function bindProfileImageUploader() {
-        on('btn-setting-image', 'click', function () {
-          var input = byId('setting-image-file');
+        function updateAvatarPreview(url, opts) {
+          var img = byId(SELECTORS.avatar);
+          if (!img) return;
+          var pending = !!(opts && opts.pending);
+          var override = typeof url === 'string' ? url.trim() : '';
+          if (!override) {
+            var saved = String(img.getAttribute('data-avatar-url') || '').trim();
+            var fallback = img.getAttribute('data-placeholder') || PROFILE_PLACEHOLDER_URL;
+            img.src = saved || fallback;
+            img.classList.remove('is-pending');
+            return;
+          }
+          img.src = override;
+          img.classList.toggle('is-pending', pending);
+          if (!pending) {
+            img.setAttribute('data-avatar-url', override);
+          }
+        }
+
+        function resetFileInput() {
+          var input = byId(SELECTORS.input);
+          if (input) input.value = '';
+        }
+
+        function openPicker(event) {
+          if (event) event.preventDefault();
+          var input = byId(SELECTORS.input);
           if (input) input.click();
-        });
-        var input = byId('setting-image-file');
-        if (!input) return;
-        input.addEventListener('change', function () {
+        }
+
+        function handleFileSelection(event) {
+          var input = event && event.currentTarget ? event.currentTarget : byId(SELECTORS.input);
+          if (!input) return;
           var file = input.files && input.files[0];
           if (!file) return;
           if (!/^image\//i.test(file.type || '')) {
             notify('画像ファイルを選択してください。', false);
-            input.value = '';
+            resetFileInput();
             return;
           }
           if (file.size > PROFILE_IMAGE_MAX_BYTES) {
-            notify(
-              '画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。',
-              false
-            );
-            input.value = '';
+            notify('画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。', false);
+            resetFileInput();
             return;
           }
           readFileAsDataUrl(file)
             .then(function (data) {
               pendingProfileImage = { name: file.name, dataUri: data, size: file.size };
-              setProfileImageLabel(file.name, true);
-              updateSettingsAvatarPreview(data, { pending: true });
-              input.value = '';
+              setLabel(file.name, true);
+              updateAvatarPreview(data, { pending: true });
+              resetFileInput();
             })
             .catch(function () {
               notify('画像の読み込みに失敗しました。', false);
-              input.value = '';
+              resetFileInput();
             });
-        });
-      }
+        }
 
-      function bindMessageAttachmentUploader() {
-        on('btn-message-attach', 'click', function () {
-          var input = byId('message-attachment-input');
+        function resetPendingState() {
+          pendingProfileImage = null;
+          resetFileInput();
+        }
+
+        function applyLoadedSettings(settings) {
+          settings = settings || {};
+          resetPendingState();
+          var labelText = '';
+          if (settings.imageName) labelText = settings.imageName;
+          else if (settings.imageUrl && settings.imageUrl !== PROFILE_PLACEHOLDER_URL)
+            labelText = '設定済み';
+          setLabel(labelText, false);
+          updateAvatarPreview(settings.imageUrl || '', { pending: false });
+          applyUserAvatar(settings.imageUrl || '');
+        }
+
+        function applySaveResult(result) {
+          if (!result) return;
+          var payload = result || {};
+          var labelText = '';
+          if (payload.imageName) labelText = payload.imageName;
+          else if (payload.imageUrl && payload.imageUrl !== PROFILE_PLACEHOLDER_URL)
+            labelText = '設定済み';
+          setLabel(labelText, false);
+          updateAvatarPreview(payload.imageUrl || '', { pending: false });
+          applyUserAvatar(payload.imageUrl || '');
+          resetPendingState();
+        }
+
+        function init() {
+          on(SELECTORS.trigger, 'click', openPicker);
+          var input = byId(SELECTORS.input);
+          if (input) {
+            input.addEventListener('change', handleFileSelection);
+          }
+        }
+
+        return {
+          init,
+          applyLoadedSettings,
+          applySaveResult,
+          resetPendingState,
+        };
+      })();
+
+      const MessageAttachmentController = (function () {
+        const SELECTORS = {
+          trigger: 'btn-message-attach',
+          input: 'message-attachment-input',
+          list: 'message-attachment-list',
+        };
+
+        function openPicker(event) {
+          if (event) event.preventDefault();
+          var input = byId(SELECTORS.input);
           if (input) input.click();
-        });
-        var input = byId('message-attachment-input');
-        if (input) {
-          input.addEventListener('change', function () {
-            var files = Array.prototype.slice.call(input.files || []);
-            if (!files.length) return;
-            var slots = MESSAGE_ATTACHMENT_LIMIT - pendingMessageAttachments.length;
-            if (slots <= 0) {
-              notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
-              input.value = '';
-              return;
+        }
+
+        function renderList() {
+          var list = byId(SELECTORS.list);
+          if (!list) return;
+          if (!Array.isArray(pendingMessageAttachments) || pendingMessageAttachments.length === 0) {
+            list.innerHTML =
+              '<li class="text-muted">添付はありません。必要に応じて画像を追加してください。</li>';
+            return;
+          }
+          list.innerHTML = pendingMessageAttachments
+            .map(function (att, idx) {
+              var name = esc(att && att.name ? att.name : '画像');
+              var size = humanBytes(att && att.size ? att.size : 0);
+              return (
+                '<li class="d-flex align-items-center justify-content-between gap-2 mb-1">' +
+                '<span>' +
+                name +
+                ' (' +
+                size +
+                ')</span>' +
+                '<button type="button" class="btn btn-link btn-sm text-danger p-0" data-attachment-remove="' +
+                idx +
+                '">削除</button>' +
+                '</li>'
+              );
+            })
+            .join('');
+        }
+
+        function handleInputChange(event) {
+          var input = event && event.currentTarget ? event.currentTarget : byId(SELECTORS.input);
+          if (!input) return;
+          var files = Array.prototype.slice.call(input.files || []);
+          if (!files.length) return;
+          var slots = MESSAGE_ATTACHMENT_LIMIT - pendingMessageAttachments.length;
+          if (slots <= 0) {
+            notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
+            input.value = '';
+            return;
+          }
+          if (files.length > slots) {
+            notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
+            files = files.slice(0, slots);
+          }
+          var tasks = files.map(function (file) {
+            if (!/^image\//i.test(file.type || '')) {
+              notify(file.name + ' は画像ファイルではありません。', false);
+              return Promise.resolve(null);
             }
-            if (files.length > slots) {
-              notify('添付は最大 ' + MESSAGE_ATTACHMENT_LIMIT + ' 件までです。', false);
-              files = files.slice(0, slots);
+            if (file.size > MESSAGE_ATTACHMENT_MAX_BYTES) {
+              notify(
+                file.name + ' は ' + humanBytes(MESSAGE_ATTACHMENT_MAX_BYTES) + ' を超えています。',
+                false
+              );
+              return Promise.resolve(null);
             }
-            var tasks = files.map(function (file) {
-              if (!/^image\//i.test(file.type || '')) {
-                notify(file.name + ' は画像ファイルではありません。', false);
-                return Promise.resolve(null);
-              }
-              if (file.size > MESSAGE_ATTACHMENT_MAX_BYTES) {
-                notify(
-                  file.name +
-                    ' は ' +
-                    humanBytes(MESSAGE_ATTACHMENT_MAX_BYTES) +
-                    ' を超えています。',
-                  false
-                );
-                return Promise.resolve(null);
-              }
-              return readFileAsDataUrl(file).then(function (data) {
-                return { name: file.name, dataUri: data, size: file.size };
-              });
+            return readFileAsDataUrl(file).then(function (data) {
+              return { name: file.name, dataUri: data, size: file.size };
             });
-            Promise.all(tasks)
-              .then(function (items) {
-                items.forEach(function (item) {
-                  if (!item) return;
-                  if (pendingMessageAttachments.length >= MESSAGE_ATTACHMENT_LIMIT) return;
-                  pendingMessageAttachments.push(item);
-                });
-                renderPendingMessageAttachments();
-                input.value = '';
-              })
-              .catch(function () {
-                notify('添付画像の読み込みに失敗しました。', false);
-                input.value = '';
+          });
+          Promise.all(tasks)
+            .then(function (items) {
+              items.forEach(function (item) {
+                if (!item) return;
+                if (pendingMessageAttachments.length >= MESSAGE_ATTACHMENT_LIMIT) return;
+                pendingMessageAttachments.push(item);
               });
-          });
+              renderList();
+              input.value = '';
+            })
+            .catch(function () {
+              notify('添付画像の読み込みに失敗しました。', false);
+              input.value = '';
+            });
         }
-        var list = byId('message-attachment-list');
-        if (list) {
-          list.addEventListener('click', function (e) {
-            var target = e.target;
-            if (!target) return;
-            var btn =
-              typeof target.closest === 'function'
-                ? target.closest('[data-attachment-remove]')
-                : null;
-            if (!btn && target.getAttribute && target.hasAttribute('data-attachment-remove')) {
-              btn = target;
+
+        function handleRemoveClick(event) {
+          var target = event.target;
+          if (!target) return;
+          var btn =
+            typeof target.closest === 'function'
+              ? target.closest('[data-attachment-remove]')
+              : null;
+          if (!btn && target.getAttribute && target.hasAttribute('data-attachment-remove')) {
+            btn = target;
+          }
+          if (!btn) return;
+          event.preventDefault();
+          var idx = Number(btn.getAttribute('data-attachment-remove'));
+          if (Number.isNaN ? Number.isNaN(idx) : isNaN(idx)) return;
+          pendingMessageAttachments.splice(idx, 1);
+          renderList();
+        }
+
+        function reset() {
+          pendingMessageAttachments = [];
+          renderList();
+          var input = byId(SELECTORS.input);
+          if (input) input.value = '';
+        }
+
+        function init() {
+          on(SELECTORS.trigger, 'click', openPicker);
+          var input = byId(SELECTORS.input);
+          if (input) {
+            input.addEventListener('change', handleInputChange);
+          }
+          var list = byId(SELECTORS.list);
+          if (list) {
+            list.addEventListener('click', handleRemoveClick);
+          }
+          renderList();
+        }
+
+        return {
+          init,
+          reset,
+          render: renderList,
+        };
+      })();
+
+      const TaskFormController = (function () {
+        const SELECTORS = {
+          save: 'saveTaskButton',
+          title: 'taskTitle',
+          due: 'taskDueDate',
+          priority: 'taskPriority',
+          repeat: 'taskRepeatType',
+        };
+        const MODAL_ID = 'newTaskModal';
+
+        function applyRepeatRule(repeatType) {
+          switch (repeatType) {
+            case 'daily':
+              return 'DAILY';
+            case 'weekly':
+              return 'WEEKLY';
+            case 'monthly':
+              return 'MONTHLY';
+            default:
+              return '';
+          }
+        }
+
+        function buildPayload() {
+          var assignees = getSelectedAssignees();
+          if (assignees.length === 0) {
+            notify('担当者を1名以上選択してください。', false);
+            return null;
+          }
+          var titleEl = byId(SELECTORS.title);
+          var dueEl = byId(SELECTORS.due);
+          var priorityEl = byId(SELECTORS.priority);
+          var repeatEl = byId(SELECTORS.repeat);
+          var title = titleEl ? titleEl.value : '';
+          var dueDate = dueEl ? dueEl.value : '';
+          if (!title || !dueDate) {
+            notify('タイトルと期限は必須です。', false);
+            return null;
+          }
+          return {
+            title: title,
+            dueDate: dueDate,
+            priority: priorityEl ? priorityEl.value : '中',
+            assignees: assignees,
+            repeatRule: applyRepeatRule(repeatEl ? repeatEl.value : 'none'),
+          };
+        }
+
+        function handleSuccess(btn) {
+          return function (res) {
+            setButtonLoading(btn, false);
+            if (res && res.success) {
+              var modalEl = byId(MODAL_ID);
+              var modal =
+                modalEl &&
+                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+              if (modal) modal.hide();
+              notify('タスクを作成しました。', true);
+            } else {
+              notify((res && res.message) || 'タスクの作成に失敗しました。', false);
             }
-            if (!btn) return;
-            e.preventDefault();
-            var idx = Number(btn.getAttribute('data-attachment-remove'));
-            if (Number.isNaN ? Number.isNaN(idx) : isNaN(idx)) return;
-            pendingMessageAttachments.splice(idx, 1);
-            renderPendingMessageAttachments();
-          });
+            loadHome();
+            loadMyTasks();
+            if (TASK_STATE.from.loaded) loadCreatedTasks();
+            if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
+          };
         }
-        renderPendingMessageAttachments();
-      }
+
+        function handleFailure(btn) {
+          return function (err) {
+            setButtonLoading(btn, false);
+            notify('タスクの作成に失敗しました: ' + err.message, false);
+          };
+        }
+
+        function handleSave(event) {
+          if (event) event.preventDefault();
+          var btn = byId(SELECTORS.save);
+          if (!btn) return;
+          var payload = buildPayload();
+          if (!payload) return;
+          setButtonLoading(btn, true);
+          google.script.run
+            .withSuccessHandler(handleSuccess(btn))
+            .withFailureHandler(handleFailure(btn))
+            .addNewTask(payload);
+        }
+
+        function init() {
+          on(SELECTORS.save, 'click', handleSave);
+        }
+
+        return {
+          init,
+        };
+      })();
+
+      const MessageFormController = (function () {
+        const SELECTORS = {
+          save: 'saveMessageButton',
+          title: 'messageTitle',
+          body: 'messageBody',
+          priority: 'messagePriority',
+          folder: 'messageFolder',
+        };
+        const MODAL_ID = 'newMessageModal';
+
+        function buildPayload() {
+          var titleEl = byId(SELECTORS.title);
+          var bodyEl = byId(SELECTORS.body);
+          var priorityEl = byId(SELECTORS.priority);
+          var folderEl = byId(SELECTORS.folder);
+          var title = titleEl ? titleEl.value : '';
+          var body = bodyEl ? bodyEl.value : '';
+          if (!title || !body) {
+            notify('件名と本文は必須です。', false);
+            return null;
+          }
+          return {
+            title: title,
+            body: body,
+            priority: priorityEl ? priorityEl.value : '中',
+            folderId: folderEl ? folderEl.value : '',
+            attachments: pendingMessageAttachments.slice(),
+          };
+        }
+
+        function handleSuccess(btn) {
+          return function (res) {
+            setButtonLoading(btn, false);
+            if (res && res.success) {
+              var modalEl = byId(MODAL_ID);
+              var modal =
+                modalEl &&
+                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+              if (modal) modal.hide();
+              MessageAttachmentController.reset();
+            }
+            notify(res && res.message ? res.message : '完了', res && res.success !== false);
+            loadHome();
+            loadMessages();
+          };
+        }
+
+        function handleFailure(btn) {
+          return function (err) {
+            setButtonLoading(btn, false);
+            notify('メッセージの投稿に失敗しました: ' + err.message, false);
+          };
+        }
+
+        function handleSave(event) {
+          if (event) event.preventDefault();
+          var btn = byId(SELECTORS.save);
+          if (!btn) return;
+          var payload = buildPayload();
+          if (!payload) return;
+          setButtonLoading(btn, true);
+          google.script.run
+            .withSuccessHandler(handleSuccess(btn))
+            .withFailureHandler(handleFailure(btn))
+            .addNewMessage(payload);
+        }
+
+        function init() {
+          on(SELECTORS.save, 'click', handleSave);
+        }
+
+        return {
+          init,
+        };
+      })();
 
       // ===== 設定 =====
       function loadSettings() {
@@ -7132,15 +7493,7 @@
                 return;
               }
               byId('setting-name').value = s.name || '';
-              pendingProfileImage = null;
-              var fileInput = byId('setting-image-file');
-              if (fileInput) fileInput.value = '';
-              var labelText = '';
-              if (s.imageName) labelText = s.imageName;
-              else if (s.imageUrl && s.imageUrl !== PROFILE_PLACEHOLDER_URL) labelText = '設定済み';
-              setProfileImageLabel(labelText, false);
-              updateSettingsAvatarPreview(s.imageUrl || '', { pending: false });
-              applyUserAvatar(s.imageUrl || '');
+              ProfileImageController.applyLoadedSettings(s);
               var themeVal = String(s.theme || 'light').toLowerCase();
               if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
                 themeVal = 'light';
@@ -7182,16 +7535,7 @@
             if (lbl) lbl.classList.remove('d-none');
             if (sp) sp.classList.add('d-none');
             if (res && res.success) {
-              var labelText = '';
-              if (res.imageName) labelText = res.imageName;
-              else if (res.imageUrl && res.imageUrl !== PROFILE_PLACEHOLDER_URL)
-                labelText = '設定済み';
-              setProfileImageLabel(labelText, false);
-              updateSettingsAvatarPreview(res.imageUrl || '', { pending: false });
-              applyUserAvatar(res.imageUrl || '');
-              pendingProfileImage = null;
-              var fileInput = byId('setting-image-file');
-              if (fileInput) fileInput.value = '';
+              ProfileImageController.applySaveResult(res);
             }
           })
           .withFailureHandler(function (e) {
@@ -7297,130 +7641,139 @@
         }
       }
 
-      // ===== 保存ハンドラ =====
-      function attachSaveHandlers() {
-        on('saveTaskButton', 'click', function () {
-          var btn = byId('saveTaskButton');
-          var assignees = getSelectedAssignees();
-          if (assignees.length === 0) {
-            notify('担当者を1名以上選択してください。', false);
-            return;
+      // ===== ビューナビゲーション・フォーム初期化 =====
+      const NavigationController = (function () {
+        function handleViewLinkClick(event) {
+          if (!event || !event.currentTarget) return;
+          event.preventDefault();
+          const targetView = event.currentTarget.getAttribute('data-view');
+          if (targetView) {
+            navigateTo(targetView);
           }
-          var task = {
-            title: byId('taskTitle').value,
-            dueDate: byId('taskDueDate').value,
-            priority: byId('taskPriority').value,
-            assignees: assignees,
-          };
-          if (!task.title || !task.dueDate) {
-            notify('タイトルと期限は必須です。', false);
-            return;
-          }
-          var repeatTypeEl = byId('taskRepeatType');
-          var repeatType = repeatTypeEl ? repeatTypeEl.value : 'none';
-          if (repeatType === 'daily') task.repeatRule = 'DAILY';
-          else if (repeatType === 'weekly') task.repeatRule = 'WEEKLY';
-          else if (repeatType === 'monthly') task.repeatRule = 'MONTHLY';
-          else task.repeatRule = '';
+        }
 
-          setButtonLoading(btn, true);
-          google.script.run
-            .withSuccessHandler(function (res) {
-              setButtonLoading(btn, false);
-              if (res && res.success) {
-                var inst = bootstrap.Modal.getInstance(byId('newTaskModal'));
-                if (inst) inst.hide();
-                notify('タスクを作成しました。', true);
-              } else {
-                notify((res && res.message) || 'タスクの作成に失敗しました。', false);
-              }
-              loadHome();
-              loadMyTasks();
-              if (TASK_STATE.from.loaded) loadCreatedTasks();
-              if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
-            })
-            .withFailureHandler(function (e) {
-              setButtonLoading(btn, false);
-              notify('タスクの作成に失敗しました: ' + e.message, false);
-            })
-            .addNewTask(task);
-        });
-        on('saveMessageButton', 'click', function () {
-          var btn = byId('saveMessageButton');
-          var messageData = {
-            title: byId('messageTitle').value,
-            body: byId('messageBody').value,
-            priority: byId('messagePriority').value,
-            folderId: byId('messageFolder').value,
-            attachments: pendingMessageAttachments.slice(),
-          };
-          if (!messageData.title || !messageData.body) {
-            notify('件名と本文は必須です。', false);
-            return;
+        function attachViewLinks() {
+          $$('[data-view]').forEach(function (link) {
+            link.addEventListener('click', handleViewLinkClick);
+          });
+        }
+
+        function openNewTaskModal(event) {
+          if (event) event.preventDefault();
+          const hint = byId('taskFromMsgHint');
+          if (hint) {
+            hint.classList.add('d-none');
           }
-          setButtonLoading(btn, true);
-          google.script.run
-            .withSuccessHandler(function (res) {
-              setButtonLoading(btn, false);
-              if (res && res.success) {
-                var inst = bootstrap.Modal.getInstance(byId('newMessageModal'));
-                if (inst) inst.hide();
-                pendingMessageAttachments = [];
-                renderPendingMessageAttachments();
-                var input = byId('message-attachment-input');
-                if (input) input.value = '';
-              }
-              notify(res.message || '完了', res.success !== false);
-              loadHome();
-              loadMessages();
-            })
-            .withFailureHandler(function (e) {
-              setButtonLoading(btn, false);
-              notify('メッセージの投稿に失敗しました: ' + e.message, false);
-            })
-            .addNewMessage(messageData);
-        });
+          const modalEl = byId('newTaskModal');
+          if (modalEl) {
+            new bootstrap.Modal(modalEl).show();
+          }
+        }
+
+        function openNewMessageModal(event) {
+          if (event) event.preventDefault();
+          const modalEl = byId('newMessageModal');
+          if (modalEl) {
+            new bootstrap.Modal(modalEl).show();
+          }
+        }
+
+        function attachFabHandlers() {
+          on('btn-open-new-task', 'click', openNewTaskModal);
+          on('btn-open-new-msg', 'click', openNewMessageModal);
+        }
+
+        function attachAdminMenuHandler() {
+          on('btn-admin-menu', 'click', function () {
+            notify('管理者メニューは準備中です。機能は近日追加されます。', true);
+          });
+        }
+
+        function init() {
+          attachViewLinks();
+          attachFabHandlers();
+          attachAdminMenuHandler();
+        }
+
+        return {
+          init,
+          openNewTaskModal,
+          openNewMessageModal,
+        };
+      })();
+
+      function resetTaskModalState() {
+        var taskForm = byId('newTaskForm');
+        if (taskForm) taskForm.reset();
+        var fromMsgHint = byId('taskFromMsgHint');
+        if (fromMsgHint) {
+          fromMsgHint.classList.add('d-none');
+        }
+        var today = new Date();
+        var y = today.getFullYear();
+        var m = ('0' + (today.getMonth() + 1)).slice(-2);
+        var d = ('0' + today.getDate()).slice(-2);
+        var dueInput = byId('taskDueDate');
+        if (dueInput) {
+          dueInput.value = y + '-' + m + '-' + d;
+        }
+        var prioritySelect = byId('taskPriority');
+        if (prioritySelect) {
+          prioritySelect.value = '中';
+        }
+        var repeatTypeEl = byId('taskRepeatType');
+        if (repeatTypeEl) {
+          repeatTypeEl.value = 'none';
+        }
+        resetAssigneeList();
+        var saveBtn = byId('saveTaskButton');
+        setButtonLoading(saveBtn, false);
+        setTimeout(function () {
+          var titleInput = byId('taskTitle');
+          if (titleInput) {
+            titleInput.focus();
+          }
+        }, 60);
       }
 
-      // ===== モーダル初期化 =====
-      document.addEventListener('shown.bs.modal', function (e) {
-        if (e.target && e.target.id === 'newTaskModal') {
-          byId('newTaskForm').reset();
-          byId('taskFromMsgHint').classList.add('d-none');
-          var today = new Date();
-          var y = today.getFullYear(),
-            m = ('0' + (today.getMonth() + 1)).slice(-2),
-            d = ('0' + today.getDate()).slice(-2);
-          byId('taskDueDate').value = y + '-' + m + '-' + d;
-          byId('taskPriority').value = '中';
-          var repeatTypeEl = byId('taskRepeatType');
-          if (repeatTypeEl) {
-            repeatTypeEl.value = 'none';
-          }
-          resetAssigneeList();
-          setButtonLoading(byId('saveTaskButton'), false);
-          setTimeout(function () {
-            byId('taskTitle').focus();
-          }, 60);
+      function resetMessageModalState() {
+        var messageForm = byId('newMessageForm');
+        if (messageForm) {
+          messageForm.reset();
         }
-        if (e.target && e.target.id === 'newMessageModal') {
-          byId('newMessageForm').reset();
-          var messageFolderEl = byId('messageFolder');
-          if (messageFolderEl) {
-            var defaultFolder = getDefaultFolderId();
-            messageFolderEl.value = defaultFolder || '';
-          }
-          byId('messagePriority').value = '中';
-          pendingMessageAttachments = [];
-          renderPendingMessageAttachments();
-          var msgInput = byId('message-attachment-input');
-          if (msgInput) msgInput.value = '';
-          setButtonLoading(byId('saveMessageButton'), false);
-          setTimeout(function () {
-            byId('messageTitle').focus();
-          }, 60);
+        var folderSelect = byId('messageFolder');
+        if (folderSelect) {
+          var defaultFolder = getDefaultFolderId();
+          folderSelect.value = defaultFolder || '';
         }
-      });
+        var prioritySelect = byId('messagePriority');
+        if (prioritySelect) {
+          prioritySelect.value = '中';
+        }
+        MessageAttachmentController.reset();
+        var saveBtn = byId('saveMessageButton');
+        setButtonLoading(saveBtn, false);
+        setTimeout(function () {
+          var titleInput = byId('messageTitle');
+          if (titleInput) {
+            titleInput.focus();
+          }
+        }, 60);
+      }
+
+      function handleModalShown(event) {
+        var target = event && event.target;
+        if (!target) return;
+        if (target.id === 'newTaskModal') {
+          resetTaskModalState();
+          return;
+        }
+        if (target.id === 'newMessageModal') {
+          resetMessageModalState();
+        }
+      }
+
+      document.addEventListener('shown.bs.modal', handleModalShown);
 
       // ===== 初期化 =====
       window.addEventListener('load', function () {
@@ -7428,36 +7781,13 @@
         // 常に認証済みのため、ログイン画面の表示切り替えは不要。
 
         // ナビゲーションやボタンのイベントリスナーを設定
-        $$('[data-view]').forEach(function (a) {
-          a.addEventListener('click', function (e) {
-            e.preventDefault();
-            navigateTo(a.getAttribute('data-view'));
-          });
-        });
-
-        on('btn-open-new-task', 'click', function (e) {
-          e.preventDefault();
-          byId('taskFromMsgHint').classList.add('d-none');
-          new bootstrap.Modal(byId('newTaskModal')).show();
-        });
-        on('btn-open-new-msg', 'click', function (e) {
-          e.preventDefault();
-          new bootstrap.Modal(byId('newMessageModal')).show();
-        });
-
-        bindTaskControls();
-
-        on('flt-msg-folder', 'change', loadMessages);
-        on('flt-msg-unread', 'change', loadMessages);
-        on('msg-search-box', 'input', debounce(loadMessages, 400));
-
-        on('btn-admin-menu', 'click', function () {
-          notify('管理者メニューは準備中です。機能は近日追加されます。', true);
-        });
-
-        bindProfileImageUploader();
-        bindMessageAttachmentUploader();
-        attachSaveHandlers();
+        NavigationController.init();
+        TaskViewController.init();
+        MessageViewController.init();
+        ProfileImageController.init();
+        MessageAttachmentController.init();
+        TaskFormController.init();
+        MessageFormController.init();
 
         initPullToRefresh();
         initializeAuthGateway();
