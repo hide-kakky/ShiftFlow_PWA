@@ -4471,7 +4471,7 @@
       function startAuthFlow(options) {
         const opts = { external: true, ...(options || {}) };
         const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
-        const shouldOpenNewTab = !manualMode && opts.external;
+        const shouldOpenNewTab = !manualMode && opts.external && !NEEDS_AUTH_RELAY;
         const returnTo = opts.returnTo || window.location.href;
         const startUrl = buildAuthStartUrl(returnTo);
         if (shouldOpenNewTab) {
