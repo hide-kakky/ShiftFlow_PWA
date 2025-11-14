@@ -2974,19 +2974,27 @@ async function maybeHandleRouteWithD1(options) {
         .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
         .filter(Boolean);
       const todayMs = startOfTodayMs();
+      const upcomingWindowMs = 5 * 24 * 60 * 60 * 1000;
+      const upcomingEndMs = todayMs + upcomingWindowMs;
       const todays = taskRecords
         .filter(
           (task) =>
             task &&
             !task.isCompleted &&
             task.dueValue != null &&
-            task.dueValue <= todayMs
+            task.dueValue >= todayMs &&
+            task.dueValue <= upcomingEndMs
         )
-        .sort((a, b) => compareTasksForList(a, b, todayMs))
+        .sort((a, b) => {
+          const dueA = a?.dueValue ?? Number.MAX_SAFE_INTEGER;
+          const dueB = b?.dueValue ?? Number.MAX_SAFE_INTEGER;
+          if (dueA !== dueB) return dueA - dueB;
+          return compareTasksForList(a, b, todayMs);
+        })
         .map((task) => ({
           id: task.id,
           title: task.title,
-          dueDate: task.dueValue != null ? formatJstMonthDay(task.dueValue) : '',
+          dueDate: task.dueValue != null ? formatJst(task.dueValue, false) : '',
           priority: task.priority,
           assignees: task.assignees,
           assignee: task.assignee,
