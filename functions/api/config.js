@@ -86,7 +86,7 @@ const ROUTE_PERMISSIONS = {
   getBootstrapData: ['admin', 'manager', 'member'],
   getHomeContent: ['admin', 'manager', 'member'],
   listMyTasks: ['admin', 'manager', 'member'],
-  listCreatedTasks: ['admin', 'manager'],
+  listCreatedTasks: ['admin', 'manager', 'member'],
   listAllTasks: ['admin', 'manager'],
   getMessages: ['admin', 'manager', 'member'],
   getMessageById: ['admin', 'manager', 'member'],

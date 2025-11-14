@@ -1005,6 +1005,12 @@ async function fetchActiveUsersForOrg(db, orgId) {
         JOIN users u ON u.user_id = ms.user_id
        WHERE (?1 IS NULL OR ms.org_id = ?1)
          AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+         AND LOWER(
+               COALESCE(
+                 NULLIF(TRIM(u.status), ''),
+                 CASE WHEN u.is_active = 0 THEN 'suspended' ELSE 'active' END
+               )
+             ) = 'active'
     `
     )
     .bind(orgId || null)

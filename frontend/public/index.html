@@ -1715,15 +1715,35 @@
         align-items: center;
         border-radius: 999px;
         padding: 4px 12px;
-        background: rgba(81, 124, 178, 0.12);
-        border: 1px solid rgba(81, 124, 178, 0.2);
+        background: rgba(90, 132, 190, 0.12);
+        border: 1px solid rgba(90, 132, 190, 0.25);
         color: var(--text-900);
         font-size: 0.85rem;
       }
       :root[data-theme='dark'] .user-chip {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.18);
-        color: var(--card);
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        color: #e5ecff;
+      }
+      #msgReadUsers .user-chip {
+        background: rgba(76, 175, 80, 0.18);
+        border-color: rgba(76, 175, 80, 0.4);
+        color: #1f4d25;
+      }
+      #msgUnreadUsers .user-chip {
+        background: rgba(255, 152, 0, 0.16);
+        border-color: rgba(255, 152, 0, 0.4);
+        color: #5b2a00;
+      }
+      :root[data-theme='dark'] #msgReadUsers .user-chip {
+        background: rgba(129, 199, 132, 0.35);
+        border-color: rgba(200, 230, 201, 0.45);
+        color: #e7ffe8;
+      }
+      :root[data-theme='dark'] #msgUnreadUsers .user-chip {
+        background: rgba(255, 183, 77, 0.35);
+        border-color: rgba(255, 224, 178, 0.45);
+        color: #fff0d8;
       }
 
       .list-group-item {
