@@ -26,6 +26,8 @@ import {
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 const ACCESS_CACHE = new Map();
+const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const MAX_ULID_TIME = 2 ** 48 - 1;
 
 function sanitizeLogMeta(meta) {
   if (!meta || typeof meta !== 'object') {
@@ -176,6 +178,37 @@ function createRequestId() {
     return crypto.randomUUID();
   }
   return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+function encodeUlidTime(timestampMs) {
+  const normalized = Math.max(0, Math.min(MAX_ULID_TIME, Math.floor(timestampMs)));
+  const chars = new Array(10);
+  let value = normalized;
+  for (let i = 9; i >= 0; i -= 1) {
+    chars[i] = ULID_ALPHABET[value % 32];
+    value = Math.floor(value / 32);
+  }
+  return chars.join('');
+}
+
+function encodeUlidRandom(length) {
+  const chars = new Array(length);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buffer = new Uint8Array(length);
+    crypto.getRandomValues(buffer);
+    for (let i = 0; i < length; i += 1) {
+      chars[i] = ULID_ALPHABET[buffer[i] % 32];
+    }
+  } else {
+    for (let i = 0; i < length; i += 1) {
+      chars[i] = ULID_ALPHABET[Math.floor(Math.random() * 32)];
+    }
+  }
+  return chars.join('');
+}
+
+function createUlid(timestampMs = Date.now()) {
+  return encodeUlidTime(timestampMs) + encodeUlidRandom(16);
 }
 
 function normalizeRedirectUrl(currentUrl, locationHeader) {
@@ -505,6 +538,7 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
       authSubject: storedSubject,
       source: 'd1',
       reasonCode: 'subject_mismatch',
+      orgId: row.org_id || '',
     };
     logAuthInfo('D1 auth subject mismatch; rejecting token', {
       requestId,
@@ -544,6 +578,7 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     authSubject: storedSubject,
     source: 'd1',
     reasonCode: allowed ? 'active' : status || 'unknown',
+    orgId: row.org_id || '',
   };
   logAuthInfo('Resolved access context via D1', {
     requestId,
@@ -3846,6 +3881,222 @@ function captureDiagnostics(config, level, message, meta) {
   }
 }
 
+async function ensurePendingUserInD1(db, tokenDetails, requestId) {
+  if (!db || !tokenDetails) return null;
+  const email = normalizeEmailValue(tokenDetails.email);
+  if (!email) return null;
+  const existing = await db
+    .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
+    .bind(email)
+    .first();
+  if (existing && existing.user_id) {
+    return existing.user_id;
+  }
+  const now = Date.now();
+  const displayName = typeof tokenDetails.name === 'string' ? tokenDetails.name.trim() : '';
+  const storedEmail = tokenDetails.email ? String(tokenDetails.email).trim().toLowerCase() : email;
+  const authSubject = tokenDetails.sub ? String(tokenDetails.sub).trim() : null;
+  const issuedAtMs =
+    typeof tokenDetails.iat === 'number' && Number.isFinite(tokenDetails.iat) && tokenDetails.iat > 0
+      ? Math.floor(tokenDetails.iat * 1000)
+      : now;
+  const userId = createUlid(now);
+  try {
+    await db
+      .prepare(
+        `
+        INSERT INTO users (
+          user_id,
+          email,
+          display_name,
+          auth_subject,
+          status,
+          is_active,
+          created_at_ms,
+          updated_at_ms,
+          first_login_at_ms,
+          last_login_at_ms
+        )
+        VALUES (?1, ?2, ?3, ?4, 'pending', 0, ?5, ?6, ?7, ?8)
+      `
+      )
+      .bind(userId, storedEmail, displayName || storedEmail, authSubject, now, now, issuedAtMs, issuedAtMs)
+      .run();
+    logAuthInfo('Inserted pending user into D1', {
+      requestId,
+      email: storedEmail,
+    });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    if (!/UNIQUE constraint failed/i.test(message)) {
+      logAuthError('Failed to insert pending user into D1', {
+        requestId,
+        email: storedEmail,
+        message,
+      });
+    }
+  }
+  const ensuredRow = await db
+    .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
+    .bind(email)
+    .first();
+  const ensuredUserId = ensuredRow && ensuredRow.user_id ? ensuredRow.user_id : null;
+  if (!ensuredUserId) {
+    return null;
+  }
+  const orgId = await resolveDefaultOrgId(db);
+  if (!orgId) {
+    return ensuredUserId;
+  }
+  try {
+    await db
+      .prepare(
+        `
+        INSERT OR IGNORE INTO memberships (
+          membership_id,
+          org_id,
+          user_id,
+          role,
+          status,
+          created_at_ms
+        )
+        VALUES (?1, ?2, ?3, 'member', 'pending', ?4)
+      `
+      )
+      .bind(createUlid(now + 1), orgId, ensuredUserId, now)
+      .run();
+  } catch (err) {
+    logAuthError('Failed to insert pending membership into D1', {
+      requestId,
+      email: storedEmail,
+      message: err && err.message ? err.message : String(err),
+    });
+  }
+  return ensuredUserId;
+}
+
+async function persistLoginAttemptInD1(db, details) {
+  if (!db || !details) return;
+  const tokenDetails = details.tokenDetails || {};
+  const accessContext = details.accessContext || {};
+  const clientMeta = details.clientMeta || {};
+  const attemptedAt = Date.now();
+  const rawEmailValue = tokenDetails.email || accessContext.email || '';
+  const userEmail = typeof rawEmailValue === 'string' ? rawEmailValue.trim() : '';
+  const normalizedEmail = normalizeEmailValue(userEmail) || null;
+  const userSub = tokenDetails.sub ? String(tokenDetails.sub) : null;
+  const orgId = accessContext.orgId || null;
+  const status = accessContext.status || '';
+  const reason = accessContext.reason || '';
+  const role = accessContext.role || '';
+  const requestId = details.requestId || '';
+  const route = details.route || '';
+  const tokenIatMs =
+    typeof tokenDetails.iat === 'number' && Number.isFinite(tokenDetails.iat) && tokenDetails.iat > 0
+      ? Math.floor(tokenDetails.iat * 1000)
+      : null;
+  const clientIp = clientMeta.ip || '';
+  const userAgent = clientMeta.userAgent || '';
+  const cfRay = clientMeta.cfRay || '';
+  const metaPayload = {
+    allowed: !!accessContext.allowed,
+    reasonCode: accessContext.reasonCode || '',
+    source: accessContext.source || '',
+    orgId,
+    role,
+  };
+  let metaJson;
+  try {
+    const raw = JSON.stringify(metaPayload);
+    metaJson = raw.length > 4000 ? raw.slice(0, 4000) : raw;
+  } catch (_err) {
+    metaJson = '{}';
+  }
+  const statements = [
+    db
+      .prepare(
+        `
+        INSERT INTO login_audits (
+          login_id,
+          org_id,
+          user_email,
+          user_sub,
+          status,
+          reason,
+          request_id,
+          token_iat_ms,
+          attempted_at_ms,
+          client_ip,
+          user_agent,
+          role
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+      `
+      )
+      .bind(
+        createUlid(attemptedAt),
+        orgId || null,
+        userEmail || normalizedEmail || null,
+        userSub,
+        status,
+        reason,
+        requestId,
+        tokenIatMs,
+        attemptedAt,
+        clientIp,
+        userAgent,
+        role
+      ),
+    db
+      .prepare(
+        `
+        INSERT INTO auth_proxy_logs (
+          log_id,
+          level,
+          event,
+          message,
+          request_id,
+          route,
+          email,
+          status,
+          meta_json,
+          source,
+          client_ip,
+          user_agent,
+          cf_ray,
+          created_at_ms
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+      `
+      )
+      .bind(
+        createUlid(attemptedAt + 1),
+        accessContext.allowed ? 'info' : 'warn',
+        'login_attempt',
+        accessContext.allowed ? 'login_allowed' : 'login_denied',
+        requestId,
+        route,
+        userEmail || normalizedEmail || '',
+        status,
+        metaJson,
+        'cf-auth',
+        clientIp,
+        userAgent,
+        cfRay,
+        attemptedAt
+      ),
+  ];
+  try {
+    await db.batch(statements);
+  } catch (err) {
+    logAuthError('Failed to persist login audit into D1', {
+      requestId,
+      email: normalizedEmail || userEmail || '',
+      message: err && err.message ? err.message : String(err),
+    });
+  }
+}
+
 
 async function resolveAccessContext(config, tokenDetails, requestId, clientMeta, options = {}) {
   const cacheKey = resolveAccessCacheKey(tokenDetails);
@@ -3854,20 +4105,32 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
     return cached;
   }
 
+  const { db = null, route: routeName = '' } = options;
   const flags = config.flags || {};
-  const db = options && options.db ? options.db : null;
   const allowD1 = !!(db && (flags.d1Primary || flags.d1Read));
   let fallbackReason = 'ShiftFlow に登録されていません。管理者に連絡してください。';
   let fallbackReasonCode = 'not_registered';
   if (allowD1) {
     const d1Context = await resolveAccessContextFromD1(db, tokenDetails, requestId);
     if (d1Context) {
+      if (db) {
+        await persistLoginAttemptInD1(db, {
+          tokenDetails,
+          requestId,
+          clientMeta,
+          accessContext: d1Context,
+          route: routeName,
+        });
+      }
       if (d1Context.allowed && d1Context.status === 'active') {
         writeAccessCache(cacheKey, d1Context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
       } else if (cacheKey) {
         ACCESS_CACHE.delete(cacheKey);
       }
       return d1Context;
+    }
+    if (db) {
+      await ensurePendingUserInD1(db, tokenDetails, requestId);
     }
     logAuthInfo('Falling back after D1 returned no access context', {
       requestId,
@@ -3892,6 +4155,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
     authSubject: '',
     source: 'fallback',
     reasonCode: fallbackReasonCode,
+    orgId: '',
   };
   if (cacheKey) {
     ACCESS_CACHE.delete(cacheKey);
@@ -3901,6 +4165,15 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
     email: fallbackContext.email,
     reasonCode: fallbackContext.reasonCode,
   });
+  if (allowD1 && db) {
+    await persistLoginAttemptInD1(db, {
+      tokenDetails,
+      requestId,
+      clientMeta,
+      accessContext: fallbackContext,
+      route: routeName,
+    });
+  }
   return fallbackContext;
 }
 
@@ -4180,6 +4453,7 @@ export async function onRequest(context) {
   try {
     accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta, {
       db: env && env.DB ? env.DB : null,
+      route,
     });
   } catch (err) {
     logAuthError('resolveAccessContext failed', {
