@@ -7043,23 +7043,26 @@
             });
           });
       }
-      (function attachMessageCardNavigation() {
-        var listEl = byId('msg-list');
-        if (!listEl) return;
-        listEl.addEventListener('click', function (event) {
-          if (!event) return;
-          if (event.target && event.target.closest('.msg-action-btn')) return;
-          var card = event.target && event.target.closest('[data-memo]');
-          if (!card) return;
-          var memoId = card.getAttribute('data-memo');
-          if (!memoId) return;
-          var anchor = event.target.closest('.msg-link');
-          if (anchor) {
-            event.preventDefault();
-          }
-          openMessageModal(memoId);
-        });
-      })();
+      function handleMessageCardClick(event) {
+        if (!event) return;
+        if (event.target && event.target.closest('.msg-action-btn')) return;
+        var card = event.target && event.target.closest('[data-memo]');
+        if (!card) return;
+        var memoId = card.getAttribute('data-memo');
+        if (!memoId) return;
+        var anchor = event.target.closest('.msg-link');
+        if (anchor) {
+          event.preventDefault();
+        }
+        openMessageModal(memoId);
+      }
+      function attachMessageCardNavigation(targetId) {
+        var container = byId(targetId);
+        if (!container) return;
+        container.addEventListener('click', handleMessageCardClick);
+      }
+      attachMessageCardNavigation('msg-list');
+      attachMessageCardNavigation('home-unread');
       function toggleRead(btn, memoId, shouldRead, onComplete) {
         setButtonLoading(btn, true);
         google.script.run
