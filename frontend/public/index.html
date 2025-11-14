@@ -1713,53 +1713,81 @@
       .user-chip {
         display: inline-flex;
         align-items: center;
+        gap: 10px;
         border-radius: 999px;
-        padding: 4px 16px 4px 14px;
+        padding: 6px 18px 6px 10px;
         font-size: 0.85rem;
         font-weight: 600;
         letter-spacing: 0.01em;
         position: relative;
-        min-height: 32px;
+        min-height: 40px;
         transition: transform 0.15s ease, box-shadow 0.15s ease;
-      }
-      .user-chip::before {
-        content: '';
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 8px;
       }
       .user-chip:hover {
         transform: translateY(-1px);
         box-shadow: 0 8px 18px rgba(15, 15, 15, 0.08);
+      }
+      .user-chip__avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.3);
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .user-chip__avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .user-chip__avatar--initials {
+        background: linear-gradient(135deg, #607d8b, #455a64);
+      }
+      .user-chip__label {
+        white-space: nowrap;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       #msgReadUsers .user-chip {
         background: linear-gradient(135deg, rgba(46, 204, 113, 0.25), rgba(39, 174, 96, 0.35));
         border: 1px solid rgba(46, 204, 113, 0.6);
         color: #0c4422;
       }
-      #msgReadUsers .user-chip::before {
-        background: #2ecc71;
-        box-shadow: 0 0 10px rgba(46, 204, 113, 0.8);
+      #msgReadUsers .user-chip .user-chip__avatar {
+        background: rgba(33, 150, 83, 0.9);
       }
       #msgUnreadUsers .user-chip {
         background: linear-gradient(135deg, rgba(255, 193, 7, 0.25), rgba(255, 152, 0, 0.35));
         border: 1px solid rgba(255, 152, 0, 0.6);
         color: #5b2a00;
       }
-      #msgUnreadUsers .user-chip::before {
-        background: #ff9800;
-        box-shadow: 0 0 10px rgba(255, 152, 0, 0.8);
+      #msgUnreadUsers .user-chip .user-chip__avatar {
+        background: rgba(255, 152, 0, 0.85);
       }
       :root[data-theme='dark'] #msgReadUsers .user-chip {
         background: linear-gradient(135deg, rgba(46, 204, 113, 0.4), rgba(15, 111, 43, 0.65));
         border-color: rgba(180, 255, 200, 0.65);
         color: #eafff1;
       }
+      :root[data-theme='dark'] #msgReadUsers .user-chip .user-chip__avatar {
+        background: rgba(46, 204, 113, 0.95);
+      }
       :root[data-theme='dark'] #msgUnreadUsers .user-chip {
         background: linear-gradient(135deg, rgba(255, 193, 7, 0.4), rgba(191, 87, 0, 0.65));
         border-color: rgba(255, 224, 178, 0.7);
         color: #fff2e0;
+      }
+      :root[data-theme='dark'] #msgUnreadUsers .user-chip .user-chip__avatar {
+        background: rgba(255, 167, 38, 0.95);
       }
 
       .list-group-item {
@@ -4272,14 +4300,33 @@
           ACTIVE_USERS.filter(function (u) {
             return u && typeof u.email === 'string';
           }).map(function (u) {
-            return [u.email, u.name];
+            var normalized = normalizeEmailValue(u.email);
+            return [
+              normalized,
+              {
+                email: u.email,
+                name: u.name || u.displayName || u.email || '',
+                imageUrl:
+                  typeof u.imageUrl === 'string' && u.imageUrl
+                    ? u.imageUrl
+                    : PROFILE_PLACEHOLDER_URL,
+              },
+            ];
           })
         );
       }
       rebuildUserMap();
 
+      function getUserProfile(email) {
+        if (!email) return null;
+        var normalized = normalizeEmailValue(email);
+        return userMap.get(normalized) || null;
+      }
+
       function getNameByEmail(email) {
-        return userMap.get(email) || email;
+        var profile = getUserProfile(email);
+        if (profile && profile.name) return profile.name;
+        return email;
       }
       function on(id, ev, fn) {
         var el = byId(id);
@@ -7100,22 +7147,71 @@
         if (!entry) return '';
         if (typeof entry === 'string') return entry;
         var label = entry.label || entry.displayName || entry.name || '';
-        var email = entry.email || entry.address || '';
-        if (label && email && label !== email) {
-          return label + ' (' + email + ')';
-        }
-        return label || email || '';
+        if (label) return label;
+        return entry.email || entry.address || '';
       }
       function renderUserChips(targetId, entries) {
         var host = byId(targetId);
         if (!host) return;
         var chips = normalizeArray(entries)
-          .map(formatUserLabel)
-          .filter(function (label) {
-            return !!label;
+          .map(function (entry) {
+            if (!entry) return null;
+            var email = '';
+            var label = '';
+            var imageUrl = '';
+            if (typeof entry === 'string') {
+              email = entry;
+            } else if (typeof entry === 'object') {
+              email = entry.email || entry.address || '';
+              label = formatUserLabel(entry);
+              imageUrl = entry.imageUrl || '';
+            }
+            var profile = getUserProfile(email);
+            if (!label && profile && profile.name) {
+              label = profile.name;
+            }
+            if (!imageUrl && profile && profile.imageUrl) {
+              imageUrl = profile.imageUrl;
+            }
+            if (!label && email) {
+              label = email.split('@')[0];
+            }
+            if (!label) return null;
+            var initials = label.trim().slice(0, 2) || '?';
+            return {
+              label: label,
+              avatar: imageUrl,
+              initials: initials,
+            };
           })
-          .map(function (label) {
-            return '<span class="user-chip">' + esc(label) + '</span>';
+          .filter(function (entry) {
+            return entry && entry.label;
+          })
+          .map(function (entry) {
+            var avatarHtml;
+            if (entry.avatar) {
+              avatarHtml =
+                "<span class=\"user-chip__avatar\"><img src=\"" +
+                esc(entry.avatar) +
+                "\" alt=\"" +
+                esc(entry.label) +
+                "\" loading=\"lazy\" referrerpolicy=\"no-referrer\" onerror=\"this.onerror=null;this.src='" +
+                esc(PROFILE_PLACEHOLDER_URL) +
+                "';\"></span>";
+            } else {
+              avatarHtml =
+                '<span class="user-chip__avatar user-chip__avatar--initials">' +
+                esc(entry.initials) +
+                '</span>';
+            }
+            return (
+              '<span class="user-chip">' +
+              avatarHtml +
+              '<span class="user-chip__label">' +
+              esc(entry.label) +
+              '</span>' +
+              '</span>'
+            );
           });
         host.innerHTML = chips.length ? chips.join('') : '<span class="text-muted">該当なし</span>';
       }

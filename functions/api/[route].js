@@ -1543,7 +1543,8 @@ async function maybeHandleRouteWithD1(options) {
             `
             SELECT users.email AS email,
                    COALESCE(users.display_name, users.email) AS display_name,
-                   COALESCE(memberships.role, 'member') AS role
+                   COALESCE(memberships.role, 'member') AS role,
+                   users.profile_image_url AS profile_image_url
               FROM memberships
               JOIN users ON users.user_id = memberships.user_id
              WHERE (?1 IS NULL OR memberships.org_id = ?1)
@@ -1562,6 +1563,7 @@ async function maybeHandleRouteWithD1(options) {
                 email: row.email,
                 name: row.display_name || row.email || '',
                 role: row.role ? String(row.role).trim() || 'member' : 'member',
+                imageUrl: row.profile_image_url || PROFILE_PLACEHOLDER_URL,
               }))
             : [
                 { id: '全体', name: '全体' },
