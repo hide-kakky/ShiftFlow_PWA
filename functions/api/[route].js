@@ -2982,7 +2982,6 @@ async function maybeHandleRouteWithD1(options) {
             task &&
             !task.isCompleted &&
             task.dueValue != null &&
-            task.dueValue >= todayMs &&
             task.dueValue <= upcomingEndMs
         )
         .sort((a, b) => {

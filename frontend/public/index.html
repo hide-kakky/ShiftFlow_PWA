@@ -1075,7 +1075,7 @@
         align-items: center;
         gap: 0.5rem;
       }
-      .section-head .material-icons {
+      .section-head .section-head-icon {
         color: var(--on-primary);
         background: var(--primary);
         width: 26px;
@@ -1116,11 +1116,7 @@
       }
       :root[data-theme='dark'] .card.app-card.task-card.task-card-attention {
         border-left-color: rgba(153, 173, 255, 0.92);
-        background: linear-gradient(
-            135deg,
-            rgba(92, 118, 255, 0.32) 0%,
-            rgba(14, 22, 40, 0.92) 76%
-          ),
+        background: linear-gradient(135deg, rgba(92, 118, 255, 0.32) 0%, rgba(14, 22, 40, 0.92) 76%),
           var(--card);
         box-shadow: 0 30px 60px rgba(3, 7, 18, 0.78);
       }
@@ -1183,21 +1179,13 @@
       }
       .card.app-card.msg-card.unread {
         border-left-color: rgba(255, 111, 97, 0.85);
-        background: linear-gradient(
-            135deg,
-            rgba(255, 111, 97, 0.18),
-            rgba(255, 143, 102, 0.08) 68%
-          ),
+        background: linear-gradient(135deg, rgba(255, 111, 97, 0.18), rgba(255, 143, 102, 0.08) 68%),
           var(--card);
         box-shadow: 0 26px 58px rgba(255, 111, 97, 0.22);
         position: relative;
       }
       :root[data-theme='dark'] .card.app-card.msg-card.unread {
-        background: linear-gradient(
-            135deg,
-            rgba(229, 98, 82, 0.38),
-            rgba(17, 29, 54, 0.94) 70%
-          ),
+        background: linear-gradient(135deg, rgba(229, 98, 82, 0.38), rgba(17, 29, 54, 0.94) 70%),
           var(--card);
         box-shadow: 0 28px 60px rgba(229, 98, 82, 0.28);
       }
@@ -2251,8 +2239,7 @@
         align-items: center;
         justify-content: center;
         padding: clamp(24px, 5vw, 64px);
-        background:
-          radial-gradient(circle at top right, rgba(59, 130, 246, 0.26), transparent 55%),
+        background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.26), transparent 55%),
           radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.18), transparent 45%),
           linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.75));
         backdrop-filter: blur(16px);
@@ -2618,7 +2605,13 @@
             <span class="material-icons-outlined" aria-hidden="true">mail</span>
             <span>メッセ</span>
           </button>
-          <button type="button" class="pwa-footer__button is-disabled" id="btn-mobile-logout" aria-label="ログアウト" disabled>
+          <button
+            type="button"
+            class="pwa-footer__button is-disabled"
+            id="btn-mobile-logout"
+            aria-label="ログアウト"
+            disabled
+          >
             <span class="material-icons-outlined" aria-hidden="true">logout</span>
             <span>ログアウト</span>
           </button>
@@ -2716,7 +2709,9 @@
           <section class="view-panel fade-container show" id="view-home">
             <div class="d-flex justify-content-between align-items-center mt-0">
               <div class="section-head">
-                <span class="material-icons">event_upcoming</span>
+                <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                  >calendar_month</span
+                >
                 <h3 class="m-0">Upcoming Task</h3>
               </div>
               <a href="#" class="link-soft" data-view="tasks">View all</a>
@@ -2726,7 +2721,9 @@
 
             <div class="d-flex justify-content-between align-items-center mt-3">
               <div class="section-head">
-                <span class="material-icons">mark_email_unread</span>
+                <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                  >mark_email_unread</span
+                >
                 <h3 class="m-0">New Message</h3>
               </div>
               <a href="#" class="link-soft" data-view="messages">View all</a>
@@ -3435,7 +3432,13 @@
       </div>
     </div>
 
-    <div class="image-viewer-overlay" id="imageViewer" aria-hidden="true" role="dialog" aria-modal="true">
+    <div
+      class="image-viewer-overlay"
+      id="imageViewer"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
       <div class="image-viewer__panel">
         <div class="image-viewer__header">
           <button
@@ -3471,7 +3474,9 @@
           </button>
         </div>
         <div class="image-viewer__footer">
-          <a class="btn btn-light" target="_blank" rel="noopener" id="imageViewerOpen">別タブで開く</a>
+          <a class="btn btn-light" target="_blank" rel="noopener" id="imageViewerOpen"
+            >別タブで開く</a
+          >
           <a class="btn btn-outline-light" download id="imageViewerDownload">ダウンロード</a>
         </div>
       </div>
@@ -4120,7 +4125,8 @@
               }
 
               if (body.ok === false) {
-                const reason = typeof body.reason === 'string' ? body.reason : 'Unknown backend error';
+                const reason =
+                  typeof body.reason === 'string' ? body.reason : 'Unknown backend error';
                 const backendError = createError(reason, {
                   route,
                   code: body?.code,
@@ -4835,11 +4841,15 @@
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
             if (manualMode && fallbackTarget) {
-              showAuthOverlay('Google の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。');
+              showAuthOverlay(
+                'Google の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。'
+              );
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
-            showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+            showAuthOverlay(
+              'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
+            );
             window.location.assign(startUrl);
             return;
           }
@@ -4847,11 +4857,15 @@
             authWindow.opener = null;
             authWindow.focus();
           } catch (_err) {}
-          showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+          showAuthOverlay(
+            'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
+          );
           return;
         }
 
-        showAuthOverlay('Google の認証ページを開いています。完了するとこの画面が自動で更新されます。');
+        showAuthOverlay(
+          'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
+        );
         window.location.assign(startUrl);
       }
 
@@ -4938,14 +4952,6 @@
         );
       }
 
-      
-
-      
-
-      
-
-      
-
       function bootstrapAfterAuth(options) {
         if (!window.__SHIFT_FLOW_AUTH_TOKEN__) {
           showAuthOverlay();
@@ -4953,8 +4959,7 @@
         }
         if (BOOTSTRAP_STARTED) return;
         BOOTSTRAP_STARTED = true;
-        var suppressLoading =
-          (options && options.silent === true) || RESTORED_BOOTSTRAP_FROM_CACHE;
+        var suppressLoading = (options && options.silent === true) || RESTORED_BOOTSTRAP_FROM_CACHE;
         var silentReload = options && options.silent === true;
         RESTORED_BOOTSTRAP_FROM_CACHE = false;
         if (suppressLoading) {
@@ -4986,7 +4991,7 @@
             if (isAuthError && isAuthError(err)) {
               clearAuthToken();
               updateAuthSessionUI(null);
-            showAuthOverlay('セッションが切れました。もう一度 Google でログインしてください。');
+              showAuthOverlay('セッションが切れました。もう一度 Google でログインしてください。');
               syncAuthSession({ silent: true }).catch(function () {});
               return;
             }
@@ -5888,7 +5893,7 @@
                 return rowTask(t, false);
               })
               .join('')
-          : '<div class="card app-card task-card mb-2"><div class="card-body text-muted">今後5日以内に期限のタスクはありません。</div></div>';
+          : '<div class="card app-card task-card mb-2"><div class="card-body text-muted">直近のタスクはありません。</div></div>';
         byId('home-today-tasks').innerHTML = tHTML;
 
         var unread = normalizeArray(payload.messages).filter(function (x) {
@@ -7244,13 +7249,13 @@
             var avatarHtml;
             if (entry.avatar) {
               avatarHtml =
-                "<span class=\"user-chip__avatar\"><img src=\"" +
+                '<span class="user-chip__avatar"><img src="' +
                 esc(entry.avatar) +
-                "\" alt=\"" +
+                '" alt="' +
                 esc(entry.label) +
-                "\" loading=\"lazy\" referrerpolicy=\"no-referrer\" onerror=\"this.onerror=null;this.src='" +
+                '" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'' +
                 esc(PROFILE_PLACEHOLDER_URL) +
-                "';\"></span>";
+                '\';"></span>';
             } else {
               avatarHtml =
                 '<span class="user-chip__avatar user-chip__avatar--initials">' +
@@ -7846,7 +7851,10 @@
             return;
           }
           if (file.size > PROFILE_IMAGE_MAX_BYTES) {
-            notify('画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。', false);
+            notify(
+              '画像サイズは最大 ' + humanBytes(PROFILE_IMAGE_MAX_BYTES) + ' までです。',
+              false
+            );
             resetFileInput();
             return;
           }
@@ -8096,8 +8104,7 @@
             if (res && res.success) {
               var modalEl = byId(MODAL_ID);
               var modal =
-                modalEl &&
-                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+                modalEl && (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
               if (modal) modal.hide();
               notify('タスクを作成しました。', true);
             } else {
@@ -8175,8 +8182,7 @@
             if (res && res.success) {
               var modalEl = byId(MODAL_ID);
               var modal =
-                modalEl &&
-                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
+                modalEl && (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
               if (modal) modal.hide();
               MessageAttachmentController.reset();
             }
