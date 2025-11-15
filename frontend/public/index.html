@@ -2378,11 +2378,12 @@
         display: none;
         font-size: 0.88rem;
         line-height: 1.6;
-        color: #fecaca;
-        background: rgba(220, 38, 38, 0.12);
-        border: 1px solid rgba(248, 113, 113, 0.35);
+        color: #92400e;
+        background: rgba(251, 191, 36, 0.12);
+        border: 1px solid rgba(251, 191, 36, 0.45);
         border-radius: 14px;
         padding: 12px 16px;
+        box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.18);
       }
       .auth-error.is-visible {
         display: block;
@@ -5211,9 +5212,20 @@
         BOOTSTRAP_STARTED = false;
       }
 
+      function setAuthOverlayMessage(text) {
+        const errorEl = byId('auth-error');
+        if (!errorEl) return;
+        if (text) {
+          errorEl.textContent = text;
+          errorEl.classList.add('is-visible');
+        } else {
+          errorEl.textContent = '';
+          errorEl.classList.remove('is-visible');
+        }
+      }
+
       function showAuthOverlay(message) {
         const overlay = byId('auth-overlay');
-        const errorEl = byId('auth-error');
         var displayMessage = message;
         if (!displayMessage && IS_MOBILE) {
           displayMessage = 'ShiftFlow を利用するには Google アカウントでのサインインが必要です。';
@@ -5226,15 +5238,7 @@
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
         }
-        if (errorEl) {
-          if (displayMessage) {
-            errorEl.textContent = displayMessage;
-            errorEl.classList.add('is-visible');
-          } else {
-            errorEl.textContent = '';
-            errorEl.classList.remove('is-visible');
-          }
-        }
+        setAuthOverlayMessage(displayMessage);
         const primaryButton = byId('btn-auth-google');
         if (primaryButton && (!AUTH_SESSION || !AUTH_SESSION.authenticated)) {
           setTimeout(function () {
@@ -5440,20 +5444,19 @@
         const returnTo = opts.returnTo || window.location.href;
         const startUrl = buildAuthStartUrl(returnTo);
         const fallbackTarget = manualMode ? buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL : '';
+        setAuthOverlayMessage('');
         markAuthPending();
         if (shouldPreOpenWindow) {
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
             if (manualMode && fallbackTarget) {
               showAuthOverlay(
-                'Google の認証ページを別タブで開きました。認証完了後はこの画面をそのままお待ちください。'
+                'Google の認証ページを別タブで開きました。サインイン完了後にこの画面へ戻ってください。'
               );
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
-            showAuthOverlay(
-              'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
-            );
+            showAuthOverlay('Google の認証ページに移動します。自動で画面が切り替わります。');
             window.location.assign(startUrl);
             return;
           }
@@ -5461,15 +5464,9 @@
             authWindow.opener = null;
             authWindow.focus();
           } catch (_err) {}
-          showAuthOverlay(
-            'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
-          );
           return;
         }
-
-        showAuthOverlay(
-          'Google の認証ページを開いています。完了するとこの画面が自動で更新されます。'
-        );
+        setAuthOverlayMessage('');
         window.location.assign(startUrl);
       }
 
