@@ -2357,6 +2357,17 @@
         transform: translateY(-1px);
         border-color: rgba(148, 163, 184, 0.38);
       }
+      .auth-button--ghost {
+        background: transparent;
+        color: rgba(226, 232, 240, 0.85);
+        border: 1px dashed rgba(226, 232, 240, 0.45);
+      }
+      .auth-button--ghost:hover,
+      .auth-button--ghost:focus {
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.85);
+        background: rgba(148, 163, 184, 0.12);
+      }
       .auth-meta {
         display: none;
       }
@@ -2502,6 +2513,10 @@
             >
               <span class="material-icons-outlined">logout</span>
               <span>Sign-out</span>
+            </button>
+            <button id="btn-auth-demo" class="auth-button auth-button--ghost" type="button">
+              <span class="material-icons-outlined">play_circle</span>
+              <span>テストユーザーで試す</span>
             </button>
           </div>
         </section>
@@ -3530,6 +3545,533 @@
         MESSAGE_ATTACHMENT_LIMIT,
         API_BASE_PATH,
       } = SHIFT_FLOW_CONFIG;
+      const TEST_USER_EMAIL = 'tester.member@shiftflow.dev';
+      const TEST_AVATAR_URL = 'https://placehold.jp/3d4070/ffffff/160x160.png?text=TEST';
+      const TEST_THUMB_URL = 'https://placehold.jp/2c3d55/ffffff/96x96.png?text=UI';
+      const TEST_ATTACHMENT_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80';
+      const TEST_ATTACHMENT_MENU = 'https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=800&q=80';
+      let TEST_MODE_STATE = window.__SHIFT_FLOW_TEST_MODE__ || { active: false };
+      window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
+
+      function cloneDeep(value) {
+        try {
+          return JSON.parse(JSON.stringify(value));
+        } catch (_err) {
+          return value;
+        }
+      }
+
+      function createTestTask(options) {
+        options = options || {};
+        var now = Date.now();
+        var due = new Date();
+        due.setHours(0, 0, 0, 0);
+        due.setDate(due.getDate() + (options.dueOffsetDays || 0));
+        var createdAt = now - (options.createdOffsetHours || 0) * 3600 * 1000;
+        var repeatRule = options.repeatRule || '';
+        var task = {
+          id: options.id || 'TASK-' + Math.floor(Math.random() * 10000),
+          title: options.title || 'テストタスク',
+          assignees: Array.isArray(options.assignees) ? options.assignees.slice() : [TEST_USER_EMAIL],
+          assignee: Array.isArray(options.assignees) && options.assignees.length
+            ? options.assignees[0]
+            : TEST_USER_EMAIL,
+          dueDate: due.toISOString().slice(0, 10),
+          dueValue: due.getTime(),
+          status: options.status || '対応中',
+          priority: options.priority || '中',
+          createdBy: options.createdBy || 'manager@shiftflow.dev',
+          createdAt: createdAt,
+          createdAtRaw: new Date(createdAt).toLocaleString('ja-JP', { hour12: false }),
+          updatedAt: createdAt,
+          updatedAtValue: createdAt,
+          repeatRule: repeatRule,
+          isCompleted: options.status === '完了',
+          description: options.description || '',
+          attachments: Array.isArray(options.attachments) ? options.attachments.slice() : [],
+          canDelete: true,
+        };
+        return task;
+      }
+
+      function createTestMessage(options) {
+        options = options || {};
+        var createdAt = Date.now() - (options.createdOffsetHours || 0) * 3600 * 1000;
+        var body = options.body || 'テスト用のメッセージ本文です。ここに連絡事項が入ります。';
+        var summary = {
+          id: options.id || 'MSG-' + Math.floor(Math.random() * 10000),
+          title: options.title || 'テストのお知らせ',
+          body: body,
+          preview: body.length > 80 ? body.slice(0, 78) + '…' : body,
+          priority: options.priority || '中',
+          folderId: options.folderId || '全体',
+          isRead: !!options.isRead,
+          createdAt: createdAt,
+        };
+        summary.detail = {
+          id: summary.id,
+          title: summary.title,
+          body: summary.body,
+          attachments: Array.isArray(options.attachments) ? options.attachments.slice() : [],
+          comments: Array.isArray(options.comments) ? options.comments.slice() : [],
+          readUsers: Array.isArray(options.readUsers) ? options.readUsers.slice() : [],
+          unreadUsers: Array.isArray(options.unreadUsers) ? options.unreadUsers.slice() : [],
+          readEmails: Array.isArray(options.readEmails) ? options.readEmails.slice() : [],
+          canDelete: true,
+          priority: summary.priority,
+          folderId: summary.folderId,
+        };
+        return summary;
+      }
+
+      function buildTestModeDataset() {
+        var tasks = [
+          createTestTask({
+            id: 'TASK-101',
+            title: '【テスト】開店前チェックリスト',
+            priority: '高',
+            status: '対応中',
+            dueOffsetDays: 0,
+            assignees: [TEST_USER_EMAIL, 'manager@shiftflow.dev'],
+            description: 'ホール・厨房の温度と備品を確認してください。',
+          }),
+          createTestTask({
+            id: 'TASK-102',
+            title: '【テスト】夕方の追加シフト確認',
+            priority: '中',
+            status: '未着手',
+            dueOffsetDays: 1,
+            assignees: [TEST_USER_EMAIL],
+          }),
+          createTestTask({
+            id: 'TASK-103',
+            title: '【テスト】備品の在庫共有',
+            priority: '低',
+            status: '完了',
+            dueOffsetDays: -1,
+            assignees: ['kitchen.lead@shiftflow.dev'],
+            createdBy: TEST_USER_EMAIL,
+          }),
+        ];
+        var baseComments = [
+          {
+            id: 'CMT-1',
+            body: 'テストコメント: 進捗を確認しました。',
+            authorEmail: 'manager@shiftflow.dev',
+            createdAt: '2024/06/30 09:10',
+          },
+        ];
+        var messages = [
+          createTestMessage({
+            id: 'MSG-201',
+            title: '【テスト】7/1 ホール連絡事項',
+            priority: '高',
+            isRead: false,
+            attachments: [
+              {
+                name: 'ホール配置図.jpg',
+                url: TEST_ATTACHMENT_IMAGE,
+                mimeType: 'image/jpeg',
+                size: 180245,
+              },
+            ],
+            comments: baseComments,
+            readUsers: [{ email: 'manager@shiftflow.dev', label: '山田マネージャー' }],
+            unreadUsers: [{ email: TEST_USER_EMAIL, label: 'テストユーザー' }],
+          }),
+          createTestMessage({
+            id: 'MSG-202',
+            title: '【テスト】厨房シフトの共有',
+            priority: '中',
+            folderId: 'キッチン',
+            isRead: true,
+            attachments: [
+              {
+                name: '仕込み手順.pdf',
+                url: TEST_ATTACHMENT_MENU,
+                mimeType: 'application/pdf',
+                size: 24000,
+              },
+            ],
+            comments: [],
+          }),
+        ];
+        var folders = [
+          { id: '全体', name: '全体' },
+          { id: 'ホール', name: 'ホール' },
+          { id: 'キッチン', name: 'キッチン' },
+          { id: 'バックヤード', name: 'バックヤード' },
+        ];
+        var users = [
+          { email: TEST_USER_EMAIL, name: 'テストユーザー', role: 'member', imageUrl: TEST_AVATAR_URL },
+          { email: 'manager@shiftflow.dev', name: '山田マネージャー', role: 'manager', imageUrl: TEST_THUMB_URL },
+          { email: 'kitchen.lead@shiftflow.dev', name: '厨房リード', role: 'member', imageUrl: TEST_THUMB_URL },
+        ];
+        var userInfo = {
+          email: TEST_USER_EMAIL,
+          name: 'テストユーザー',
+          imageUrl: TEST_AVATAR_URL,
+          theme: 'light',
+          role: 'member',
+        };
+        var bootstrap = {
+          userInfo: cloneDeep(userInfo),
+          users: cloneDeep(users),
+          folders: cloneDeep(folders),
+          myTasks: {
+            tasks: cloneDeep(tasks),
+            meta: {
+              totalTasks: tasks.length,
+              matchedTasks: tasks.length,
+              note: 'テストデータ (ローカルのみ)',
+            },
+          },
+          isManager: false,
+          theme: 'light',
+        };
+        return {
+          userInfo,
+          users,
+          folders,
+          tasks,
+          messages,
+          bootstrap,
+          settings: {
+            name: 'テストユーザー',
+            imageUrl: TEST_AVATAR_URL,
+            imageName: 'test-avatar.png',
+            role: 'member',
+            email: TEST_USER_EMAIL,
+            theme: 'light',
+          },
+          counters: {
+            task: 1000 + tasks.length,
+            message: 200 + messages.length,
+            comment: 10,
+          },
+        };
+      }
+
+      function isTestModeActive() {
+        return !!(TEST_MODE_STATE && TEST_MODE_STATE.active);
+      }
+
+      function getTestModeState() {
+        return TEST_MODE_STATE && TEST_MODE_STATE.active ? TEST_MODE_STATE : null;
+      }
+
+      function syncTestMyTasks(state) {
+        if (!state || !state.data) return;
+        var tasks = state.data.tasks || [];
+        state.data.bootstrap.myTasks = {
+          tasks: cloneDeep(tasks),
+          meta: {
+            totalTasks: tasks.length,
+            matchedTasks: tasks.length,
+            note: 'テストデータ (永続化されません)',
+          },
+        };
+      }
+
+      function createTestModeController() {
+        var dataset = buildTestModeDataset();
+        var controller = {
+          active: true,
+          networkDelayMs: 240,
+          data: dataset,
+          handleRoute: function (route, args) {
+            return Promise.resolve(executeTestRoute(controller, route, args));
+          },
+        };
+        syncTestMyTasks(controller);
+        return controller;
+      }
+
+      function ensureTestModeController() {
+        if (TEST_MODE_STATE && TEST_MODE_STATE.active) {
+          return TEST_MODE_STATE;
+        }
+        TEST_MODE_STATE = createTestModeController();
+        window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
+        return TEST_MODE_STATE;
+      }
+
+      function cloneTasksForResponse(tasks) {
+        return cloneDeep(tasks || []);
+      }
+
+      function findTestTask(state, id) {
+        if (!state || !state.data) return null;
+        return (state.data.tasks || []).find(function (task) {
+          return task.id === id;
+        });
+      }
+
+      function findTestMessage(state, id) {
+        if (!state || !state.data) return null;
+        return (state.data.messages || []).find(function (msg) {
+          return msg.id === id;
+        });
+      }
+
+      function toTestPayloadSuccess(message) {
+        return {
+          success: true,
+          message: message || 'テストモードで完了しました。',
+        };
+      }
+
+      function executeTestRoute(state, route, args) {
+        if (!state || !state.data) {
+          throw new Error('テストデータが初期化されていません。');
+        }
+        var data = state.data;
+        switch (route) {
+          case 'getBootstrapData':
+            return cloneDeep(data.bootstrap);
+          case 'getHomeContent':
+            return {
+              tasks: cloneTasksForResponse(data.tasks).slice(0, 3),
+              messages: cloneDeep(data.messages || []).slice(0, 3),
+            };
+          case 'listMyTasks':
+          case 'listAllTasks':
+            syncTestMyTasks(state);
+            return cloneDeep(data.bootstrap.myTasks);
+          case 'listCreatedTasks': {
+            var normalized = normalizeEmailValue(data.userInfo.email);
+            var created = (data.tasks || []).filter(function (task) {
+              return normalizeEmailValue(task.createdBy) === normalized;
+            });
+            return {
+              tasks: cloneDeep(created),
+              meta: {
+                totalTasks: data.tasks.length,
+                matchedTasks: created.length,
+                note: 'テスト用データ (作成者フィルタ)',
+              },
+            };
+          }
+          case 'getTaskById': {
+            var taskId = Array.isArray(args) ? args[0] : args;
+            var found = findTestTask(state, taskId);
+            if (!found) throw new Error('テストタスクが見つかりません: ' + taskId);
+            return cloneDeep(found);
+          }
+          case 'addNewTask': {
+            var payload = Array.isArray(args) && args[0] ? args[0] : {};
+            var nextId = 'TASK-' + ++state.data.counters.task;
+            var newTask = createTestTask({
+              id: nextId,
+              title: payload.title || '新規タスク',
+              priority: payload.priority || '中',
+              status: '未着手',
+              dueOffsetDays: 0,
+              assignees: Array.isArray(payload.assignees) && payload.assignees.length
+                ? payload.assignees
+                : [data.userInfo.email],
+              createdBy: data.userInfo.email,
+            });
+            if (payload.dueDate) {
+              newTask.dueDate = payload.dueDate;
+              var dueDateObj = new Date(payload.dueDate);
+              if (!isNaN(dueDateObj.getTime())) {
+                newTask.dueValue = dueDateObj.getTime();
+              }
+            }
+            if (payload.repeatRule) newTask.repeatRule = payload.repeatRule;
+            data.tasks.unshift(newTask);
+            syncTestMyTasks(state);
+            return {
+              success: true,
+              message: 'テストデータにタスクを追加しました。',
+              taskId: nextId,
+            };
+          }
+          case 'updateTask': {
+            var updatePayload = Array.isArray(args) && args[0] ? args[0] : {};
+            var target = findTestTask(state, updatePayload.id);
+            if (!target) throw new Error('対象タスクが見つかりません。');
+            if (updatePayload.title) target.title = updatePayload.title;
+            if (updatePayload.dueDate) {
+              target.dueDate = updatePayload.dueDate;
+              var dueObj = new Date(updatePayload.dueDate);
+              if (!isNaN(dueObj.getTime())) target.dueValue = dueObj.getTime();
+            }
+            if (updatePayload.status) {
+              target.status = updatePayload.status;
+              target.isCompleted = updatePayload.status === '完了';
+            }
+            if (updatePayload.priority) target.priority = updatePayload.priority;
+            target.updatedAt = Date.now();
+            target.updatedAtValue = target.updatedAt;
+            syncTestMyTasks(state);
+            return toTestPayloadSuccess('タスクを更新しました (テスト)');
+          }
+          case 'completeTask': {
+            var completeId = Array.isArray(args) ? args[0] : args;
+            var completeTask = findTestTask(state, completeId);
+            if (!completeTask) throw new Error('対象タスクが見つかりません。');
+            completeTask.status = '完了';
+            completeTask.isCompleted = true;
+            completeTask.updatedAt = Date.now();
+            completeTask.updatedAtValue = completeTask.updatedAt;
+            syncTestMyTasks(state);
+            return toTestPayloadSuccess('完了状態に変更しました (テスト)');
+          }
+          case 'deleteTaskById': {
+            var deleteId = Array.isArray(args) ? args[0] : args;
+            data.tasks = (data.tasks || []).filter(function (task) {
+              return task.id !== deleteId;
+            });
+            syncTestMyTasks(state);
+            return toTestPayloadSuccess('タスクを削除しました (テスト)');
+          }
+          case 'getMessages': {
+            var rows = cloneDeep(data.messages || []);
+            return rows;
+          }
+          case 'toggleMemoRead': {
+            var memoId = Array.isArray(args) ? args[0] : null;
+            var shouldRead = Array.isArray(args) ? !!args[1] : false;
+            var toggleTarget = findTestMessage(state, memoId);
+            if (!toggleTarget) throw new Error('メッセージが見つかりません。');
+            toggleTarget.isRead = shouldRead;
+            updateMessageReadState(data, toggleTarget, shouldRead);
+            return toTestPayloadSuccess('既読状態を更新しました (テスト)');
+          }
+          case 'markMemoAsRead': {
+            var memoIdForMark = Array.isArray(args) ? args[0] : args;
+            var markTarget = findTestMessage(state, memoIdForMark);
+            if (!markTarget) throw new Error('メッセージが見つかりません。');
+            markTarget.isRead = true;
+            updateMessageReadState(data, markTarget, true);
+            return toTestPayloadSuccess('既読化しました (テスト)');
+          }
+          case 'markMemosReadBulk': {
+            var idList = Array.isArray(args) && Array.isArray(args[0]) ? args[0] : [];
+            idList.forEach(function (memoId) {
+              var tgt = findTestMessage(state, memoId);
+              if (!tgt) return;
+              tgt.isRead = true;
+              updateMessageReadState(data, tgt, true);
+            });
+            return toTestPayloadSuccess('未読メッセージを既読にしました (テスト)');
+          }
+          case 'getMessageById': {
+            var memoId = Array.isArray(args) ? args[0] : args;
+            var memo = findTestMessage(state, memoId);
+            if (!memo) throw new Error('メッセージが見つかりません。');
+            return cloneDeep(memo.detail || memo);
+          }
+          case 'addNewMessage': {
+            var messagePayload = Array.isArray(args) && args[0] ? args[0] : {};
+            var newId = 'MSG-' + ++state.data.counters.message;
+            var entry = createTestMessage({
+              id: newId,
+              title: messagePayload.title || '新規のお知らせ',
+              body: messagePayload.body || '',
+              priority: messagePayload.priority || '中',
+              folderId: messagePayload.folderId || '全体',
+              isRead: false,
+              attachments: messagePayload.attachments || [],
+            });
+            data.messages.unshift(entry);
+            return {
+              success: true,
+              message: 'メッセージを追加しました (テスト)',
+            };
+          }
+          case 'deleteMessageById': {
+            var msgId = Array.isArray(args) ? args[0] : args;
+            data.messages = (data.messages || []).filter(function (msg) {
+              return msg.id !== msgId;
+            });
+            return toTestPayloadSuccess('メッセージを削除しました (テスト)');
+          }
+          case 'addNewComment': {
+            var commentPayload = Array.isArray(args) && args[0] ? args[0] : {};
+            var memoForComment = findTestMessage(state, commentPayload.memoId);
+            if (!memoForComment) throw new Error('メッセージが見つかりません。');
+            memoForComment.detail = memoForComment.detail || {};
+            var comments = memoForComment.detail.comments || [];
+            var label = commentPayload.body || '';
+            comments.unshift({
+              id: 'CMT-' + ++state.data.counters.comment,
+              body: label,
+              authorEmail: data.userInfo.email,
+              authorName: data.userInfo.name,
+              createdAt: new Date().toLocaleString('ja-JP', { hour12: false }),
+            });
+            memoForComment.detail.comments = comments;
+            return toTestPayloadSuccess('コメントを追加しました (テスト)');
+          }
+          case 'getUserSettings':
+            return cloneDeep(data.settings);
+          case 'saveUserSettings': {
+            var settingsPayload = Array.isArray(args) && args[0] ? args[0] : {};
+            if (settingsPayload.name) data.settings.name = settingsPayload.name;
+            if (settingsPayload.theme) data.settings.theme = settingsPayload.theme;
+            if (settingsPayload.imageData) {
+              data.settings.imageUrl = settingsPayload.imageData;
+              data.settings.imageName = 'uploaded-from-test.png';
+            }
+            return {
+              success: true,
+              message: 'テストユーザー設定を保存しました。',
+              imageUrl: data.settings.imageUrl,
+              imageName: data.settings.imageName,
+              theme: data.settings.theme,
+            };
+          }
+          default:
+            throw new Error('テストモードでは未対応の操作です: ' + route);
+        }
+      }
+
+      function updateMessageReadState(data, summary, isRead) {
+        if (!summary) return;
+        summary.detail = summary.detail || {};
+        var email = data.userInfo.email;
+        summary.detail.readEmails = summary.detail.readEmails || [];
+        var normalized = normalizeEmailValue(email);
+        if (isRead) {
+          if (
+            !summary.detail.readEmails.some(function (value) {
+              return normalizeEmailValue(value) === normalized;
+            })
+          ) {
+            summary.detail.readEmails.push(email);
+          }
+          summary.detail.readUsers = summary.detail.readUsers || [];
+          if (
+            !summary.detail.readUsers.some(function (entry) {
+              return entry && normalizeEmailValue(entry.email) === normalized;
+            })
+          ) {
+            summary.detail.readUsers.push({ email: email, label: data.userInfo.name });
+          }
+          summary.detail.unreadUsers = (summary.detail.unreadUsers || []).filter(function (entry) {
+            return entry && normalizeEmailValue(entry.email) !== normalized;
+          });
+        } else {
+          summary.detail.readEmails = (summary.detail.readEmails || []).filter(function (value) {
+            return normalizeEmailValue(value) !== normalized;
+          });
+          summary.detail.readUsers = (summary.detail.readUsers || []).filter(function (entry) {
+            return entry && normalizeEmailValue(entry.email) !== normalized;
+          });
+          summary.detail.unreadUsers = summary.detail.unreadUsers || [];
+          if (
+            !summary.detail.unreadUsers.some(function (entry) {
+              return entry && normalizeEmailValue(entry.email) === normalized;
+            })
+          ) {
+            summary.detail.unreadUsers.push({ email: email, label: data.userInfo.name });
+          }
+        }
+      }
+
       const AUTH_PENDING_FLAG_KEY = 'SHIFT_FLOW_AUTH_PENDING';
       const GAS_WEB_APP_URL =
         typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
@@ -4033,6 +4575,33 @@
           return err;
         }
 
+        function handleTestRoute(route, argsSnapshot, handlers) {
+          var testState = globalThis.__SHIFT_FLOW_TEST_MODE__;
+          if (
+            !testState ||
+            !testState.active ||
+            typeof testState.handleRoute !== 'function'
+          ) {
+            return false;
+          }
+          var delayMs = Number(testState.networkDelayMs || 200);
+          setTimeout(function () {
+            Promise.resolve()
+              .then(function () {
+                return testState.handleRoute(route, argsSnapshot || []);
+              })
+              .then(function (payload) {
+                deliver(handlers.success, payload, handlers.userObject);
+              })
+              .catch(function (err) {
+                var normalized =
+                  err instanceof Error ? err : createError(String(err || 'Test mode failure'), { route: route });
+                deliverFailure(handlers.failure, normalized, handlers.userObject);
+              });
+          }, delayMs >= 0 ? delayMs : 0);
+          return true;
+        }
+
         // === Helpers ===
         let _lastSessionCheck = 0;
         async function _ensureSessionToken(forceReload) {
@@ -4094,6 +4663,9 @@
 
           (async () => {
             try {
+              if (handleTestRoute(route, argsSnapshot, handlers)) {
+                return;
+              }
               let packet = await _doFetch(false);
               if (!packet.res.ok && packet.res.status === 401) {
                 clearAuthToken();
@@ -4901,6 +5473,35 @@
         window.location.assign(startUrl);
       }
 
+      function activateTestUserLogin() {
+        var controller = ensureTestModeController();
+        if (!controller || !controller.data) {
+          notify('テストユーザーを初期化できませんでした。', false);
+          return;
+        }
+        controller.active = true;
+        TEST_MODE_STATE = controller;
+        window.__SHIFT_FLOW_TEST_MODE__ = controller;
+        setAuthToken('TEST');
+        clearAuthPendingFlag();
+        var session = {
+          authenticated: true,
+          user: controller.data.userInfo,
+          expiresAt: Date.now() + 3600 * 1000,
+        };
+        AUTH_SESSION = session;
+        HAS_ACTIVE_EMAIL = true;
+        CURRENT_USER_EMAIL = controller.data.userInfo.email;
+        USER_IMAGE_URL = controller.data.userInfo.imageUrl;
+        applyBootstrapState(controller.data.bootstrap);
+        updateAuthSessionUI(session);
+        hideAuthOverlay();
+        setAppShellHidden(false);
+        setBootstrapLoading(false);
+        notify('テストユーザーでログインしました。', true);
+        refreshDataAfterBootstrap();
+      }
+
       async function performLogout() {
         try {
           const requestId = createRequestId();
@@ -4938,6 +5539,10 @@
         on('btn-auth-logout', 'click', function (event) {
           event.preventDefault();
           performLogout();
+        });
+        on('btn-auth-demo', 'click', function (event) {
+          event.preventDefault();
+          activateTestUserLogin();
         });
       }
 
