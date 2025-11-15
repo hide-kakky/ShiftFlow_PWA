@@ -3530,6 +3530,7 @@
         MESSAGE_ATTACHMENT_LIMIT,
         API_BASE_PATH,
       } = SHIFT_FLOW_CONFIG;
+      const AUTH_PENDING_FLAG_KEY = 'SHIFT_FLOW_AUTH_PENDING';
       const GAS_WEB_APP_URL =
         typeof window.__GAS_WEB_APP_URL__ === 'string' ? window.__GAS_WEB_APP_URL__ : '';
       const HAS_GAS_WEB_APP_URL = GAS_WEB_APP_URL.length > 0;
@@ -4773,6 +4774,7 @@
         if (data && data.authenticated) {
           updateAuthSessionUI(data);
           setAuthToken('SESSION');
+          clearAuthPendingFlag();
           hideAuthOverlay();
         } else {
           setAuthToken('');
@@ -4830,6 +4832,35 @@
         return url.toString();
       }
 
+      function markAuthPending() {
+        try {
+          sessionStorage.setItem(AUTH_PENDING_FLAG_KEY, String(Date.now()));
+        } catch (_err) {
+          /* sessionStorage may be unavailable */
+        }
+      }
+      function clearAuthPendingFlag() {
+        try {
+          sessionStorage.removeItem(AUTH_PENDING_FLAG_KEY);
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      function isAuthPending() {
+        try {
+          var stored = sessionStorage.getItem(AUTH_PENDING_FLAG_KEY);
+          if (!stored) return false;
+          var timestamp = Number(stored);
+          if (Number.isFinite(timestamp) && Date.now() - timestamp > 60 * 1000) {
+            sessionStorage.removeItem(AUTH_PENDING_FLAG_KEY);
+            return false;
+          }
+          return true;
+        } catch (_err) {
+          return false;
+        }
+      }
+
       function startAuthFlow(options) {
         const opts = { external: true, ...(options || {}) };
         const manualMode = NEEDS_MANUAL_SIGNIN && HAS_GAS_WEB_APP_URL;
@@ -4837,6 +4868,7 @@
         const returnTo = opts.returnTo || window.location.href;
         const startUrl = buildAuthStartUrl(returnTo);
         const fallbackTarget = manualMode ? buildGasAuthUrl(returnTo) || GAS_WEB_APP_URL : '';
+        markAuthPending();
         if (shouldPreOpenWindow) {
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
@@ -4885,6 +4917,7 @@
         }
         clearAuthToken();
         updateAuthSessionUI(null);
+        clearAuthPendingFlag();
         showAuthOverlay('サインアウトしました。もう一度 Google でログインしてください。');
       }
 
@@ -4910,22 +4943,36 @@
 
       async function initializeAuthGateway() {
         attachAuthEventHandlers();
+        const returningFromAuth = isAuthPending();
+        if (returningFromAuth) {
+          setBootstrapLoading(true);
+          setAppShellHidden(true);
+        }
         let session = null;
         try {
           session = await syncAuthSession({ silent: true });
+          if ((!session || !session.authenticated) && returningFromAuth) {
+            await delay(700);
+            session = await syncAuthSession({ silent: true });
+          }
         } catch (err) {
           console.warn('[ShiftFlow] Initial auth sync failed', err);
+          setBootstrapLoading(false);
           showAuthOverlay('認証状態を確認できませんでした。時間をおいて再度お試しください。');
           return;
         }
         if (!session || !session.authenticated) {
-          showAuthOverlay(
-            NEEDS_MANUAL_SIGNIN
-              ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
-              : 'Google でログインしてください。'
-          );
+          clearAuthPendingFlag();
+          setBootstrapLoading(false);
+          const retryMessage = returningFromAuth
+            ? 'ログインの完了を確認できませんでした。ブラウザで再度 Google へサインインしてください。'
+            : NEEDS_MANUAL_SIGNIN
+            ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+            : 'Google でログインしてください。';
+          showAuthOverlay(retryMessage);
           return;
         }
+        clearAuthPendingFlag();
 
         var restorePromise = Promise.resolve(false);
         var sessionEmail = session.user && session.user.email ? session.user.email : '';
@@ -5049,6 +5096,11 @@
             fn.apply(ctx, args);
           }, ms);
         };
+      }
+      function delay(ms) {
+        return new Promise(function (resolve) {
+          setTimeout(resolve, typeof ms === 'number' && ms >= 0 ? ms : 0);
+        });
       }
       function humanBytes(n) {
         n = Number(n || 0);
