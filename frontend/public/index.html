@@ -600,6 +600,9 @@
       .topbar .nav-link .material-icons-outlined {
         font-size: 28px;
       }
+      .user-menu-dropdown {
+        position: relative;
+      }
       .user-menu-dropdown .user-menu-trigger {
         border: none;
         background: rgba(8, 20, 46, 0.15);
@@ -627,6 +630,12 @@
       }
       .user-menu-dropdown .dropdown-toggle::after {
         display: none !important;
+      }
+      .user-menu-dropdown .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        margin: 0;
       }
       .user-menu-avatar {
         width: 36px;
@@ -2249,42 +2258,58 @@
         justify-content: space-between;
         margin-bottom: 18px;
       }
-      .admin-hero {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        align-items: center;
-        padding: 18px 20px;
-        border-radius: 20px;
-        background: linear-gradient(135deg, rgba(11, 22, 52, 0.88), rgba(15, 27, 58, 0.6));
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        color: #eaf1ff;
-        margin-bottom: 20px;
-        box-shadow: 0 18px 38px rgba(5, 12, 28, 0.35);
+      .admin-org-dropdown {
+        position: relative;
       }
-      .admin-hero-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.1);
+      .admin-org-trigger {
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--on-primary);
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+      :root[data-theme='dark'] .admin-org-trigger {
+        background: rgba(12, 18, 36, 0.45);
+        color: #f6f8ff;
+      }
+      .admin-org-trigger .material-icons-outlined {
+        font-size: 18px;
+      }
+      .admin-org-menu {
+        width: 280px;
+        padding: 8px 0;
+      }
+      .admin-org-menu-header {
+        padding: 4px 16px 8px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      The code for admin org dropdown styles already partly from general distribution. Need correct lines (should not include instructions). Continue patch remove wrong text. 
+      .admin-view-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .admin-view-title-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: rgba(81, 124, 178, 0.18);
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 32px;
+        color: var(--primary);
+        font-size: 26px;
       }
-      .admin-hero-meta {
+      .admin-view-heading {
         margin: 0;
-        font-size: 0.85rem;
-        letter-spacing: 0.08em;
-        opacity: 0.8;
-      }
-      .admin-hero-title {
-        margin: 6px 0 0;
         font-size: clamp(1.4rem, 2vw, 1.8rem);
       }
-      .admin-hero-desc {
+      .admin-view-desc {
         margin: 4px 0 0;
-        color: rgba(255, 255, 255, 0.76);
+        color: var(--text-700);
       }
       .admin-header-actions {
         display: flex;
@@ -3402,28 +3427,53 @@
         </div>
       </div>
       <section class="admin-shell" id="view-admin" hidden aria-labelledby="adminViewTitle">
-        <div class="container-xl">
+          <div class="container-xl">
           <div class="admin-top-actions">
             <button class="btn btn-outline-secondary btn-sm admin-exit-btn" type="button" id="btn-exit-admin">
               <span class="material-icons-outlined align-middle me-1">arrow_back</span>一般画面へ戻る
             </button>
-            <div class="admin-header-actions">
-              <label class="visually-hidden" for="admin-org-select">管理対象の組織</label>
-              <select class="form-select form-select-sm admin-org-select" id="admin-org-select" disabled>
-                <option>所属組織の読み込み待ち...</option>
-              </select>
+            <div class="dropdown admin-org-dropdown" id="adminOrgDropdown">
+              <button
+                class="btn btn-sm btn-outline-light admin-org-trigger"
+                type="button"
+                id="btn-admin-org"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+              >
+                <span class="material-icons-outlined align-middle me-1">apartment</span>
+                <span id="adminOrgLabel">現在の組織</span>
+                <span class="material-icons-outlined ms-1">expand_more</span>
+              </button>
+              <div class="dropdown-menu dropdown-menu-end admin-org-menu shadow" aria-labelledby="btn-admin-org">
+                <div class="admin-org-menu-header">
+                  <strong>管理対象の組織</strong>
+                </div>
+                <div class="admin-org-list" id="adminOrgList">
+                  <button type="button" class="admin-org-item active" data-org-id="current">
+                    <span class="material-icons-outlined">check_circle</span>
+                    <div>
+                      <strong>現在の組織</strong>
+                      <small>ここに読み込み結果を表示</small>
+                    </div>
+                  </button>
+                  <button type="button" class="admin-org-item" data-org-id="other">
+                    <span class="material-icons-outlined">business</span>
+                    <div>
+                      <strong>別組織</strong>
+                      <small>準備中</small>
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="admin-hero">
-            <div class="admin-hero-icon" aria-hidden="true">
+          <div class="admin-view-title">
+            <div class="admin-view-title-icon" aria-hidden="true">
               <span class="material-icons-outlined" id="adminSectionIcon">dashboard</span>
             </div>
             <div>
-              <p class="admin-hero-meta">ADMIN / MANAGER</p>
-              <h2 class="admin-hero-title" id="admin-section-label">管理トップ</h2>
-              <p class="admin-hero-desc" id="admin-section-desc">
-                現在の状況を一覧で把握し、アクションにつなげます。
-              </p>
+              <h2 class="admin-view-heading" id="admin-section-label">管理トップ</h2>
+              <p class="admin-view-desc" id="admin-section-desc">現在の状況を一覧で把握し、アクションにつなげます。</p>
             </div>
           </div>
           <div class="admin-panels-wrapper" id="adminPanelsWrapper">
@@ -4248,7 +4298,7 @@
           ? __BOOT__.myTasks
           : { tasks: [], meta: {} };
       let IS_MANAGER = !!__BOOT__.isManager;
-      let ADMIN_STATE = { active: false, section: 'dashboard' };
+      let ADMIN_STATE = { active: false, section: 'dashboard', orgId: 'current', orgLabel: '現在の組織' };
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
       const SHIFT_FLOW_CONFIG = window.SHIFT_FLOW_CONFIG || {};
       const {
@@ -6472,6 +6522,16 @@
           };
           descEl.textContent = descMap[target] || '';
         }
+      }
+      function setAdminOrg(orgId, label) {
+        ADMIN_STATE.orgId = orgId || 'current';
+        ADMIN_STATE.orgLabel = label || '現在の組織';
+        var labelEl = byId('adminOrgLabel');
+        if (labelEl) labelEl.textContent = ADMIN_STATE.orgLabel;
+        document.querySelectorAll('.admin-org-item').forEach(function (item) {
+          var match = item.getAttribute('data-org-id') === ADMIN_STATE.orgId;
+          item.classList.toggle('active', match);
+        });
       }
       function moveAdminTrack(section, opts) {
         var track = byId('adminTrack');
@@ -9984,11 +10044,35 @@
           });
         }
 
+        function attachAdminOrgSelector() {
+          var dropdownBtn = byId('btn-admin-org');
+          var items = document.querySelectorAll('.admin-org-item');
+          if (items.length === 0) return;
+          setAdminOrg(ADMIN_STATE.orgId, ADMIN_STATE.orgLabel);
+          items.forEach(function (item) {
+            item.addEventListener('click', function (event) {
+              if (event) event.preventDefault();
+              var orgId = item.getAttribute('data-org-id') || 'current';
+              var labelNode = item.querySelector('strong');
+              var labelText = labelNode ? labelNode.textContent.trim() : '選択した組織';
+              setAdminOrg(orgId, labelText);
+              if (dropdownBtn && window.bootstrap) {
+                try {
+                  var inst = bootstrap.Dropdown.getInstance(dropdownBtn);
+                  if (inst) inst.hide();
+                } catch (_err) {}
+              }
+              notify('組織切り替えは現在プレースホルダーです。', true);
+            });
+          });
+        }
+
         function init() {
           attachViewLinks();
           attachFabHandlers();
           attachAdminMenuHandler();
           attachUserMenuHandlers();
+          attachAdminOrgSelector();
         }
 
         return {
@@ -10180,3 +10264,28 @@
     <!-- TODO: API デバッグ用UIは本番公開前に非表示化する -->
   </body>
 </html>
+      .admin-org-list {
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .admin-org-item {
+        width: 100%;
+        border: none;
+        background: transparent;
+        padding: 8px 16px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        text-align: left;
+      }
+      .admin-org-item .material-icons-outlined {
+        font-size: 20px;
+        color: var(--primary);
+      }
+      .admin-org-item small {
+        display: block;
+        color: var(--muted);
+      }
+      .admin-org-item.active {
+        background: rgba(81, 124, 178, 0.12);
+      }
