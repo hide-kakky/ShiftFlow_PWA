@@ -1,7 +1,12 @@
 self.importScripts('/app-config.js');
 const swConfig = self.SHIFT_FLOW_CONFIG || {};
+
+// アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
+const APP_VERSION = '1.0.0';
+
 const CACHE_PREFIX = swConfig.CACHE_PREFIX || 'shiftflow-';
-const APP_SHELL_CACHE = swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-v2`;
+const APP_SHELL_CACHE =
+  swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
 const API_CACHE = swConfig.API_CACHE_KEY || `${CACHE_PREFIX}api-v1`;
 const APP_SHELL = Array.isArray(swConfig.APP_SHELL_PATHS)
   ? swConfig.APP_SHELL_PATHS
@@ -203,7 +208,7 @@ function broadcastAppShellUpdate() {
         client.postMessage({
           type: 'APP_SHELL_UPDATED',
           timestamp: Date.now(),
-          version: swConfig.APP_SHELL_CACHE_KEY || '',
+          version: APP_VERSION,
         });
       });
     })
