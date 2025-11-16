@@ -81,3 +81,12 @@
 - 実行コマンド・チェック項目・ロールバックも含む。
 - Git コミットメッセージ例は必ず日本語。
 - npm は入っていますが、OS が古いので、Wrangler D1 や、ローカルでの検証は出来ません。
+
+## Service Worker / バージョン運用ルール
+
+- `frontend/public/sw.js` には `const APP_VERSION = 'x.y.z'` が定義されている。
+- Codex は、フロントエンドの挙動や UI に影響するコード（`frontend/public/*` や `sw.js`）を変更するたびに、必ず `APP_VERSION` の値を変更すること。
+  - 例: `1.0.0 -> 1.0.1` のように、毎回違う文字列にする（形式は一任）。
+  - バックエンドやドキュメントのみの変更でフロントに影響が無い場合は変更不要。
+- `APP_VERSION` が変わると Service Worker が新バージョンとして導入され、`APP_SHELL_UPDATED` メッセージ経由で「最新版がリリースされました。更新しますか？」トーストが表示される。
+- ユーザーがトーストの「更新する」を押すと `SKIP_WAITING`→`controllerchange`→`location.reload()` により最新ビルドのホーム画面が表示される。
