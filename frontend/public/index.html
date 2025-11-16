@@ -1047,6 +1047,9 @@
         padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 12px);
         min-height: calc(100vh - var(--header-h) - var(--footer-h));
       }
+      body.admin-view-active .page-body {
+        padding-top: calc(var(--safe-top, 0px) + 4px);
+      }
       @media (max-width: 768px) {
         .page-body {
           padding-top: calc(var(--safe-top, 0px) + 8px);
