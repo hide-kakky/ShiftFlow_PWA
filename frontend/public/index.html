@@ -2289,7 +2289,32 @@
         padding: 4px 16px 8px;
         font-size: 0.85rem;
         color: var(--muted);
-      The code for admin org dropdown styles already partly from general distribution. Need correct lines (should not include instructions). Continue patch remove wrong text. 
+      }
+      .admin-org-list {
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .admin-org-item {
+        width: 100%;
+        border: none;
+        background: transparent;
+        padding: 8px 16px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        text-align: left;
+      }
+      .admin-org-item .material-icons-outlined {
+        font-size: 20px;
+        color: var(--primary);
+      }
+      .admin-org-item small {
+        display: block;
+        color: var(--muted);
+      }
+      .admin-org-item.active {
+        background: rgba(81, 124, 178, 0.12);
+      }
       .admin-view-title {
         display: flex;
         align-items: center;
@@ -10351,28 +10376,3 @@
     <!-- TODO: API デバッグ用UIは本番公開前に非表示化する -->
   </body>
 </html>
-      .admin-org-list {
-        max-height: 260px;
-        overflow-y: auto;
-      }
-      .admin-org-item {
-        width: 100%;
-        border: none;
-        background: transparent;
-        padding: 8px 16px;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        text-align: left;
-      }
-      .admin-org-item .material-icons-outlined {
-        font-size: 20px;
-        color: var(--primary);
-      }
-      .admin-org-item small {
-        display: block;
-        color: var(--muted);
-      }
-      .admin-org-item.active {
-        background: rgba(81, 124, 178, 0.12);
-      }
