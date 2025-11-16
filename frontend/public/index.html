@@ -600,6 +600,45 @@
       .topbar .nav-link .material-icons-outlined {
         font-size: 28px;
       }
+      .user-menu-dropdown .user-menu-trigger {
+        border-radius: 999px;
+        padding: 4px 10px;
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.35);
+      }
+      .user-menu-dropdown .user-menu-trigger:focus-visible {
+        outline: 3px solid rgba(255, 255, 255, 0.4);
+        outline-offset: 2px;
+      }
+      :root[data-theme='dark'] .user-menu-dropdown .user-menu-trigger {
+        background: rgba(14, 21, 45, 0.35);
+        border-color: rgba(255, 255, 255, 0.25);
+      }
+      .user-menu-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid rgba(255, 255, 255, 0.8);
+      }
+      .user-menu {
+        min-width: 240px;
+        padding: 6px 0;
+      }
+      .user-menu-meta {
+        padding: 6px 16px 2px;
+      }
+      .user-menu-meta strong {
+        display: block;
+        font-size: 0.95rem;
+      }
+      .user-menu .dropdown-item .material-icons-outlined {
+        font-size: 20px;
+      }
+      .user-menu .dropdown-item:focus,
+      .user-menu .dropdown-item:hover {
+        background: rgba(81, 124, 178, 0.12);
+      }
       .nav-link.nav-icon {
         position: relative;
       }
@@ -728,6 +767,16 @@
         transform: translateY(-3px);
         filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.28));
         animation: navFloat 2.4s ease-in-out infinite;
+      }
+      .admin-footer-nav {
+        display: none;
+        background: linear-gradient(135deg, rgba(20, 36, 73, 0.95), rgba(7, 16, 36, 0.95));
+      }
+      body.admin-view-active .admin-footer-nav {
+        display: flex !important;
+      }
+      body.admin-view-active nav.footer-nav:not(.admin-footer-nav) {
+        display: none !important;
       }
       @keyframes navFloat {
         0% {
@@ -1525,6 +1574,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+      body.admin-view-active .fab {
+        display: none !important;
+      }
+      body.admin-view-active nav.topbar {
+        display: none !important;
       }
 
       @media (max-width: 576px) {
@@ -2843,55 +2898,53 @@
           </span>
         </a>
         <div class="navbar-nav ms-auto flex-row align-items-center gap-2 order-md-last">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-light btn-icon-only d-none"
-            id="btn-header-logout"
-            title="ログアウト"
-          >
-            <span class="material-icons-outlined align-middle">logout</span>
-          </button>
-          <div class="dropdown" id="adminMenuDropdown" data-manager-only>
+          <div class="dropdown user-menu-dropdown">
             <button
               type="button"
-              class="btn btn-sm btn-outline-light btn-icon-only"
-              id="btn-admin-menu"
-              title="管理メニュー"
+              class="btn btn-outline-light user-menu-trigger d-flex align-items-center gap-2"
+              id="btn-user-menu"
               data-bs-toggle="dropdown"
               aria-expanded="false"
               aria-haspopup="true"
             >
-              <span class="material-icons-outlined align-middle">admin_panel_settings</span>
+              <img
+                src="/icons/icon-192.png"
+                class="avatar avatar-sm js-user-avatar user-menu-avatar"
+                data-avatar-url="/icons/icon-192.png"
+                data-bind-user-avatar
+                alt="User"
+              />
+              <span class="d-none d-xl-inline-flex flex-column text-start lh-1">
+                <strong class="user-menu-name" data-bind-user-name>ゲストユーザー</strong>
+                <small class="opacity-75">ログイン中</small>
+              </span>
+              <span class="material-icons-outlined">expand_more</span>
             </button>
-            <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="btn-admin-menu">
-              <h6 class="dropdown-header">管理メニュー</h6>
-              <button class="dropdown-item" type="button" data-admin-target="dashboard">
-                <span class="material-icons-outlined align-middle me-2">dashboard</span>管理トップ
+            <div class="dropdown-menu dropdown-menu-end user-menu shadow" aria-labelledby="btn-user-menu">
+              <div class="user-menu-meta">
+                <strong data-bind-user-name>ゲストユーザー</strong>
+                <small class="d-block text-muted" data-bind-user-email>guest@example.com</small>
+              </div>
+              <div class="dropdown-divider"></div>
+              <button
+                class="dropdown-item d-flex align-items-center gap-2"
+                type="button"
+                data-user-menu="admin"
+                data-manager-only
+              >
+                <span class="material-icons-outlined">shield_person</span>
+                管理メニュー
               </button>
-              <button class="dropdown-item" type="button" data-admin-target="users">
-                <span class="material-icons-outlined align-middle me-2">groups</span>ユーザー管理
-              </button>
-              <button class="dropdown-item" type="button" data-admin-target="orgs">
-                <span class="material-icons-outlined align-middle me-2">business</span>組織管理
-              </button>
-              <button class="dropdown-item" type="button" data-admin-target="audit">
-                <span class="material-icons-outlined align-middle me-2">fact_check</span>監査ログ
+              <button
+                class="dropdown-item d-flex align-items-center gap-2"
+                type="button"
+                data-user-menu="logout"
+              >
+                <span class="material-icons-outlined">logout</span>
+                サインアウト
               </button>
             </div>
           </div>
-          <span class="nav-link d-flex lh-1 text-reset p-0 align-items-center gap-2">
-            <img
-              src="/icons/icon-192.png"
-              class="avatar avatar-sm js-user-avatar"
-              data-avatar-url="/icons/icon-192.png"
-              data-bind-user-avatar
-              alt="User"
-            />
-            <span class="d-none d-xl-block ps-2">
-              <strong data-bind-user-name>ゲストユーザー</strong>
-              <small class="d-block" style="opacity: 0.9">ログイン中</small>
-            </span>
-          </span>
         </div>
       </div>
     </header>
@@ -3535,6 +3588,60 @@
               title="設定"
             >
               <span class="material-icons-outlined" aria-hidden="true">settings</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <nav class="navbar navbar-expand footer-nav admin-footer-nav d-md-none" data-app-shell hidden>
+      <div class="container-fluid">
+        <ul class="navbar-nav w-100 justify-content-around">
+          <li class="nav-item">
+            <a
+              class="nav-link text-center active"
+              href="#"
+              data-admin-target="dashboard"
+              data-admin-nav-link
+              aria-label="管理トップ"
+              title="管理トップ"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">home</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-admin-target="users"
+              data-admin-nav-link
+              aria-label="ユーザー管理"
+              title="ユーザー管理"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">groups</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-admin-target="orgs"
+              data-admin-nav-link
+              aria-label="組織管理"
+              title="組織管理"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">apartment</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-admin-target="audit"
+              data-admin-nav-link
+              aria-label="監査ログ"
+              title="監査ログ"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">fact_check</span>
             </a>
           </li>
         </ul>
@@ -4607,8 +4714,14 @@
           } else {
             el.removeAttribute('title');
           }
-          if (email && el.tagName === 'A' && el.textContent.trim() === '') {
-            el.textContent = email;
+          if (email) {
+            if (el.tagName === 'A' && el.textContent.trim() === '') {
+              el.textContent = email;
+            } else if (el.tagName !== 'A') {
+              el.textContent = email;
+            }
+          } else if (el.tagName !== 'A') {
+            el.textContent = '';
           }
         });
         document.querySelectorAll('[data-bind-user-name]').forEach(function (el) {
@@ -5726,7 +5839,6 @@
         const emailEl = byId('auth-session-email');
         const avatarEl = byId('auth-session-avatar');
         const logoutBtn = byId('btn-auth-logout');
-        const headerLogoutBtn = byId('btn-header-logout');
         const mobileLogoutBtn = byId('btn-mobile-logout');
 
         const isLoggedIn = !!(session && session.authenticated);
@@ -5735,10 +5847,6 @@
         }
         if (logoutBtn) {
           logoutBtn.classList.toggle('d-none', !isLoggedIn);
-        }
-        if (headerLogoutBtn) {
-          headerLogoutBtn.classList.toggle('d-none', !isLoggedIn);
-          headerLogoutBtn.disabled = !isLoggedIn;
         }
         if (mobileLogoutBtn) {
           mobileLogoutBtn.disabled = !isLoggedIn;
@@ -5963,22 +6071,26 @@
         showAuthOverlay('サインアウトしました。もう一度 Google でログインしてください。');
       }
 
+      function confirmLogoutAction() {
+        return window.confirm(
+          'ShiftFlow からサインアウトします。未保存の変更は失われますがよろしいですか？'
+        );
+      }
+
       function attachAuthEventHandlers() {
         on('btn-auth-google', 'click', function (event) {
           event.preventDefault();
           startAuthFlow({ external: true, returnTo: window.location.href });
         });
-        on('btn-header-logout', 'click', function (event) {
-          event.preventDefault();
-          performLogout();
-        });
         on('btn-mobile-logout', 'click', function (event) {
           event.preventDefault();
           if (event.currentTarget && event.currentTarget.disabled) return;
+          if (!confirmLogoutAction()) return;
           performLogout();
         });
         on('btn-auth-logout', 'click', function (event) {
           event.preventDefault();
+          if (!confirmLogoutAction()) return;
           performLogout();
         });
         on('btn-auth-demo', 'click', function (event) {
@@ -6156,6 +6268,11 @@
           btn.classList.toggle('active', match);
           btn.setAttribute('aria-current', match ? 'page' : 'false');
         });
+        document.querySelectorAll('[data-admin-nav-link]').forEach(function (link) {
+          var match = link.getAttribute('data-admin-target') === target;
+          link.classList.toggle('active', match);
+          link.setAttribute('aria-current', match ? 'page' : 'false');
+        });
         var label = byId('admin-section-label');
         if (label) {
           var labelMap = {
@@ -6178,7 +6295,7 @@
         adminView.removeAttribute('hidden');
         setAdminSection(section || ADMIN_STATE.section || 'dashboard');
         scrollToTopNow();
-        var menuButton = byId('btn-admin-menu');
+        var menuButton = byId('btn-user-menu');
         if (menuButton) {
           try {
             var dropdownInst = bootstrap.Dropdown.getInstance(menuButton);
@@ -9588,21 +9705,26 @@
           on('btn-open-new-msg', 'click', openNewMessageModal);
         }
 
-        function handleAdminTargetClick(event) {
-          if (event) event.preventDefault();
+        function activateAdminSection(section) {
           if (!IS_MANAGER) {
             notify('管理者メニューへアクセスする権限がありません。', false);
             return;
           }
-          var target =
-            (event && event.currentTarget && event.currentTarget.getAttribute('data-admin-target')) ||
-            'dashboard';
+          var target = section || 'dashboard';
           if (ADMIN_STATE.active) {
             setAdminSection(target);
             scrollToTopNow();
             return;
           }
           openAdminView(target);
+        }
+
+        function handleAdminTargetClick(event) {
+          if (event) event.preventDefault();
+          var target =
+            (event && event.currentTarget && event.currentTarget.getAttribute('data-admin-target')) ||
+            'dashboard';
+          activateAdminSection(target);
         }
 
         function attachAdminMenuHandler() {
@@ -9612,16 +9734,8 @@
           document.querySelectorAll('[data-admin-nav]').forEach(function (btn) {
             btn.addEventListener('click', function (event) {
               if (event) event.preventDefault();
-              if (!IS_MANAGER) {
-                notify('管理者メニューへアクセスする権限がありません。', false);
-                return;
-              }
               var section = btn.getAttribute('data-admin-section') || 'dashboard';
-              if (!ADMIN_STATE.active) {
-                openAdminView(section);
-                return;
-              }
-              setAdminSection(section);
+              activateAdminSection(section);
             });
           });
           on('btn-exit-admin', 'click', function (event) {
@@ -9630,10 +9744,35 @@
           });
         }
 
+        function attachUserMenuHandlers() {
+          var userMenuButton = byId('btn-user-menu');
+          document.querySelectorAll('[data-user-menu]').forEach(function (item) {
+            item.addEventListener('click', function (event) {
+              event.preventDefault();
+              var action = item.getAttribute('data-user-menu');
+              if (userMenuButton && window.bootstrap) {
+                try {
+                  var inst = bootstrap.Dropdown.getInstance(userMenuButton);
+                  if (inst) inst.hide();
+                } catch (_err) {
+                  /* noop */
+                }
+              }
+              if (action === 'admin') {
+                activateAdminSection('dashboard');
+              } else if (action === 'logout') {
+                if (!confirmLogoutAction()) return;
+                performLogout();
+              }
+            });
+          });
+        }
+
         function init() {
           attachViewLinks();
           attachFabHandlers();
           attachAdminMenuHandler();
+          attachUserMenuHandlers();
         }
 
         return {
