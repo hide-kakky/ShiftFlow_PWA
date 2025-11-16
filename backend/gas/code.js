@@ -117,6 +117,8 @@ const ROUTE_PERMISSIONS = {
   saveUserSettings: ['admin', 'manager', 'member'],
   listActiveUsers: ['admin', 'manager'],
   listActiveFolders: ['admin', 'manager', 'member'],
+  adminListUsers: ['admin', 'manager'],
+  adminUpdateUser: ['admin', 'manager'],
   clearCache: ['admin'],
   getAuditLogs: ['admin', 'manager'],
   resolveAccessContext: ['admin', 'manager', 'member', 'guest'],
@@ -1697,6 +1699,53 @@ function listActiveFolders() {
       return res;
     }
   );
+}
+
+function adminListUsers(filter) {
+  if (!isManagerUser()) {
+    return {
+      rows: [],
+      meta: {
+        managerOnly: true,
+        reason: '管理者権限が必要です。',
+        filters: filter || {},
+      },
+    };
+  }
+  const users = listActiveUsers();
+  const rows = users.map(function (user) {
+    return {
+      userId: user.email,
+      membershipId: user.email,
+      email: user.email,
+      name: user.name || user.email,
+      role: user.role || 'member',
+      status: 'active',
+      orgId: 'current',
+      orgName: '現在の組織',
+      avatarUrl: PROFILE_PLACEHOLDER_URL,
+      lastLoginLabel: '',
+    };
+  });
+  return {
+    rows: rows,
+    meta: {
+      totalRows: rows.length,
+      filteredCount: rows.length,
+      filters: filter || {},
+      fallback: true,
+    },
+  };
+}
+
+function adminUpdateUser() {
+  if (!isManagerUser()) {
+    return { success: false, message: '管理者権限が必要です。' };
+  }
+  return {
+    success: false,
+    message: 'Cloudflare Functions 環境でのみ利用できる操作です。',
+  };
 }
 
 function cleanUpArchiveData() {

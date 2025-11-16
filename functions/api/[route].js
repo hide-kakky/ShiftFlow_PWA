@@ -418,6 +418,36 @@ function normalizeUserStatusValue(status) {
   return 'pending';
 }
 
+function computeEffectiveStatus(userStatusRaw, membershipStatusRaw, membershipId, isActiveFlag) {
+  const derivedUserStatus =
+    userStatusRaw != null && userStatusRaw !== ''
+      ? userStatusRaw
+      : isActiveFlag === 0
+      ? 'suspended'
+      : 'active';
+  const derivedMembershipStatus =
+    membershipStatusRaw != null && membershipStatusRaw !== ''
+      ? membershipStatusRaw
+      : membershipId
+      ? 'active'
+      : '';
+  let status = normalizeUserStatusValue(derivedUserStatus);
+  if (status === 'active') {
+    const membershipStatus = normalizeUserStatusValue(derivedMembershipStatus);
+    status = membershipStatus || 'active';
+  }
+  if (!status) status = 'pending';
+  return status;
+}
+
+function clampPageSize(value, min = 25, max = 500) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return min;
+  if (size < min) return min;
+  if (size > max) return max;
+  return Math.floor(size);
+}
+
 function deriveStatusReason(status) {
   switch ((status || '').toLowerCase()) {
     case 'pending':
@@ -546,25 +576,12 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     });
     return mismatchContext;
   }
-  const userStatusRaw =
-    row.user_status != null && row.user_status !== ''
-      ? row.user_status
-      : row.is_active === 0
-      ? 'suspended'
-      : 'active';
-  const membershipStatusRaw =
-    row.membership_status != null && row.membership_status !== ''
-      ? row.membership_status
-      : row.membership_id
-      ? 'active'
-      : '';
-  const userStatus = normalizeUserStatusValue(userStatusRaw);
-  const membershipStatus = normalizeUserStatusValue(membershipStatusRaw);
-  let status = userStatus || 'pending';
-  if (status === 'active') {
-    status = membershipStatus || 'active';
-  }
-  if (!status) status = 'pending';
+  const status = computeEffectiveStatus(
+    row.user_status,
+    row.membership_status,
+    row.membership_id,
+    row.is_active
+  );
   const allowed = status === 'active';
   const role = normalizeRoleValue(row.role || 'member') || 'member';
   const context = {
@@ -1682,6 +1699,214 @@ async function maybeHandleRouteWithD1(options) {
         requestId
       );
     }
+    if (normalizedRoute === 'adminListUsers') {
+      if (!isManagerRole(accessContext?.role)) {
+        const resultPayload = {
+          rows: [],
+          meta: {
+            managerOnly: true,
+            reason: '管理者権限が必要です。',
+            userRole: accessContext?.role || '',
+          },
+        };
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: resultPayload },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const argsObject =
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args[0] || {}
+          : {};
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorOrgId = actorMembership?.org_id || null;
+      if (!actorOrgId) {
+        const resultPayload = {
+          rows: [],
+          meta: {
+            managerOnly: true,
+            reason: '管理対象の組織が確認できません。',
+            userRole: accessContext?.role || '',
+          },
+        };
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: resultPayload },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const filters = {
+        search: typeof argsObject.search === 'string' ? argsObject.search.trim().toLowerCase() : '',
+        status: argsObject.status ? normalizeUserStatusValue(argsObject.status) : '',
+        role: argsObject.role ? normalizeRoleValue(argsObject.role) : '',
+        page:
+          typeof argsObject.page === 'number' && Number.isFinite(argsObject.page) && argsObject.page > 0
+            ? Math.floor(argsObject.page)
+            : 1,
+      };
+      filters.pageSize = clampPageSize(argsObject.pageSize || 100, 25, 500);
+      const offset = (filters.page - 1) * filters.pageSize;
+      let paramIndex = 1;
+      const bindValues = [];
+      const clauseParts = [];
+      const membershipJoin = `JOIN memberships ms ON ms.user_id = u.user_id AND ms.org_id = ?${paramIndex}`;
+      bindValues.push(actorOrgId);
+      paramIndex += 1;
+      const userStatusExpr =
+        "LOWER(COALESCE(NULLIF(TRIM(u.status), ''), CASE WHEN u.is_active = 0 THEN 'suspended' ELSE 'active' END))";
+      const membershipStatusExpr =
+        "LOWER(COALESCE(NULLIF(TRIM(ms.status), ''), 'active'))";
+      const effectiveStatusExpr = `CASE WHEN ${userStatusExpr} IN ('suspended','revoked') THEN ${userStatusExpr} WHEN ${membershipStatusExpr} <> '' THEN ${membershipStatusExpr} ELSE ${userStatusExpr} END`;
+      if (filters.search) {
+        const placeholderEmail = '?' + paramIndex;
+        const placeholderName = '?' + (paramIndex + 1);
+        paramIndex += 2;
+        clauseParts.push(
+          `(LOWER(u.email) LIKE ${placeholderEmail} OR LOWER(COALESCE(u.display_name, '')) LIKE ${placeholderName})`
+        );
+        const pattern = `%${filters.search}%`;
+        bindValues.push(pattern, pattern);
+      }
+      if (filters.status) {
+        const placeholder = '?' + paramIndex;
+        paramIndex += 1;
+        clauseParts.push(`${effectiveStatusExpr} = ${placeholder}`);
+        bindValues.push(filters.status);
+      }
+      if (filters.role) {
+        const placeholder = '?' + paramIndex;
+        paramIndex += 1;
+        clauseParts.push(`LOWER(COALESCE(ms.role, 'member')) = ${placeholder}`);
+        bindValues.push(filters.role);
+      }
+      const whereClause = clauseParts.length ? 'WHERE ' + clauseParts.join(' AND ') : '';
+      const baseFromClause = `
+        FROM users u
+        ${membershipJoin}
+        LEFT JOIN organizations org ON org.org_id = ms.org_id
+        ${whereClause}
+      `;
+      const countStatement = `SELECT COUNT(1) AS cnt ${baseFromClause}`;
+      const countResult = await db.prepare(countStatement).bind(...bindValues).first();
+      const totalRows = countResult && countResult.cnt ? Number(countResult.cnt) : 0;
+      const limitPlaceholder = '?' + paramIndex;
+      paramIndex += 1;
+      const offsetPlaceholder = '?' + paramIndex;
+      paramIndex += 1;
+      const orderExpr = `CASE
+        WHEN ${effectiveStatusExpr} = 'pending' THEN 0
+        WHEN ${effectiveStatusExpr} = 'active' THEN 1
+        WHEN ${effectiveStatusExpr} = 'suspended' THEN 2
+        ELSE 3
+      END`;
+      const listStatement = `
+        SELECT
+          u.user_id,
+          u.email,
+          u.display_name,
+          u.profile_image_url,
+          u.status AS user_status,
+          u.is_active,
+          u.last_login_at_ms,
+          u.first_login_at_ms,
+          u.approved_by,
+          u.approved_at_ms,
+          u.notes,
+          ms.membership_id,
+          ms.status AS membership_status,
+          ms.role,
+          ms.org_id,
+          ms.created_at_ms AS membership_created_at_ms,
+          org.name AS org_name,
+          ${effectiveStatusExpr} AS effective_status
+        ${baseFromClause}
+        ORDER BY ${orderExpr}, LOWER(COALESCE(u.display_name, u.email)), u.email
+        LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+      `;
+      const dataResult = await db
+        .prepare(listStatement)
+        .bind(...bindValues, filters.pageSize, offset)
+        .all();
+      const rows = Array.isArray(dataResult?.results) ? dataResult.results : [];
+      const mapped = rows.map((row) => {
+        const status = row.effective_status || 'pending';
+        return {
+          userId: row.user_id,
+          membershipId: row.membership_id || '',
+          email: row.email || '',
+          name: row.display_name || row.email || '',
+          role: normalizeRoleValue(row.role || 'member') || 'member',
+          orgId: row.org_id || actorOrgId,
+          orgName: row.org_name || '現在の組織',
+          status,
+          avatarUrl: row.profile_image_url || PROFILE_PLACEHOLDER_URL,
+          lastLoginAt: row.last_login_at_ms || null,
+          lastLoginLabel: row.last_login_at_ms ? formatJst(row.last_login_at_ms, true) : '—',
+          approvedBy: row.approved_by || '',
+          approvedAtLabel:
+            row.approved_at_ms && Number.isFinite(row.approved_at_ms)
+              ? formatJst(row.approved_at_ms, true)
+              : '',
+          isActive: row.is_active == null ? true : row.is_active !== 0,
+          membershipStatus: row.membership_status || '',
+          notes: row.notes || '',
+          createdAtLabel:
+            row.membership_created_at_ms && Number.isFinite(row.membership_created_at_ms)
+              ? formatJst(row.membership_created_at_ms, true)
+              : '',
+        };
+      });
+      const statusCounts = mapped.reduce(
+        (acc, row) => {
+          const key = row.status || 'pending';
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        },
+        {}
+      );
+      const refreshedAtMs = Date.now();
+      const resultPayload = {
+        rows: mapped,
+        meta: {
+          totalRows,
+          returnedRows: mapped.length,
+          filters,
+          stats: {
+            total: totalRows,
+            pending: statusCounts.pending || 0,
+            active: statusCounts.active || 0,
+            suspended: statusCounts.suspended || 0,
+            revoked: statusCounts.revoked || 0,
+          },
+          pagination: {
+            page: filters.page,
+            pageSize: filters.pageSize,
+            hasMore: offset + mapped.length < totalRows,
+          },
+          refreshedAt: formatJst(refreshedAtMs, true),
+          orgId: actorOrgId,
+        },
+      };
+      captureDiagnostics(config, 'info', 'd1_admin_users', {
+        event: 'd1_admin_users',
+        requestId,
+        orgId: actorOrgId,
+        totalRows,
+        returnedRows: mapped.length,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: resultPayload },
+        allowedOrigin,
+        requestId
+      );
+    }
     if (normalizedRoute === 'getUserSettings') {
       const email = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
@@ -1940,6 +2165,303 @@ async function maybeHandleRouteWithD1(options) {
         requestId,
         email: actorEmail,
       });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'adminUpdateUser') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '管理者権限が必要です。'
+        );
+      }
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!actorMembership || !actorMembership.org_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_required',
+          '管理対象の組織が確認できません。'
+        );
+      }
+      const argsArray =
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args
+          : [];
+      const updatePayload = argsArray.length ? argsArray[0] || {} : {};
+      const targetEmail = normalizeEmailValue(updatePayload.email || '');
+      const targetUserId = normalizeIdValue(updatePayload.userId || '');
+      if (!targetEmail && !targetUserId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'user_required',
+          '更新対象のユーザーを指定してください。'
+        );
+      }
+      const action =
+        typeof updatePayload.action === 'string'
+          ? updatePayload.action.trim().toLowerCase()
+          : '';
+      const mapActionToStatus = (value) => {
+        switch (value) {
+          case 'approve':
+          case 'activate':
+          case 'resume':
+            return 'active';
+          case 'suspend':
+            return 'suspended';
+          case 'pending':
+            return 'pending';
+          case 'revoke':
+            return 'revoked';
+          default:
+            return '';
+        }
+      };
+      let requestedStatus = '';
+      if (typeof updatePayload.status === 'string' && updatePayload.status.trim()) {
+        requestedStatus = normalizeUserStatusValue(updatePayload.status);
+      } else {
+        requestedStatus = mapActionToStatus(action);
+      }
+      let requestedRole = '';
+      if (typeof updatePayload.role === 'string' && updatePayload.role.trim()) {
+        requestedRole = normalizeRoleValue(updatePayload.role);
+      }
+      if (!requestedStatus && !requestedRole) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'payload_missing',
+          'ステータスまたはロールを指定してください。'
+        );
+      }
+      const targetLookup = await db
+        .prepare(
+          `
+          SELECT u.user_id,
+                 u.email,
+                 u.display_name,
+                 u.status AS user_status,
+                 u.is_active,
+                 u.approved_by,
+                 u.approved_at_ms,
+                 ms.membership_id,
+                 ms.status AS membership_status,
+                 ms.role,
+                 ms.org_id
+            FROM users u
+            LEFT JOIN memberships ms
+              ON ms.user_id = u.user_id
+             AND ms.org_id = ?1
+           WHERE ${targetUserId ? 'u.user_id = ?2' : 'lower(u.email) = ?2'}
+           LIMIT 1
+        `
+        )
+        .bind(actorMembership.org_id, targetUserId || targetEmail)
+        .first();
+      if (!targetLookup) {
+        return jsonResponseFromD1(
+          404,
+          {
+            ok: false,
+            success: false,
+            result: {
+              success: false,
+              message: '対象ユーザーが見つかりません。',
+            },
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const membershipInfo = targetLookup.membership_id
+        ? {
+            membership_id: targetLookup.membership_id,
+            role: targetLookup.role,
+            status: targetLookup.membership_status,
+          }
+        : await ensureMembershipForOrg(db, targetLookup.user_id, actorMembership.org_id, {
+            role: targetLookup.role || 'member',
+            status: targetLookup.user_status || 'pending',
+          });
+      const membershipId = membershipInfo?.membership_id;
+      if (!membershipId) {
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'membership_missing',
+          'ユーザーの所属情報を更新できませんでした。'
+        );
+      }
+      const currentRole = normalizeRoleValue(membershipInfo?.role || targetLookup.role || 'member') || 'member';
+      const currentStatus = computeEffectiveStatus(
+        targetLookup.user_status,
+        membershipInfo?.status,
+        membershipId,
+        targetLookup.is_active
+      );
+      const actorRole = normalizeRoleValue(accessContext?.role);
+      if (currentRole === 'admin' && actorRole !== 'admin') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'admin_only',
+          '管理者ユーザーの変更は管理者のみが実行できます。'
+        );
+      }
+      if (requestedRole === 'admin' && actorRole !== 'admin') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'admin_only',
+          '管理者ロールの付与には管理者権限が必要です。'
+        );
+      }
+      const changes = [];
+      const statements = [];
+      const now = Date.now();
+      if (requestedRole && requestedRole !== currentRole) {
+        statements.push(
+          db
+            .prepare('UPDATE memberships SET role = ?1 WHERE membership_id = ?2')
+            .bind(requestedRole, membershipId)
+        );
+        changes.push('role');
+      }
+      if (requestedStatus && requestedStatus !== currentStatus) {
+        const activeFlag = requestedStatus === 'active' ? 1 : 0;
+        const approvedBy = requestedStatus === 'active' ? actorEmail : targetLookup.approved_by || null;
+        const approvedAt = requestedStatus === 'active' ? now : null;
+        statements.push(
+          db
+            .prepare(
+              `
+              UPDATE users
+                 SET status = ?1,
+                     is_active = ?2,
+                     approved_by = ?3,
+                     approved_at_ms = ?4,
+                     updated_at_ms = ?5
+               WHERE user_id = ?6
+            `
+            )
+            .bind(requestedStatus, activeFlag, approvedBy, approvedAt, now, targetLookup.user_id)
+        );
+        statements.push(
+          db
+            .prepare('UPDATE memberships SET status = ?1 WHERE membership_id = ?2')
+            .bind(requestedStatus, membershipId)
+        );
+        changes.push('status');
+      }
+      if (!statements.length) {
+        return jsonResponseFromD1(
+          200,
+          {
+            ok: true,
+            success: true,
+            result: {
+              success: true,
+              message: '変更はありません。',
+              changes: [],
+            },
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      try {
+        await db.batch(statements);
+      } catch (err) {
+        console.error('[ShiftFlow][Admin] Failed to update user', {
+          requestId,
+          email: targetLookup.email || targetEmail,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'update_failed',
+          'ユーザーの更新に失敗しました。'
+        );
+      }
+      if (changes.includes('status')) {
+        await insertAuditLog(db, {
+          orgId: actorMembership.org_id,
+          actorMembershipId: actorMembership.membership_id || null,
+          targetType: 'user',
+          targetId: targetLookup.user_id,
+          action: 'user_status_update',
+          payload: {
+            to: requestedStatus,
+            from: currentStatus,
+            email: targetLookup.email || targetEmail,
+          },
+        });
+      }
+      if (changes.includes('role')) {
+        await insertAuditLog(db, {
+          orgId: actorMembership.org_id,
+          actorMembershipId: actorMembership.membership_id || null,
+          targetType: 'user',
+          targetId: targetLookup.user_id,
+          action: 'user_role_update',
+          payload: {
+            to: requestedRole,
+            from: currentRole,
+            email: targetLookup.email || targetEmail,
+          },
+        });
+      }
+      captureDiagnostics(config, 'info', 'd1_admin_user_updated', {
+        event: 'd1_admin_user_updated',
+        requestId,
+        orgId: actorMembership.org_id,
+        changes,
+        email: targetLookup.email || targetEmail,
+      });
+      const responsePayload = {
+        success: true,
+        message: 'ユーザー情報を更新しました。',
+        changes,
+      };
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: responsePayload },
@@ -3756,6 +4278,96 @@ async function deleteAttachmentRecords(db, env, attachmentIds) {
       });
     }
   }
+}
+
+async function ensureMembershipForOrg(db, userId, orgId, defaults = {}) {
+  if (!db || !userId || !orgId) {
+    return null;
+  }
+  const existing = await db
+    .prepare(
+      `
+      SELECT membership_id,
+             role,
+             status
+        FROM memberships
+       WHERE user_id = ?1
+         AND org_id = ?2
+       LIMIT 1
+    `
+    )
+    .bind(userId, orgId)
+    .first();
+  if (existing) {
+    return existing;
+  }
+  const now = Date.now();
+  const membershipId = createUlid(now);
+  const role = normalizeRoleValue(defaults.role) || 'member';
+  const status = normalizeUserStatusValue(defaults.status) || 'pending';
+  await db
+    .prepare(
+      `
+      INSERT INTO memberships (
+        membership_id,
+        org_id,
+        user_id,
+        role,
+        status,
+        created_at_ms
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    `
+    )
+    .bind(membershipId, orgId, userId, role, status, now)
+    .run();
+  return {
+    membership_id: membershipId,
+    role,
+    status,
+  };
+}
+
+async function insertAuditLog(db, entry) {
+  if (!db || !entry || !entry.orgId) {
+    return;
+  }
+  const timestamp = typeof entry.createdAtMs === 'number' ? entry.createdAtMs : Date.now();
+  let payloadJson = null;
+  if (entry.payload && typeof entry.payload === 'object') {
+    try {
+      payloadJson = JSON.stringify(entry.payload);
+    } catch (_err) {
+      payloadJson = null;
+    }
+  }
+  await db
+    .prepare(
+      `
+      INSERT INTO audit_logs (
+        audit_id,
+        org_id,
+        actor_membership_id,
+        target_type,
+        target_id,
+        action,
+        created_at_ms,
+        payload_json
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `
+    )
+    .bind(
+      createUlid(timestamp),
+      entry.orgId,
+      entry.actorMembershipId || null,
+      entry.targetType || 'user',
+      entry.targetId || null,
+      entry.action || 'admin_update',
+      timestamp,
+      payloadJson
+    )
+    .run();
 }
 
 async function resolveMembershipForEmail(db, email) {

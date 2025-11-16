@@ -2576,6 +2576,56 @@
         font-size: 0.85rem;
         color: var(--muted);
       }
+      .admin-users-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .admin-users-table th,
+      .admin-users-table td {
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .admin-user-cell {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 220px;
+      }
+      .admin-user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 20px;
+        object-fit: cover;
+        border: 1px solid var(--card-border);
+      }
+      .admin-users-summary {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 12px 0;
+      }
+      .admin-users-summary-item {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        padding: 10px 16px;
+        box-shadow: var(--card-shadow);
+        min-width: 120px;
+      }
+      .admin-users-summary-item strong {
+        display: block;
+        font-size: 1.15rem;
+      }
+      .admin-users-loading {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+      .admin-filter-actions {
+        align-self: flex-end;
+      }
       .admin-bottom-meta {
         margin-top: 20px;
       }
@@ -3595,64 +3645,74 @@
                   <p>ステータス・ロール・組織を横断して管理します。</p>
                 </div>
                 <div class="admin-panel-body">
-                  <div class="admin-filter-bar">
+                  <div class="admin-filter-bar" id="adminUsersFilters">
                     <div class="admin-filter-item">
-                      <label class="form-label">キーワード</label>
-                      <input type="search" class="form-control" placeholder="名前・メールで検索" />
+                      <label class="form-label" for="adminUsersSearch">キーワード</label>
+                      <input
+                        type="search"
+                        class="form-control"
+                        id="adminUsersSearch"
+                        placeholder="名前・メールで検索"
+                      />
                     </div>
                     <div class="admin-filter-item">
-                      <label class="form-label">ステータス</label>
-                      <select class="form-select">
-                        <option>すべて</option>
-                        <option>Pending</option>
-                        <option>Active</option>
-                        <option>Suspended</option>
+                      <label class="form-label" for="adminUsersStatus">ステータス</label>
+                      <select class="form-select" id="adminUsersStatus">
+                        <option value="">すべて</option>
+                        <option value="pending">承認待ち</option>
+                        <option value="active">有効</option>
+                        <option value="suspended">停止中</option>
+                        <option value="revoked">剥奪</option>
                       </select>
                     </div>
                     <div class="admin-filter-item">
-                      <label class="form-label">ロール</label>
-                      <select class="form-select">
-                        <option>すべて</option>
-                        <option>Admin</option>
-                        <option>Manager</option>
-                        <option>Member</option>
+                      <label class="form-label" for="adminUsersRole">ロール</label>
+                      <select class="form-select" id="adminUsersRole">
+                        <option value="">すべて</option>
+                        <option value="admin">Admin</option>
+                        <option value="manager">Manager</option>
+                        <option value="member">Member</option>
+                        <option value="guest">Guest</option>
                       </select>
                     </div>
+                    <div class="admin-filter-item admin-filter-actions">
+                      <label class="form-label d-none d-md-block">&nbsp;</label>
+                      <button class="btn btn-outline-secondary w-100" type="button" id="btnAdminUsersReload">
+                        <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                      </button>
+                    </div>
                   </div>
-                  <div class="admin-placeholder mb-3">
-                    検索・フィルタ・ページング UI をここに配置予定です。`status`, `role`, `org` など URL と同期させます。
+                  <div class="admin-users-meta">
+                    <div class="admin-users-summary" id="adminUsersSummary"></div>
+                    <div class="small text-muted" id="adminUsersUpdatedAt"></div>
                   </div>
-                  <div class="table-responsive">
-                    <table class="admin-placeholder-table">
+                  <div class="admin-placeholder" id="adminUsersNotice" hidden></div>
+                  <div class="table-responsive" id="adminUsersTableWrap" aria-live="polite">
+                    <table class="table admin-users-table">
                       <thead>
                         <tr>
-                          <th>表示名</th>
-                          <th>メール</th>
-                          <th>所属 / ロール</th>
-                          <th>ステータス</th>
-                          <th>最終ログイン</th>
+                          <th scope="col">ユーザー</th>
+                          <th scope="col">メール</th>
+                          <th scope="col">ロール</th>
+                          <th scope="col">ステータス</th>
+                          <th scope="col">最終ログイン</th>
+                          <th scope="col" class="text-end">操作</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody id="adminUsersTableBody">
                         <tr>
-                          <td>承認待ちユーザー</td>
-                          <td>pending@example.com</td>
-                          <td>未割当</td>
-                          <td><span class="badge bg-warning text-dark">Pending</span></td>
-                          <td>—</td>
-                        </tr>
-                        <tr>
-                          <td>既存メンバー</td>
-                          <td>member@example.com</td>
-                          <td>フロント (member)</td>
-                          <td><span class="badge bg-success">Active</span></td>
-                          <td>2024/05/01 09:12</td>
-                        </tr>
-                        <tr>
-                          <td colspan="5">行操作（承認 / 停止 / 編集）はボタン + モーダルで実装予定です。</td>
+                          <td colspan="6">
+                            <div class="admin-users-loading">
+                              <span class="material-icons-outlined align-middle">hourglass_top</span>
+                              読み込み中...
+                            </div>
+                          </td>
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                  <div class="admin-placeholder text-center" id="adminUsersEmpty" hidden>
+                    条件に一致するユーザーがいません。
                   </div>
                 </div>
               </section>
@@ -4307,6 +4367,7 @@
           currentEmail: typeof user.email === 'string' ? user.email : '',
           theme: user.theme || bootstrap.theme || 'light',
           imageUrl: typeof user.imageUrl === 'string' ? user.imageUrl : '',
+          role: typeof user.role === 'string' ? user.role : '',
           isManager: !!bootstrap.isManager,
           myTasks:
             bootstrap.myTasks && typeof bootstrap.myTasks === 'object'
@@ -4324,7 +4385,39 @@
           ? __BOOT__.myTasks
           : { tasks: [], meta: {} };
       let IS_MANAGER = !!__BOOT__.isManager;
+      const CURRENT_USER_ROLE = typeof __BOOT__.role === 'string' ? __BOOT__.role : '';
+      const IS_ADMIN = String(CURRENT_USER_ROLE || '').toLowerCase() === 'admin';
       let ADMIN_STATE = { active: false, section: 'dashboard', orgId: 'current', orgLabel: '現在の組織' };
+      const ADMIN_SECTION_LISTENERS = [];
+      const ADMIN_ORG_LISTENERS = [];
+      function addAdminSectionListener(fn) {
+        if (typeof fn === 'function') {
+          ADMIN_SECTION_LISTENERS.push(fn);
+        }
+      }
+      function notifyAdminSectionListeners(section) {
+        ADMIN_SECTION_LISTENERS.forEach(function (fn) {
+          try {
+            fn(section);
+          } catch (err) {
+            console.warn('Admin section listener failed:', err);
+          }
+        });
+      }
+      function addAdminOrgListener(fn) {
+        if (typeof fn === 'function') {
+          ADMIN_ORG_LISTENERS.push(fn);
+        }
+      }
+      function notifyAdminOrgListeners(orgId) {
+        ADMIN_ORG_LISTENERS.forEach(function (fn) {
+          try {
+            fn(orgId);
+          } catch (err) {
+            console.warn('Admin org listener failed:', err);
+          }
+        });
+      }
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
       const SHIFT_FLOW_CONFIG = window.SHIFT_FLOW_CONFIG || {};
       const {
@@ -6564,6 +6657,12 @@
           return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
       }
+      function cssEscapeValue(value) {
+          if (window.CSS && typeof window.CSS.escape === 'function') {
+            return window.CSS.escape(value);
+          }
+          return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+      }
       function scrollToTopNow() {
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
@@ -6631,6 +6730,7 @@
           };
           descEl.textContent = descMap[target] || '';
         }
+        notifyAdminSectionListeners(target);
       }
       function setAdminOrg(orgId, label) {
         ADMIN_STATE.orgId = orgId || 'current';
@@ -6641,6 +6741,7 @@
           var match = item.getAttribute('data-org-id') === ADMIN_STATE.orgId;
           item.classList.toggle('active', match);
         });
+        notifyAdminOrgListeners(ADMIN_STATE.orgId);
       }
       function moveAdminTrack(section, opts) {
         var track = byId('adminTrack');
@@ -10055,6 +10156,421 @@
         }
       }
 
+      const AdminUsersController = (function () {
+        const STATUS_LABELS = {
+          pending: '承認待ち',
+          active: '有効',
+          suspended: '停止中',
+          revoked: '剥奪',
+        };
+        const STATUS_CLASSES = {
+          pending: 'badge bg-warning text-dark',
+          active: 'badge bg-success',
+          suspended: 'badge bg-secondary',
+          revoked: 'badge bg-danger',
+        };
+        const ROLE_OPTIONS = [
+          { value: 'admin', label: 'Admin' },
+          { value: 'manager', label: 'Manager' },
+          { value: 'member', label: 'Member' },
+          { value: 'guest', label: 'Guest' },
+        ];
+        const state = {
+          rows: [],
+          filters: { search: '', status: '', role: '', orgId: 'current' },
+          loading: false,
+          loaded: false,
+          managerOnly: false,
+          requestToken: 0,
+          searchTimer: 0,
+          busyRowId: '',
+          meta: {},
+        };
+
+        function getOrgFilter() {
+          return state.filters.orgId === 'current' ? ADMIN_STATE.orgId || 'current' : state.filters.orgId;
+        }
+
+        function setNotice(message, isError) {
+          var el = byId('adminUsersNotice');
+          if (!el) return;
+          if (!message) {
+            el.textContent = '';
+            el.setAttribute('hidden', 'hidden');
+            el.classList.remove('text-danger');
+            return;
+          }
+          el.textContent = message;
+          el.classList.toggle('text-danger', !!isError);
+          el.removeAttribute('hidden');
+        }
+
+        function setLoading(flag) {
+          state.loading = !!flag;
+          var body = byId('adminUsersTableBody');
+          if (!body) return;
+          if (flag) {
+            body.innerHTML =
+              '<tr><td colspan="6"><div class="admin-users-loading"><span class="material-icons-outlined align-middle">hourglass_top</span>読み込み中...</div></td></tr>';
+          }
+        }
+
+        function renderSummary(meta) {
+          var wrap = byId('adminUsersSummary');
+          if (!wrap) return;
+          var stats = meta && meta.stats ? meta.stats : null;
+          if (!stats) {
+            wrap.innerHTML = '';
+            return;
+          }
+          wrap.innerHTML =
+            '<div class="admin-users-summary-item"><small class="text-muted">総数</small><strong>' +
+            esc(String(stats.total || 0)) +
+            '</strong></div>' +
+            '<div class="admin-users-summary-item"><small class="text-muted">承認待ち</small><strong>' +
+            esc(String(stats.pending || 0)) +
+            '</strong></div>' +
+            '<div class="admin-users-summary-item"><small class="text-muted">有効</small><strong>' +
+            esc(String(stats.active || 0)) +
+            '</strong></div>' +
+            '<div class="admin-users-summary-item"><small class="text-muted">停止中</small><strong>' +
+            esc(String(stats.suspended || 0)) +
+            '</strong></div>';
+        }
+
+        function renderUpdatedAt(meta) {
+          var el = byId('adminUsersUpdatedAt');
+          if (!el) return;
+          if (meta && meta.refreshedAt) {
+            el.textContent = '最終更新: ' + meta.refreshedAt;
+          } else {
+            el.textContent = '';
+          }
+        }
+
+        function canModifyRow(row) {
+          if (IS_ADMIN) return true;
+          return String(row.role || '').toLowerCase() !== 'admin';
+        }
+
+        function buildStatusBadge(row) {
+          var status = String(row.status || '').toLowerCase();
+          var cls = STATUS_CLASSES[status] || 'badge bg-secondary';
+          var label = STATUS_LABELS[status] || status || '―';
+          return '<span class="' + cls + '">' + esc(label) + '</span>';
+        }
+
+        function buildRoleControl(row) {
+          var normalizedRole = String(row.role || 'member');
+          if (!canModifyRow(row)) {
+            return '<span>' + esc(normalizedRole) + '</span>';
+          }
+          var options = ROLE_OPTIONS.filter(function (opt) {
+            if (opt.value === 'admin' && !IS_ADMIN) return false;
+            return true;
+          })
+            .map(function (opt) {
+              var selected = opt.value === normalizedRole ? ' selected' : '';
+              return '<option value="' + esc(opt.value) + '"' + selected + '>' + esc(opt.label) + '</option>';
+            })
+            .join('');
+          return (
+            '<select class="form-select form-select-sm admin-user-role-select" data-user-id="' +
+            esc(row.userId) +
+            '" data-user-email="' +
+            esc(row.email) +
+            '">' +
+            options +
+            '</select>'
+          );
+        }
+
+        function buildActionButtons(row) {
+          if (!canModifyRow(row)) {
+            return '<span class="text-muted">—</span>';
+          }
+          var actions = [];
+          var actionTemplate = function (action, label, style) {
+            return (
+              '<button type="button" class="btn btn-sm ' +
+              style +
+              '" data-admin-user-action="' +
+              action +
+              '" data-user-id="' +
+              esc(row.userId) +
+              '" data-user-email="' +
+              esc(row.email) +
+              '">' +
+              esc(label) +
+              '</button>'
+            );
+          };
+          var status = String(row.status || '').toLowerCase();
+          if (status === 'pending') {
+            actions.push(actionTemplate('activate', '承認', 'btn-primary me-1'));
+            actions.push(actionTemplate('suspend', '停止', 'btn-outline-secondary'));
+          } else if (status === 'active') {
+            actions.push(actionTemplate('suspend', '停止', 'btn-outline-secondary'));
+          } else {
+            actions.push(actionTemplate('resume', '再開', 'btn-outline-primary'));
+          }
+          return actions.join('');
+        }
+
+        function renderTable() {
+          var body = byId('adminUsersTableBody');
+          var emptyEl = byId('adminUsersEmpty');
+          if (!body) return;
+          if (!state.rows.length) {
+            body.innerHTML = '';
+            if (emptyEl && !state.loading && !state.managerOnly) {
+              emptyEl.removeAttribute('hidden');
+            }
+            return;
+          }
+          if (emptyEl) emptyEl.setAttribute('hidden', 'hidden');
+          var html = state.rows
+            .map(function (row) {
+              var actions = buildActionButtons(row);
+              return (
+                '<tr data-admin-user-row="' +
+                esc(row.userId) +
+                '">' +
+                '<td><div class="admin-user-cell"><img src="' +
+                esc(row.avatarUrl || PROFILE_PLACEHOLDER_URL) +
+                '" alt="" class="admin-user-avatar" /><div><strong>' +
+                esc(row.name || row.email) +
+                '</strong><div class="small text-muted">' +
+                esc(row.orgName || '') +
+                '</div></div></div></td>' +
+                '<td><div class="small">' + esc(row.email) + '</div></td>' +
+                '<td>' +
+                buildRoleControl(row) +
+                '</td>' +
+                '<td>' +
+                buildStatusBadge(row) +
+                '</td>' +
+                '<td>' +
+                esc(row.lastLoginLabel || '―') +
+                '</td>' +
+                '<td class="text-end" data-admin-user-actions="' +
+                esc(row.userId) +
+                '">' +
+                (actions || '<span class="text-muted">—</span>') +
+                '</td>' +
+                '</tr>'
+              );
+            })
+            .join('');
+          body.innerHTML = html;
+        }
+
+        function applyPayload(payload) {
+          var result = payload && payload.rows ? payload.rows : [];
+          var meta = (payload && payload.meta) || {};
+          state.rows = result.map(function (row) {
+            return {
+              userId: row.userId || row.email || 'user_' + Math.random().toString(16).slice(2),
+              membershipId: row.membershipId || '',
+              email: row.email || '',
+              name: row.name || row.email || '',
+              role: (row.role || 'member').toLowerCase(),
+              status: (row.status || 'pending').toLowerCase(),
+              avatarUrl: row.avatarUrl || PROFILE_PLACEHOLDER_URL,
+              orgName: row.orgName || '現在の組織',
+              lastLoginLabel: row.lastLoginLabel || row.lastLogin || '―',
+            };
+          });
+          state.meta = meta;
+          state.loaded = true;
+          state.managerOnly = !!meta.managerOnly;
+          if (state.managerOnly) {
+            setNotice(meta.reason || '管理者権限が必要です。', false);
+          } else {
+            setNotice('', false);
+          }
+          renderTable();
+          renderSummary(meta);
+          renderUpdatedAt(meta);
+        }
+
+        function scheduleFetch(delay) {
+          if (state.searchTimer) {
+            clearTimeout(state.searchTimer);
+          }
+          state.searchTimer = setTimeout(function () {
+            fetchUsers();
+          }, typeof delay === 'number' ? delay : 320);
+        }
+
+        function buildRequestArgs() {
+          return {
+            search: state.filters.search,
+            status: state.filters.status,
+            role: state.filters.role,
+            orgId: getOrgFilter(),
+          };
+        }
+
+        function fetchUsers() {
+          if (!IS_MANAGER) {
+            setNotice('管理者権限が必要です。', true);
+            return Promise.resolve(false);
+          }
+          var requestId = ++state.requestToken;
+          setLoading(true);
+          return new Promise(function (resolve) {
+            google.script.run
+              .withSuccessHandler(function (payload) {
+                if (requestId !== state.requestToken) {
+                  resolve(false);
+                  return;
+                }
+                setLoading(false);
+                applyPayload(payload);
+                resolve(true);
+              })
+              .withFailureHandler(function (err) {
+                if (requestId !== state.requestToken) {
+                  resolve(false);
+                  return;
+                }
+                setLoading(false);
+                setNotice(
+                  err && err.message ? err.message : 'ユーザー一覧の取得に失敗しました。',
+                  true
+                );
+                state.rows = [];
+                renderTable();
+                resolve(false);
+              })
+              .adminListUsers(buildRequestArgs());
+          });
+        }
+
+        function setRowBusy(userId, busy) {
+          var row = document.querySelector('[data-admin-user-row="' + cssEscapeValue(userId) + '"]');
+          if (!row) return;
+          var controls = row.querySelectorAll('button,select');
+          controls.forEach(function (el) {
+            el.disabled = !!busy;
+          });
+          var actionsCell = row.querySelector('[data-admin-user-actions]');
+          if (actionsCell) {
+            actionsCell.classList.toggle('opacity-50', !!busy);
+          }
+        }
+
+        function performUpdate(payload) {
+          if (!payload || !payload.userId) return;
+          setRowBusy(payload.userId, true);
+          google.script.run
+            .withSuccessHandler(function (res) {
+              setRowBusy(payload.userId, false);
+              notify(res && res.message ? res.message : '更新しました。', res && res.success !== false);
+              fetchUsers();
+            })
+            .withFailureHandler(function (err) {
+              setRowBusy(payload.userId, false);
+              notify(err && err.message ? err.message : '更新に失敗しました。', false);
+            })
+            .adminUpdateUser(payload);
+        }
+
+        function handleSearchInput(event) {
+          state.filters.search = event && event.target ? event.target.value.trim() : '';
+          scheduleFetch(420);
+        }
+
+        function handleStatusChange(event) {
+          state.filters.status = event && event.target ? event.target.value : '';
+          fetchUsers();
+        }
+
+        function handleRoleFilterChange(event) {
+          state.filters.role = event && event.target ? event.target.value : '';
+          fetchUsers();
+        }
+
+        function handleRoleSelectChange(event) {
+          var select = event.target.closest('.admin-user-role-select');
+          if (!select) return;
+          var userId = select.getAttribute('data-user-id');
+          var email = select.getAttribute('data-user-email');
+          var nextRole = select.value;
+          if (!userId || !nextRole) return;
+          if (!window.confirm('ロールを ' + nextRole + ' に変更しますか？')) {
+            var row = state.rows.find(function (entry) {
+              return entry.userId === userId;
+            });
+            if (row) {
+              select.value = row.role;
+            }
+            return;
+          }
+          performUpdate({ userId: userId, email: email, role: nextRole });
+        }
+
+        function handleActionClick(event) {
+          var btn = event.target.closest('[data-admin-user-action]');
+          if (!btn) return;
+          var action = btn.getAttribute('data-admin-user-action');
+          var userId = btn.getAttribute('data-user-id');
+          var email = btn.getAttribute('data-user-email');
+          if (!action || !userId) return;
+          var message = 'この操作を実行しますか？';
+          if (action === 'activate') message = 'ユーザーを承認しますか？';
+          else if (action === 'suspend') message = 'ユーザーを停止しますか？';
+          else if (action === 'resume') message = 'ユーザーを再開しますか？';
+          if (!window.confirm(message)) return;
+          performUpdate({ userId: userId, email: email, action: action });
+        }
+
+        function ensureLoaded() {
+          if (!IS_MANAGER) return;
+          state.filters.orgId = ADMIN_STATE.orgId || 'current';
+          if (!state.loaded && !state.loading) {
+            fetchUsers();
+          }
+        }
+
+        function init() {
+          state.filters.orgId = ADMIN_STATE.orgId || 'current';
+          var searchEl = byId('adminUsersSearch');
+          if (searchEl) searchEl.addEventListener('input', handleSearchInput);
+          var statusEl = byId('adminUsersStatus');
+          if (statusEl) statusEl.addEventListener('change', handleStatusChange);
+          var roleEl = byId('adminUsersRole');
+          if (roleEl) roleEl.addEventListener('change', handleRoleFilterChange);
+          var reloadBtn = byId('btnAdminUsersReload');
+          if (reloadBtn) reloadBtn.addEventListener('click', function () {
+            fetchUsers();
+          });
+          var table = byId('adminUsersTableBody');
+          if (table) {
+            table.addEventListener('change', handleRoleSelectChange);
+            table.addEventListener('click', handleActionClick);
+          }
+          addAdminSectionListener(function (section) {
+            if (section === 'users') {
+              ensureLoaded();
+            }
+          });
+          addAdminOrgListener(function (orgId) {
+            state.filters.orgId = orgId || 'current';
+            state.loaded = false;
+            if (ADMIN_STATE.section === 'users' && ADMIN_STATE.active) {
+              fetchUsers();
+            }
+          });
+        }
+
+        return {
+          init: init,
+          ensureLoaded: ensureLoaded,
+        };
+      })();
+
       // ===== ビューナビゲーション・フォーム初期化 =====
       const NavigationController = (function () {
         function handleViewLinkClick(event) {
@@ -10277,6 +10793,7 @@
         MessageAttachmentController.init();
         TaskFormController.init();
         MessageFormController.init();
+        AdminUsersController.init();
 
         initPullToRefresh();
         initializeAuthGateway();

@@ -105,6 +105,8 @@ const ROUTE_PERMISSIONS = {
   saveUserSettings: ['admin', 'manager', 'member'],
   listActiveUsers: ['admin', 'manager'],
   listActiveFolders: ['admin', 'manager', 'member'],
+  adminListUsers: ['admin', 'manager'],
+  adminUpdateUser: ['admin', 'manager'],
   clearCache: ['admin'],
   getAuditLogs: ['admin', 'manager'],
 };
