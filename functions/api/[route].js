@@ -28,6 +28,16 @@ const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.
 const ACCESS_CACHE = new Map();
 const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const MAX_ULID_TIME = 2 ** 48 - 1;
+const DEFAULT_ORG_COLOR = '#517CB2';
+const DEFAULT_ORG_TIMEZONE = 'Asia/Tokyo';
+const HEX_COLOR_REGEX = /^#?([0-9a-fA-F]{6})$/;
+const SUPPORTED_TIMEZONES = [
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'UTC',
+  'America/Los_Angeles',
+  'Europe/London',
+];
 
 function sanitizeLogMeta(meta) {
   if (!meta || typeof meta !== 'object') {
@@ -1907,6 +1917,236 @@ async function maybeHandleRouteWithD1(options) {
         requestId
       );
     }
+    if (normalizedRoute === 'adminListOrganizations') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '管理者権限が必要です。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!actorMembership || !actorMembership.user_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '所属組織が見つかりません。'
+        );
+      }
+      let orgRows = [];
+      try {
+        const query = await db
+          .prepare(
+            `
+            SELECT org.org_id,
+                   org.name,
+                   org.short_name,
+                   org.display_color,
+                   org.timezone,
+                   org.notification_email,
+                   org.created_at_ms,
+                   org.updated_at_ms,
+                   ms.role AS membership_role,
+                   ms.status AS membership_status
+              FROM memberships ms
+              JOIN organizations org ON org.org_id = ms.org_id
+             WHERE ms.user_id = ?1
+               AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+             ORDER BY org.created_at_ms ASC
+          `
+          )
+          .bind(actorMembership.user_id)
+          .all();
+        orgRows = Array.isArray(query?.results) ? query.results : [];
+      } catch (err) {
+        console.warn('[ShiftFlow][Admin][Org] Failed to list organizations', {
+          requestId,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_list_failed',
+          '組織一覧の取得に失敗しました。'
+        );
+      }
+      const mapped = orgRows.map((row) => ({
+        orgId: row.org_id,
+        name: row.name || '未設定の組織',
+        shortName: row.short_name || '',
+        displayColor: normalizeOrgColor(row.display_color) || DEFAULT_ORG_COLOR,
+        timezone: row.timezone || DEFAULT_ORG_TIMEZONE,
+        notificationEmail: row.notification_email || '',
+        createdAt: row.created_at_ms || null,
+        updatedAt: row.updated_at_ms || null,
+        role: normalizeRoleValue(row.membership_role || 'member'),
+      }));
+      const candidateOrgIds = new Set(mapped.map((entry) => entry.orgId));
+      let defaultOrgId = '';
+      if (candidateOrgIds.has(accessContext?.orgId || '')) {
+        defaultOrgId = accessContext.orgId || '';
+      } else if (candidateOrgIds.has(actorMembership.org_id || '')) {
+        defaultOrgId = actorMembership.org_id || '';
+      } else if (mapped.length > 0) {
+        defaultOrgId = mapped[0].orgId;
+      }
+      const payload = {
+        orgs: mapped,
+        meta: {
+          total: mapped.length,
+          defaultOrgId,
+        },
+      };
+      captureDiagnostics(config, 'info', 'd1_admin_org_list', {
+        event: 'd1_admin_org_list',
+        requestId,
+        total: mapped.length,
+        user: actorEmail,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'adminGetOrganization') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '管理者権限が必要です。'
+        );
+      }
+      const argsObject =
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args[0] || {}
+          : {};
+      const requestedOrgId =
+        typeof argsObject.orgId === 'string' ? argsObject.orgId.trim() : '';
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!actorMembership || !actorMembership.user_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '所属組織が見つかりません。'
+        );
+      }
+      let orgId = requestedOrgId || accessContext?.orgId || actorMembership.org_id || '';
+      if (!orgId) {
+        orgId = await resolveDefaultOrgId(db);
+      }
+      if (!orgId) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '参照可能な組織が見つかりません。'
+        );
+      }
+      const membership = await fetchMembershipForOrg(db, actorMembership.user_id, orgId);
+      const membershipStatus = (membership?.status || '').trim().toLowerCase();
+      if (!membership || (membershipStatus && membershipStatus !== 'active')) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_access_denied',
+          '指定の組織にアクセスできません。'
+        );
+      }
+      const actorRole = normalizeRoleValue(membership.role || accessContext?.role || '');
+      if (!isManagerRole(actorRole)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_access_denied',
+          '指定の組織にアクセスできません。'
+        );
+      }
+      const orgRow = await db
+        .prepare(
+          `
+          SELECT org_id,
+                 name,
+                 short_name,
+                 display_color,
+                 timezone,
+                 notification_email,
+                 created_at_ms,
+                 updated_at_ms
+            FROM organizations
+           WHERE org_id = ?1
+           LIMIT 1
+        `
+        )
+        .bind(orgId)
+        .first();
+      if (!orgRow) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '組織情報が見つかりません。'
+        );
+      }
+      const stats = await fetchOrgMemberStats(db, orgId);
+      const refreshedAtMs = Date.now();
+      const payload = {
+        org: {
+          orgId,
+          name: orgRow.name || '未設定の組織',
+          shortName: orgRow.short_name || '',
+          displayColor: normalizeOrgColor(orgRow.display_color) || DEFAULT_ORG_COLOR,
+          timezone: orgRow.timezone || DEFAULT_ORG_TIMEZONE,
+          notificationEmail: orgRow.notification_email || '',
+          createdAt: formatJst(orgRow.created_at_ms, true),
+          updatedAt: formatJst(orgRow.updated_at_ms || orgRow.created_at_ms, true),
+        },
+        stats,
+        refreshedAt: formatJst(refreshedAtMs, true),
+        orgId,
+      };
+      captureDiagnostics(config, 'info', 'd1_admin_org_detail', {
+        event: 'd1_admin_org_detail',
+        requestId,
+        orgId,
+        user: actorEmail,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
+    }
     if (normalizedRoute === 'getUserSettings') {
       const email = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
@@ -2168,6 +2408,195 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'adminUpdateOrganization') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '管理者権限が必要です。'
+        );
+      }
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
+      }
+      const payload =
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args[0] || {}
+          : {};
+      const nextName = typeof payload.name === 'string' ? payload.name.trim() : '';
+      if (!nextName) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_name_required',
+          '組織名を入力してください。'
+        );
+      }
+      const shortName =
+        typeof payload.shortName === 'string' ? payload.shortName.trim().slice(0, 32) : '';
+      const rawColor =
+        typeof payload.displayColor === 'string' && payload.displayColor
+          ? payload.displayColor
+          : DEFAULT_ORG_COLOR;
+      const normalizedColor = normalizeOrgColor(rawColor) || DEFAULT_ORG_COLOR;
+      const timezoneValue =
+        typeof payload.timezone === 'string' ? payload.timezone.trim() : DEFAULT_ORG_TIMEZONE;
+      const resolvedTimezone = coerceOrgTimezone(timezoneValue);
+      const rawNotifyEmail =
+        typeof payload.notificationEmail === 'string' ? payload.notificationEmail.trim() : '';
+      const normalizedNotifyEmail = rawNotifyEmail ? validateEmailFormat(rawNotifyEmail) : '';
+      if (rawNotifyEmail && !normalizedNotifyEmail) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'invalid_email',
+          '通知メールアドレスの形式が正しくありません。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!actorMembership || !actorMembership.user_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '所属組織が見つかりません。'
+        );
+      }
+      let orgId =
+        typeof payload.orgId === 'string'
+          ? payload.orgId.trim()
+          : accessContext?.orgId || actorMembership.org_id || '';
+      if (!orgId) {
+        orgId = await resolveDefaultOrgId(db);
+      }
+      if (!orgId) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '更新対象の組織が見つかりません。'
+        );
+      }
+      const membership = await fetchMembershipForOrg(db, actorMembership.user_id, orgId);
+      const membershipStatus = (membership?.status || '').trim().toLowerCase();
+      if (!membership || (membershipStatus && membershipStatus !== 'active')) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_access_denied',
+          '指定の組織にアクセスできません。'
+        );
+      }
+      const actorRole = normalizeRoleValue(membership.role || accessContext?.role || '');
+      if (!isManagerRole(actorRole)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_access_denied',
+          '指定の組織にアクセスできません。'
+        );
+      }
+      const now = Date.now();
+      try {
+        await db
+          .prepare(
+            `
+            UPDATE organizations
+               SET name = ?1,
+                   short_name = ?2,
+                   display_color = ?3,
+                   timezone = ?4,
+                   notification_email = ?5,
+                   updated_at_ms = ?6
+             WHERE org_id = ?7
+          `
+          )
+          .bind(
+            nextName,
+            shortName || null,
+            normalizedColor,
+            resolvedTimezone,
+            normalizedNotifyEmail || null,
+            now,
+            orgId
+          )
+          .run();
+      } catch (err) {
+        console.error('[ShiftFlow][Admin][Org] Failed to update organization', {
+          requestId,
+          orgId,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_update_failed',
+          '組織情報の更新に失敗しました。'
+        );
+      }
+      await insertAuditLog(db, {
+        orgId,
+        actorMembershipId: membership.membership_id,
+        targetType: 'organization',
+        targetId: orgId,
+        action: 'admin_org_update',
+        payload: {
+          name: nextName,
+          shortName,
+          displayColor: normalizedColor,
+          timezone: resolvedTimezone,
+          notificationEmail: normalizedNotifyEmail,
+        },
+        createdAtMs: now,
+      });
+      captureDiagnostics(config, 'info', 'd1_admin_org_update', {
+        event: 'd1_admin_org_update',
+        requestId,
+        orgId,
+        user: actorEmail,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            success: true,
+            message: '組織情報を更新しました。',
+            orgId,
+          },
+        },
         allowedOrigin,
         requestId
       );
@@ -4395,6 +4824,109 @@ async function resolveDefaultOrgId(db) {
     .prepare('SELECT org_id FROM organizations ORDER BY created_at_ms ASC LIMIT 1')
     .first();
   return row ? row.org_id : null;
+}
+
+function normalizeOrgColor(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(HEX_COLOR_REGEX);
+  if (!match) return null;
+  return '#' + match[1].toUpperCase();
+}
+
+function coerceOrgTimezone(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) {
+    return DEFAULT_ORG_TIMEZONE;
+  }
+  return SUPPORTED_TIMEZONES.includes(raw) ? raw : DEFAULT_ORG_TIMEZONE;
+}
+
+function validateEmailFormat(value) {
+  const email = normalizeEmailValue(value);
+  if (!email) return '';
+  const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  return emailRegex.test(email) ? email : '';
+}
+
+async function fetchMembershipForOrg(db, userId, orgId) {
+  if (!db || !userId || !orgId) return null;
+  const row = await db
+    .prepare(
+      `
+      SELECT membership_id,
+             role,
+             status
+        FROM memberships
+       WHERE user_id = ?1
+         AND org_id = ?2
+       LIMIT 1
+    `
+    )
+    .bind(userId, orgId)
+    .first();
+  return row || null;
+}
+
+async function fetchOrgMemberStats(db, orgId) {
+  if (!db || !orgId) {
+    return {
+      totalMembers: 0,
+      statusCounts: { pending: 0, active: 0, suspended: 0, revoked: 0 },
+      roleCounts: { admin: 0, manager: 0, member: 0, guest: 0 },
+    };
+  }
+  const statusRows = await db
+    .prepare(
+      `
+      SELECT LOWER(COALESCE(status, 'active')) AS status_key,
+             COUNT(*) AS row_count
+        FROM memberships
+       WHERE org_id = ?1
+       GROUP BY LOWER(COALESCE(status, 'active'))
+    `
+    )
+    .bind(orgId)
+    .all();
+  const roleRows = await db
+    .prepare(
+      `
+      SELECT LOWER(COALESCE(role, 'member')) AS role_key,
+             COUNT(*) AS row_count
+        FROM memberships
+       WHERE org_id = ?1
+         AND LOWER(COALESCE(status, 'active')) = 'active'
+       GROUP BY LOWER(COALESCE(role, 'member'))
+    `
+    )
+    .bind(orgId)
+    .all();
+  const statusCounts = { pending: 0, active: 0, suspended: 0, revoked: 0 };
+  const roleCounts = { admin: 0, manager: 0, member: 0, guest: 0 };
+  let totalMembers = 0;
+  const statusResults = Array.isArray(statusRows?.results) ? statusRows.results : [];
+  statusResults.forEach((row) => {
+    const statusKey = (row.status_key || '').trim();
+    const count = Number(row.row_count || 0);
+    totalMembers += count;
+    if (Object.prototype.hasOwnProperty.call(statusCounts, statusKey)) {
+      statusCounts[statusKey] = count;
+    }
+  });
+  const roleResults = Array.isArray(roleRows?.results) ? roleRows.results : [];
+  roleResults.forEach((row) => {
+    const roleKey = (row.role_key || '').trim();
+    const count = Number(row.row_count || 0);
+    if (Object.prototype.hasOwnProperty.call(roleCounts, roleKey)) {
+      roleCounts[roleKey] = count;
+    }
+  });
+  return {
+    totalMembers,
+    statusCounts,
+    roleCounts,
+  };
 }
 
 function sanitizeDiagnosticsValue(value) {

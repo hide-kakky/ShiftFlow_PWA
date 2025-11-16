@@ -2544,6 +2544,70 @@
       .admin-log-item strong {
         color: var(--text-900);
       }
+      .admin-org-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1rem;
+      }
+      .admin-org-meta-item {
+        border: 1px dashed var(--card-border);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: var(--surface);
+      }
+      .admin-org-meta-item small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .admin-org-meta-item strong {
+        font-size: 1rem;
+        color: var(--text-900);
+        word-break: break-all;
+      }
+      .admin-org-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.75rem;
+      }
+      .admin-org-stats-item {
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: rgba(81, 124, 178, 0.05);
+      }
+      :root[data-theme='dark'] .admin-org-stats-item {
+        background: rgba(122, 162, 255, 0.08);
+      }
+      .admin-org-stats-item small {
+        display: block;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+      }
+      .admin-org-stats-item strong {
+        font-size: 1.4rem;
+        color: var(--text-900);
+      }
+      .admin-org-color-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .admin-org-color-chip span {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        display: inline-block;
+        background: #517cb2;
+      }
       .admin-placeholder-table {
         width: 100%;
         border-collapse: collapse;
@@ -3529,20 +3593,7 @@
                   <strong>管理対象の組織</strong>
                 </div>
                 <div class="admin-org-list" id="adminOrgList">
-                  <button type="button" class="admin-org-item active" data-org-id="current">
-                    <span class="material-icons-outlined">check_circle</span>
-                    <div>
-                      <strong>現在の組織</strong>
-                      <small>ここに読み込み結果を表示</small>
-                    </div>
-                  </button>
-                  <button type="button" class="admin-org-item" data-org-id="other">
-                    <span class="material-icons-outlined">business</span>
-                    <div>
-                      <strong>別組織</strong>
-                      <small>準備中</small>
-                    </div>
-                  </button>
+                  <div class="px-3 py-2 text-muted small">読み込み中...</div>
                 </div>
               </div>
             </div>
@@ -3726,28 +3777,149 @@
                   <p>名称・テーマ・メンバー構成を編集します。</p>
                 </div>
                 <div class="admin-panel-body">
-                  <div class="admin-card-grid">
-                    <article class="admin-card">
-                      <h4>組織基本情報</h4>
-                      <p>名称・略称・カラーなどを編集。</p>
-                      <ul class="admin-log-list">
-                        <li class="text-muted small">組織名：ShiftFlow Café</li>
-                        <li class="text-muted small">略称：SFC</li>
-                        <li class="text-muted small">表示カラー：#517cb2</li>
-                      </ul>
-                    </article>
-                    <article class="admin-card">
-                      <h4>通知・ラベル</h4>
-                      <p>Slack / メール通知やバッジ表示をここで調整します。</p>
-                    </article>
-                    <article class="admin-card">
-                      <h4>メンバー概要</h4>
-                      <p>この組織に所属するユーザーを一覧表示し、ロール・ステータスを調整します。</p>
-                      <button class="btn btn-sm btn-outline-primary align-self-start mt-auto" type="button" data-admin-target="users">
-                        <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
+                  <div class="admin-placeholder" id="adminOrgNotice" hidden></div>
+                  <p class="small text-muted mb-3" id="adminOrgRefreshedAt">最終更新: —</p>
+                  <form id="adminOrgForm">
+                    <div class="admin-card-grid">
+                      <article class="admin-card">
+                        <h4>組織基本情報</h4>
+                        <p>正式名称・略称・カラーを編集します。</p>
+                        <div class="admin-org-meta">
+                          <div class="admin-org-meta-item">
+                            <small>組織名</small>
+                            <strong id="adminOrgNameDisplay">—</strong>
+                          </div>
+                          <div class="admin-org-meta-item">
+                            <small>略称</small>
+                            <strong id="adminOrgShortDisplay">—</strong>
+                          </div>
+                          <div class="admin-org-meta-item">
+                            <small>ブランドカラー</small>
+                            <strong class="admin-org-color-chip">
+                              <span id="adminOrgColorPreview"></span>
+                              <span id="adminOrgColorDisplay">#517CB2</span>
+                            </strong>
+                          </div>
+                        </div>
+                        <div class="row g-3">
+                          <div class="col-12 col-md-6">
+                            <label class="form-label" for="adminOrgName">組織名</label>
+                            <input class="form-control" id="adminOrgName" placeholder="例: ShiftFlow Café" />
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <label class="form-label" for="adminOrgShortName">略称</label>
+                            <input class="form-control" id="adminOrgShortName" placeholder="例: SFC" />
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <label class="form-label" for="adminOrgColor">表示カラー</label>
+                            <div class="input-group">
+                              <input
+                                type="color"
+                                class="form-control form-control-color"
+                                id="adminOrgColor"
+                                value="#517cb2"
+                                title="ブランドカラーを選択"
+                              />
+                              <span class="input-group-text" id="adminOrgColorText">#517CB2</span>
+                            </div>
+                          </div>
+                          <div class="col-12 col-md-6">
+                            <label class="form-label" for="adminOrgTimezone">タイムゾーン</label>
+                            <select class="form-select" id="adminOrgTimezone"></select>
+                          </div>
+                        </div>
+                      </article>
+                      <article class="admin-card">
+                        <h4>通知・ラベル</h4>
+                        <p>Slack / メール通知や印刷物に使う識別情報をここで調整します。</p>
+                        <div class="mb-3">
+                          <label class="form-label" for="adminOrgNotifyEmail">通知メール</label>
+                          <input
+                            type="email"
+                            class="form-control"
+                            id="adminOrgNotifyEmail"
+                            placeholder="ops@example.com"
+                          />
+                          <div class="form-text">
+                            システム通知や Slack リレーをメールで受け取る場合に利用します（任意）。
+                          </div>
+                        </div>
+                        <div class="admin-org-meta">
+                          <div class="admin-org-meta-item">
+                            <small>通知メール</small>
+                            <strong id="adminOrgNotifyDisplay">—</strong>
+                          </div>
+                          <div class="admin-org-meta-item">
+                            <small>組織 ID</small>
+                            <strong id="adminOrgIdDisplay">—</strong>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                    <div class="admin-bottom-meta flex-column flex-md-row gap-3">
+                      <div>
+                        <small class="text-muted d-block">最終更新</small>
+                        <span id="adminOrgUpdatedAt">—</span>
+                      </div>
+                      <button class="btn btn-primary ms-md-auto" type="button" id="btnAdminOrgSave">
+                        <span class="label">
+                          <span class="material-icons-outlined align-middle me-1">save</span>更新を保存
+                        </span>
+                        <span
+                          class="spinner-border spinner-border-sm d-none"
+                          role="status"
+                          aria-hidden="true"
+                        ></span>
                       </button>
-                    </article>
-                  </div>
+                    </div>
+                  </form>
+                  <article class="admin-card mt-3">
+                    <h4>メンバー概要</h4>
+                    <p>この組織に所属するユーザーのロール・ステータスを把握できます。</p>
+                    <div class="admin-org-stats mb-3">
+                      <div class="admin-org-stats-item">
+                        <small>総メンバー</small>
+                        <strong id="adminOrgStatsTotal">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>承認待ち</small>
+                        <strong id="adminOrgStatsPending">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>有効</small>
+                        <strong id="adminOrgStatsActive">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>停止中</small>
+                        <strong id="adminOrgStatsSuspended">0</strong>
+                      </div>
+                    </div>
+                    <div class="admin-org-stats mb-3">
+                      <div class="admin-org-stats-item">
+                        <small>Admin</small>
+                        <strong id="adminOrgStatsAdmins">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>Manager</small>
+                        <strong id="adminOrgStatsManagers">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>Member</small>
+                        <strong id="adminOrgStatsMembers">0</strong>
+                      </div>
+                      <div class="admin-org-stats-item">
+                        <small>Guest</small>
+                        <strong id="adminOrgStatsGuests">0</strong>
+                      </div>
+                    </div>
+                    <button
+                      class="btn btn-sm btn-outline-primary align-self-start mt-auto"
+                      type="button"
+                      data-admin-target="users"
+                    >
+                      <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
+                    </button>
+                  </article>
                 </div>
               </section>
               <section class="admin-panel" data-admin-panel="audit" aria-labelledby="adminAuditTitle">
@@ -10578,6 +10750,303 @@
         };
       })();
 
+      const AdminOrgController = (function () {
+        const DEFAULT_COLOR = '#517CB2';
+        const TIMEZONES = [
+          { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+          { value: 'Asia/Singapore', label: 'Asia/Singapore' },
+          { value: 'UTC', label: 'UTC' },
+          { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PT)' },
+          { value: 'Europe/London', label: 'Europe/London (GMT)' },
+        ];
+        const state = {
+          orgs: [],
+          activeOrgId: '',
+        };
+
+        function renderTimezoneOptions() {
+          var select = byId('adminOrgTimezone');
+          if (!select) return;
+          select.innerHTML = TIMEZONES.map(function (opt) {
+            return '<option value="' + esc(opt.value) + '">' + esc(opt.label) + '</option>';
+          }).join('');
+        }
+
+        function setNotice(message, isError) {
+          var el = byId('adminOrgNotice');
+          if (!el) return;
+          if (!message) {
+            el.textContent = '';
+            el.setAttribute('hidden', 'hidden');
+            el.classList.remove('text-danger');
+            return;
+          }
+          el.textContent = message;
+          el.classList.toggle('text-danger', !!isError);
+          el.removeAttribute('hidden');
+        }
+
+        function updateMeta(org) {
+          if (!org) return;
+          var nameDisplay = byId('adminOrgNameDisplay');
+          if (nameDisplay) nameDisplay.textContent = org.name || '—';
+          var shortDisplay = byId('adminOrgShortDisplay');
+          if (shortDisplay) shortDisplay.textContent = org.shortName || '—';
+          var colorText = byId('adminOrgColorDisplay');
+          var colorInput = byId('adminOrgColor');
+          var colorPreview = byId('adminOrgColorPreview');
+          var colorValue = org.displayColor || DEFAULT_COLOR;
+          if (colorText) colorText.textContent = colorValue;
+          if (colorInput) colorInput.value = colorValue;
+          if (colorPreview) colorPreview.style.backgroundColor = colorValue;
+          var idDisplay = byId('adminOrgIdDisplay');
+          if (idDisplay) idDisplay.textContent = org.orgId || '—';
+          var notifyDisplay = byId('adminOrgNotifyDisplay');
+          if (notifyDisplay) notifyDisplay.textContent = org.notificationEmail || '—';
+          var nameInput = byId('adminOrgName');
+          if (nameInput) nameInput.value = org.name || '';
+          var shortInput = byId('adminOrgShortName');
+          if (shortInput) shortInput.value = org.shortName || '';
+          var notifyInput = byId('adminOrgNotifyEmail');
+          if (notifyInput) notifyInput.value = org.notificationEmail || '';
+          var tzSelect = byId('adminOrgTimezone');
+          if (tzSelect) {
+            tzSelect.value = org.timezone || tzSelect.value || 'Asia/Tokyo';
+          }
+          var updatedLabel = byId('adminOrgUpdatedAt');
+          if (updatedLabel) {
+            updatedLabel.textContent = org.updatedAt || '—';
+          }
+        }
+
+        function updateStats(stats) {
+          stats = stats || {};
+          var total = byId('adminOrgStatsTotal');
+          if (total) total.textContent = String(stats.totalMembers || 0);
+          var status = stats.statusCounts || {};
+          var role = stats.roleCounts || {};
+          var map = [
+            ['adminOrgStatsPending', status.pending || 0],
+            ['adminOrgStatsActive', status.active || 0],
+            ['adminOrgStatsSuspended', status.suspended || 0],
+            ['adminOrgStatsAdmins', role.admin || 0],
+            ['adminOrgStatsManagers', role.manager || 0],
+            ['adminOrgStatsMembers', role.member || 0],
+            ['adminOrgStatsGuests', role.guest || 0],
+          ];
+          map.forEach(function (entry) {
+            var el = byId(entry[0]);
+            if (el) el.textContent = String(entry[1] || 0);
+          });
+        }
+
+        function updateRefreshedAt(text) {
+          var el = byId('adminOrgRefreshedAt');
+          if (!el) return;
+          if (!text) {
+            el.textContent = '最終更新: —';
+          } else {
+            el.textContent = '最終更新: ' + text;
+          }
+        }
+
+        function resolveOrgLabel(orgId) {
+          var match = state.orgs.find(function (org) {
+            return org.orgId === orgId;
+          });
+          if (!match) return '';
+          return match.name || match.shortName || '選択した組織';
+        }
+
+        function highlightActiveOrg(orgId) {
+          document.querySelectorAll('.admin-org-item').forEach(function (item) {
+            var match = item.getAttribute('data-org-id') === orgId;
+            item.classList.toggle('active', match);
+          });
+        }
+
+        function closeDropdown() {
+          var dropdownBtn = byId('btn-admin-org');
+          if (!dropdownBtn || !window.bootstrap) return;
+          try {
+            var inst = bootstrap.Dropdown.getInstance(dropdownBtn);
+            if (inst) inst.hide();
+          } catch (_err) {}
+        }
+
+        function renderDropdown() {
+          var list = byId('adminOrgList');
+          if (!list) return;
+          if (!state.orgs.length) {
+            list.innerHTML =
+              '<div class="px-3 py-2 text-muted small">アクセス可能な組織がありません。</div>';
+            return;
+          }
+          list.innerHTML = '';
+          state.orgs.forEach(function (org) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'admin-org-item';
+            btn.setAttribute('data-org-id', org.orgId);
+            if (org.orgId === state.activeOrgId) {
+              btn.classList.add('active');
+            }
+            btn.innerHTML =
+              '<span class="material-icons-outlined">apartment</span>' +
+              '<div><strong>' +
+              esc(org.name || org.shortName || '未設定の組織') +
+              '</strong><small>' +
+              esc(org.shortName || org.orgId || '') +
+              '</small></div>';
+            btn.addEventListener('click', function (event) {
+              event.preventDefault();
+              state.activeOrgId = org.orgId;
+              setAdminOrg(org.orgId, org.name || org.shortName || '選択した組織');
+              highlightActiveOrg(org.orgId);
+              closeDropdown();
+            });
+            list.appendChild(btn);
+          });
+        }
+
+        function fetchOrgList() {
+          if (!IS_MANAGER) return;
+          google.script.run
+            .withSuccessHandler(function (payload) {
+              setNotice('', false);
+              state.orgs = Array.isArray(payload?.orgs) ? payload.orgs : [];
+              renderDropdown();
+              if (!state.activeOrgId) {
+                var defaultOrgId =
+                  (payload && payload.meta && payload.meta.defaultOrgId) ||
+                  (state.orgs[0] && state.orgs[0].orgId) ||
+                  '';
+                if (defaultOrgId) {
+                  var label = resolveOrgLabel(defaultOrgId) || '選択した組織';
+                  setAdminOrg(defaultOrgId, label);
+                }
+              } else {
+                highlightActiveOrg(state.activeOrgId);
+              }
+            })
+            .withFailureHandler(function (err) {
+              setNotice(err && err.message ? err.message : '組織一覧の取得に失敗しました。', true);
+            })
+            .adminListOrganizations();
+        }
+
+        function fetchOrgDetail(orgId) {
+          if (!IS_MANAGER || !orgId) return;
+          google.script.run
+            .withSuccessHandler(function (payload) {
+              setNotice('', false);
+              if (payload && payload.org) {
+                updateMeta(payload.org);
+              }
+              if (payload && payload.stats) {
+                updateStats(payload.stats);
+              }
+              updateRefreshedAt(payload && payload.refreshedAt ? payload.refreshedAt : '');
+            })
+            .withFailureHandler(function (err) {
+              setNotice(err && err.message ? err.message : '組織情報の取得に失敗しました。', true);
+            })
+            .adminGetOrganization({ orgId: orgId });
+        }
+
+        function handleColorInput(event) {
+          var value = (event && event.target && event.target.value) || '';
+          var color = value || DEFAULT_COLOR;
+          var text = byId('adminOrgColorText');
+          var preview = byId('adminOrgColorPreview');
+          if (text) text.textContent = color.toUpperCase();
+          if (preview) preview.style.backgroundColor = color;
+        }
+
+        function gatherPayload() {
+          return {
+            orgId: state.activeOrgId,
+            name: (byId('adminOrgName')?.value || '').trim(),
+            shortName: (byId('adminOrgShortName')?.value || '').trim(),
+            displayColor: (byId('adminOrgColor')?.value || DEFAULT_COLOR).trim(),
+            timezone: (byId('adminOrgTimezone')?.value || '').trim(),
+            notificationEmail: (byId('adminOrgNotifyEmail')?.value || '').trim(),
+          };
+        }
+
+        function handleSave(event) {
+          if (event) event.preventDefault();
+          if (!IS_MANAGER) {
+            setNotice('管理者権限が必要です。', true);
+            return;
+          }
+          if (!state.activeOrgId) {
+            setNotice('先に管理対象の組織を選択してください。', true);
+            return;
+          }
+          var payload = gatherPayload();
+          var btn = byId('btnAdminOrgSave');
+          setNotice('', false);
+          setButtonLoading(btn, true);
+          google.script.run
+            .withSuccessHandler(function (res) {
+              setButtonLoading(btn, false);
+              notify(res && res.message ? res.message : '組織情報を更新しました。', res && res.success !== false);
+              fetchOrgDetail(state.activeOrgId);
+              fetchOrgList();
+            })
+            .withFailureHandler(function (err) {
+              setButtonLoading(btn, false);
+              setNotice(err && err.message ? err.message : '組織情報の更新に失敗しました。', true);
+            })
+            .adminUpdateOrganization(payload);
+        }
+
+        function bindEvents() {
+          var colorInput = byId('adminOrgColor');
+          if (colorInput) {
+            colorInput.addEventListener('input', handleColorInput);
+            colorInput.addEventListener('change', handleColorInput);
+          }
+          on('btnAdminOrgSave', 'click', handleSave);
+        }
+
+        function disableFormForNonManager() {
+          var form = byId('adminOrgForm');
+          if (!form) return;
+          form.querySelectorAll('input,select,button').forEach(function (el) {
+            el.disabled = true;
+          });
+        }
+
+        function init() {
+          renderTimezoneOptions();
+          bindEvents();
+          if (!IS_MANAGER) {
+            setNotice('管理者権限が必要です。', true);
+            disableFormForNonManager();
+            return;
+          }
+          addAdminOrgListener(function (orgId) {
+            state.activeOrgId = orgId || '';
+            highlightActiveOrg(state.activeOrgId);
+            if (state.activeOrgId) {
+              fetchOrgDetail(state.activeOrgId);
+            }
+          });
+          addAdminSectionListener(function (section) {
+            if (section === 'orgs' && state.activeOrgId) {
+              fetchOrgDetail(state.activeOrgId);
+            }
+          });
+          fetchOrgList();
+        }
+
+        return {
+          init: init,
+        };
+      })();
+
       // ===== ビューナビゲーション・フォーム初期化 =====
       const NavigationController = (function () {
         function handleViewLinkClick(event) {
@@ -10676,35 +11145,11 @@
           });
         }
 
-        function attachAdminOrgSelector() {
-          var dropdownBtn = byId('btn-admin-org');
-          var items = document.querySelectorAll('.admin-org-item');
-          if (items.length === 0) return;
-          setAdminOrg(ADMIN_STATE.orgId, ADMIN_STATE.orgLabel);
-          items.forEach(function (item) {
-            item.addEventListener('click', function (event) {
-              if (event) event.preventDefault();
-              var orgId = item.getAttribute('data-org-id') || 'current';
-              var labelNode = item.querySelector('strong');
-              var labelText = labelNode ? labelNode.textContent.trim() : '選択した組織';
-              setAdminOrg(orgId, labelText);
-              if (dropdownBtn && window.bootstrap) {
-                try {
-                  var inst = bootstrap.Dropdown.getInstance(dropdownBtn);
-                  if (inst) inst.hide();
-                } catch (_err) {}
-              }
-              notify('組織切り替えは現在プレースホルダーです。', true);
-            });
-          });
-        }
-
         function init() {
           attachViewLinks();
           attachFabHandlers();
           attachAdminMenuHandler();
           attachUserMenuHandlers();
-          attachAdminOrgSelector();
         }
 
         return {
@@ -10801,6 +11246,7 @@
         TaskFormController.init();
         MessageFormController.init();
         AdminUsersController.init();
+        AdminOrgController.init();
 
         initPullToRefresh();
         initializeAuthGateway();
