@@ -11,10 +11,19 @@ const API_REVALIDATE_PATHS = Array.isArray(swConfig.API_REVALIDATE_PATHS)
   : ['/api/tasks', '/api/messages', '/api/home'];
 
 self.addEventListener('install', (event) => {
+  const hadActiveWorker = !!(self.registration && self.registration.active);
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL))
+    caches
+      .open(APP_SHELL_CACHE)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => {
+        if (hadActiveWorker) {
+          broadcastAppShellUpdate();
+        } else {
+          self.skipWaiting();
+        }
+      })
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -46,6 +55,13 @@ self.addEventListener('activate', (event) => {
     })()
   );
   self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (!event || !event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -177,4 +193,19 @@ function broadcastCacheUpdate(url) {
     .catch(() => {
       // ignore broadcast failures
     });
+}
+
+function broadcastAppShellUpdate() {
+  self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({
+          type: 'APP_SHELL_UPDATED',
+          timestamp: Date.now(),
+          version: swConfig.APP_SHELL_CACHE_KEY || '',
+        });
+      });
+    })
+    .catch(() => {});
 }

@@ -35,16 +35,20 @@
           console.warn('Service worker registration failed:', error);
         });
         navigator.serviceWorker.addEventListener('message', function (event) {
-          if (!event || !event.data || event.data.type !== 'API_CACHE_UPDATED') {
+          if (!event || !event.data) return;
+          if (event.data.type === 'API_CACHE_UPDATED') {
+            var handler = window.__SHIFT_FLOW_TRIGGER_REFRESH__;
+            if (typeof handler === 'function') {
+              try {
+                handler(event.data);
+              } catch (err) {
+                console.warn('API cache update handling failed:', err);
+              }
+            }
             return;
           }
-          var handler = window.__SHIFT_FLOW_TRIGGER_REFRESH__;
-          if (typeof handler === 'function') {
-            try {
-              handler(event.data);
-            } catch (err) {
-              console.warn('API cache update handling failed:', err);
-            }
+          if (event.data.type === 'APP_SHELL_UPDATED') {
+            promptForAppUpdate(event.data);
           }
         });
       });
@@ -4320,6 +4324,8 @@
       const TEST_ATTACHMENT_MENU = 'https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=800&q=80';
       let TEST_MODE_STATE = window.__SHIFT_FLOW_TEST_MODE__ || { active: false };
       window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
+      let APP_UPDATE_PROMPTED = false;
+      let APP_UPDATE_REFRESHING = false;
 
       function cloneDeep(value) {
         try {
@@ -5740,23 +5746,104 @@
           el.addEventListener(ev, fn);
         }
       }
-      function notify(msg, ok) {
+      function notify(msg, ok, options) {
+        options = options || {};
         var wrap = byId('notification-area');
         if (!wrap) return;
+        wrap.removeAttribute('hidden');
         var el = document.createElement('div');
         el.className =
           'alert ' +
           (ok !== false ? 'alert-success' : 'alert-danger') +
           ' alert-dismissible fade show';
-        el.innerHTML =
-          msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'space-between';
+        el.style.gap = '12px';
+        var textSpan = document.createElement('div');
+        textSpan.className = 'flex-grow-1';
+        textSpan.textContent = msg;
+        el.appendChild(textSpan);
+        if (options.actionLabel && typeof options.onAction === 'function') {
+          var actionBtn = document.createElement('button');
+          actionBtn.type = 'button';
+          actionBtn.className = 'btn btn-sm btn-primary';
+          actionBtn.textContent = options.actionLabel;
+          actionBtn.addEventListener('click', function () {
+            options.onAction();
+            dismiss();
+          });
+          el.appendChild(actionBtn);
+        }
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'btn-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.addEventListener('click', dismiss);
+        el.appendChild(closeBtn);
         wrap.appendChild(el);
-        setTimeout(function () {
+        var ttl =
+          typeof options.duration === 'number' ? options.duration : 2200;
+        if (ttl > 0) {
+          setTimeout(dismiss, ttl);
+        }
+        function dismiss() {
           el.classList.remove('show');
           setTimeout(function () {
             el.remove();
+            if (!wrap.children.length) {
+              wrap.setAttribute('hidden', 'hidden');
+            }
           }, 150);
-        }, 2200);
+        }
+      }
+
+      function promptForAppUpdate(data) {
+        if (APP_UPDATE_PROMPTED) return;
+        APP_UPDATE_PROMPTED = true;
+        var versionLabel =
+          data && data.version ? '（' + data.version + '）' : '';
+        notify('最新版がリリースされました' + versionLabel + '。更新しますか？', true, {
+          actionLabel: '更新する',
+          onAction: applyAppShellUpdate,
+          duration: 0,
+        });
+      }
+
+      function applyAppShellUpdate() {
+        if (APP_UPDATE_REFRESHING) return;
+        if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistration) {
+          window.location.reload();
+          return;
+        }
+        navigator.serviceWorker.getRegistration().then(function (registration) {
+          if (!registration) {
+            window.location.reload();
+            return;
+          }
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            waitForControllerChange();
+            return;
+          }
+          window.location.reload();
+        });
+      }
+
+      function waitForControllerChange() {
+        function onControllerChange() {
+          navigator.serviceWorker.removeEventListener(
+            'controllerchange',
+            onControllerChange
+          );
+          if (APP_UPDATE_REFRESHING) return;
+          APP_UPDATE_REFRESHING = true;
+          window.location.reload();
+        }
+        navigator.serviceWorker.addEventListener(
+          'controllerchange',
+          onControllerChange
+        );
       }
       var HISTORY_GUARD_ACTIVE = false;
       var OVERLAY_HISTORY_STACK = [];
