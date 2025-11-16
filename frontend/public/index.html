@@ -2159,6 +2159,201 @@
       :root[data-theme='dark'] .settings-admin-card {
         background: linear-gradient(135deg, rgba(95, 125, 255, 0.22), rgba(16, 26, 53, 0.6));
       }
+      .admin-shell {
+        display: none;
+        padding: 24px 0 64px;
+      }
+      .admin-shell.is-hidden {
+        display: none !important;
+      }
+      body.admin-view-active .views-wrapper {
+        display: none !important;
+      }
+      body.admin-view-active .admin-shell {
+        display: block;
+      }
+      .admin-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 24px;
+        border-radius: 24px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        margin-bottom: 18px;
+      }
+      .admin-header h2 {
+        margin: 0;
+        font-size: clamp(1.35rem, 2vw, 1.75rem);
+      }
+      .admin-header p {
+        margin: 4px 0 0;
+        color: var(--muted);
+      }
+      .admin-header .admin-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .admin-layout {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) 1fr;
+        gap: 24px;
+      }
+      @media (max-width: 992px) {
+        .admin-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .admin-side-nav {
+        padding: 20px;
+        border-radius: 20px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .admin-nav-btn {
+        border: none;
+        border-radius: 12px;
+        padding: 10px 14px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--muted);
+        background: transparent;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: background var(--fade), color var(--fade);
+      }
+      .admin-nav-btn .material-icons-outlined {
+        font-size: 20px;
+      }
+      .admin-nav-btn:hover,
+      .admin-nav-btn:focus-visible {
+        background: rgba(81, 124, 178, 0.12);
+        color: var(--text-900);
+        outline: none;
+      }
+      :root[data-theme='dark'] .admin-nav-btn:hover,
+      :root[data-theme='dark'] .admin-nav-btn:focus-visible {
+        background: rgba(122, 162, 255, 0.18);
+        color: #f6f8ff;
+      }
+      .admin-nav-btn.active {
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.28), rgba(81, 124, 178, 0.12));
+        color: var(--on-primary);
+      }
+      :root[data-theme='dark'] .admin-nav-btn.active {
+        color: #f6f8ff;
+        background: linear-gradient(135deg, rgba(122, 162, 255, 0.35), rgba(40, 58, 110, 0.8));
+      }
+      .admin-content {
+        padding: 20px;
+        border-radius: 20px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+      }
+      .admin-panel {
+        display: none;
+      }
+      .admin-panel.is-active {
+        display: block;
+      }
+      .admin-card-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .admin-card {
+        border: 1px solid var(--card-border);
+        border-radius: 18px;
+        padding: 18px;
+        background: var(--card);
+        box-shadow: var(--card-shadow);
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .admin-card h4,
+      .admin-card h5 {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--text-900);
+      }
+      .admin-card p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .admin-card .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary);
+      }
+      :root[data-theme='dark'] .admin-card .metric-value {
+        color: #cbd5ff;
+      }
+      .admin-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 0.9rem;
+      }
+      .admin-stats li {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--divider);
+      }
+      .admin-stats li:last-child {
+        border-bottom: none;
+      }
+      .admin-log-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .admin-log-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .admin-log-item strong {
+        color: var(--text-900);
+      }
+      .admin-placeholder-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      .admin-placeholder-table th,
+      .admin-placeholder-table td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--divider);
+        text-align: left;
+      }
+      .admin-placeholder {
+        padding: 16px;
+        border-radius: 16px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      :root[data-theme='dark'] .admin-placeholder {
+        background: rgba(122, 162, 255, 0.12);
+        color: #cbd5ff;
+      }
 
       .modal-content {
         background: var(--card);
@@ -2656,14 +2851,34 @@
           >
             <span class="material-icons-outlined align-middle">logout</span>
           </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-light btn-icon-only"
-            id="btn-admin-menu"
-            title="Admin menu (coming soon)"
-          >
-            <span class="material-icons-outlined align-middle">admin_panel_settings</span>
-          </button>
+          <div class="dropdown" id="adminMenuDropdown" data-manager-only>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-light btn-icon-only"
+              id="btn-admin-menu"
+              title="管理メニュー"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              aria-haspopup="true"
+            >
+              <span class="material-icons-outlined align-middle">admin_panel_settings</span>
+            </button>
+            <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="btn-admin-menu">
+              <h6 class="dropdown-header">管理メニュー</h6>
+              <button class="dropdown-item" type="button" data-admin-target="dashboard">
+                <span class="material-icons-outlined align-middle me-2">dashboard</span>管理トップ
+              </button>
+              <button class="dropdown-item" type="button" data-admin-target="users">
+                <span class="material-icons-outlined align-middle me-2">groups</span>ユーザー管理
+              </button>
+              <button class="dropdown-item" type="button" data-admin-target="orgs">
+                <span class="material-icons-outlined align-middle me-2">business</span>組織管理
+              </button>
+              <button class="dropdown-item" type="button" data-admin-target="audit">
+                <span class="material-icons-outlined align-middle me-2">fact_check</span>監査ログ
+              </button>
+            </div>
+          </div>
           <span class="nav-link d-flex lh-1 text-reset p-0 align-items-center gap-2">
             <img
               src="/icons/icon-192.png"
@@ -3014,6 +3229,231 @@
           </section>
         </div>
       </div>
+      <section class="admin-shell" id="view-admin" hidden aria-labelledby="adminViewTitle">
+        <div class="container-xl">
+          <div class="admin-header">
+            <div>
+              <p class="text-muted small mb-1">ADMIN / MANAGER</p>
+              <h2 id="adminViewTitle">管理メニュー</h2>
+              <p class="mb-0">
+                新規ユーザー承認や組織設定、監査ログの一次確認などの操作をここに集約します。
+              </p>
+            </div>
+            <div class="admin-header-actions">
+              <label class="visually-hidden" for="admin-org-select">管理対象の組織</label>
+              <select class="form-select form-select-sm" id="admin-org-select" disabled>
+                <option>所属組織の読み込み待ち...</option>
+              </select>
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="btn-exit-admin">
+                <span class="material-icons-outlined align-middle me-1">arrow_back</span>一般画面へ戻る
+              </button>
+            </div>
+          </div>
+          <div class="admin-layout">
+            <aside class="admin-side-nav" aria-label="管理ナビゲーション">
+              <button
+                class="admin-nav-btn active"
+                type="button"
+                data-admin-nav
+                data-admin-section="dashboard"
+              >
+                <span class="material-icons-outlined">dashboard</span>管理トップ
+              </button>
+              <button
+                class="admin-nav-btn"
+                type="button"
+                data-admin-nav
+                data-admin-section="users"
+              >
+                <span class="material-icons-outlined">groups</span>ユーザー管理
+              </button>
+              <button
+                class="admin-nav-btn"
+                type="button"
+                data-admin-nav
+                data-admin-section="orgs"
+              >
+                <span class="material-icons-outlined">apartment</span>組織管理
+              </button>
+              <button
+                class="admin-nav-btn"
+                type="button"
+                data-admin-nav
+                data-admin-section="audit"
+              >
+                <span class="material-icons-outlined">fact_check</span>監査ログ
+              </button>
+            </aside>
+            <div class="admin-content">
+              <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div>
+                  <p class="text-muted small mb-1">現在のセクション</p>
+                  <h3 class="mb-0" id="admin-section-label">管理トップ</h3>
+                </div>
+                <div class="text-muted small d-flex align-items-center gap-1">
+                  <span class="material-icons-outlined align-middle" aria-hidden="true">design_services</span>
+                  UI 全体は順次ブラッシュアップ予定です
+                </div>
+              </div>
+              <div class="admin-panel is-active" data-admin-panel="dashboard">
+                <div class="admin-card-grid">
+                  <article class="admin-card">
+                    <h4>承認待ちユーザー</h4>
+                    <p>上位 5 件を表示。詳細はユーザー管理へ。</p>
+                    <ul class="admin-log-list">
+                      <li class="admin-log-item">
+                        <strong>田中 翔太</strong>
+                        <span class="text-muted small">2024/05/04 10:12 申請（フロント）</span>
+                      </li>
+                      <li class="admin-log-item">
+                        <strong>guest@shiftflow.dev</strong>
+                        <span class="text-muted small">2024/05/03 22:51 申請（キッチン）</span>
+                      </li>
+                      <li class="text-muted small">...承認 API と連動予定...</li>
+                    </ul>
+                    <button
+                      class="btn btn-sm btn-outline-primary align-self-start mt-auto"
+                      type="button"
+                      data-admin-target="users"
+                    >
+                      <span class="material-icons-outlined align-middle me-1">chevron_right</span>一覧を見る
+                    </button>
+                  </article>
+                  <article class="admin-card">
+                    <h4>メンバー構成</h4>
+                    <p class="mb-2">選択中の組織内でのロール別人数。</p>
+                    <ul class="admin-stats">
+                      <li><span>Admin</span><strong>1</strong></li>
+                      <li><span>Manager</span><strong>3</strong></li>
+                      <li><span>Member</span><strong>18</strong></li>
+                      <li><span>Guest</span><strong>2</strong></li>
+                    </ul>
+                  </article>
+                  <article class="admin-card">
+                    <h4>最近の操作ログ</h4>
+                    <p>直近 24 時間の主要な管理アクション。</p>
+                    <ul class="admin-log-list">
+                      <li class="admin-log-item">
+                        <strong>山田（manager）</strong>
+                        <span class="text-muted small">ユーザーAを承認</span>
+                      </li>
+                      <li class="admin-log-item">
+                        <strong>佐藤（admin）</strong>
+                        <span class="text-muted small">組織名を更新</span>
+                      </li>
+                      <li class="text-muted small">...監査ログ API と連携予定...</li>
+                    </ul>
+                  </article>
+                </div>
+              </div>
+              <div class="admin-panel" data-admin-panel="users">
+                <div class="admin-placeholder mb-3">
+                  検索・フィルタ・ページング UI をここに配置予定です。`status`, `role`, `org` など URL
+                  と同期させます。
+                </div>
+                <div class="table-responsive">
+                  <table class="admin-placeholder-table">
+                    <thead>
+                      <tr>
+                        <th>表示名</th>
+                        <th>メール</th>
+                        <th>所属 / ロール</th>
+                        <th>ステータス</th>
+                        <th>最終ログイン</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>承認待ちユーザー</td>
+                        <td>pending@example.com</td>
+                        <td>未割当</td>
+                        <td><span class="badge bg-warning text-dark">Pending</span></td>
+                        <td>—</td>
+                      </tr>
+                      <tr>
+                        <td>既存メンバー</td>
+                        <td>member@example.com</td>
+                        <td>フロント (member)</td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>2024/05/01 09:12</td>
+                      </tr>
+                      <tr>
+                        <td colspan="5">
+                          行操作（承認 / 停止 / 編集）はボタン + モーダルで実装予定です。
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="admin-panel" data-admin-panel="orgs">
+                <div class="admin-placeholder mb-3">
+                  左カラムで組織を切り替え、右カラムで「基本設定 / メンバー」タブを切り替える構成を想定しています。
+                </div>
+                <div class="admin-card-grid">
+                  <article class="admin-card">
+                    <h4>組織基本情報</h4>
+                    <p>名称・略称・カラーなどを編集。</p>
+                    <ul class="admin-log-list">
+                      <li class="text-muted small">組織名：ShiftFlow Café</li>
+                      <li class="text-muted small">略称：SFC</li>
+                      <li class="text-muted small">表示カラー：#517cb2</li>
+                    </ul>
+                  </article>
+                  <article class="admin-card">
+                    <h4>メンバー概要</h4>
+                    <p>この組織に所属するユーザーを一覧表示し、ロール・ステータスを調整します。</p>
+                    <button
+                      class="btn btn-sm btn-outline-primary align-self-start mt-auto"
+                      type="button"
+                      data-admin-target="users"
+                    >
+                      <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
+                    </button>
+                  </article>
+                </div>
+              </div>
+              <div class="admin-panel" data-admin-panel="audit">
+                <div class="admin-placeholder mb-3">
+                  期間プリセット・イベント種別・組織フィルタを設け、監査ログ / login_audits から最新
+                  100 件をサマリ表示する想定です。
+                </div>
+                <div class="table-responsive">
+                  <table class="admin-placeholder-table">
+                    <thead>
+                      <tr>
+                        <th>時刻</th>
+                        <th>ユーザー</th>
+                        <th>イベント</th>
+                        <th>概要</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>2024/05/04 11:23</td>
+                        <td>佐藤（manager）</td>
+                        <td>admin</td>
+                        <td>ユーザーAを承認</td>
+                      </tr>
+                      <tr>
+                        <td>2024/05/04 11:05</td>
+                        <td>山田（member）</td>
+                        <td>login</td>
+                        <td>ログイン成功 (requestId: abc123)</td>
+                      </tr>
+                      <tr>
+                        <td colspan="4">
+                          詳細リンクを押すとモーダルで requestId / route / payload 要約を表示する予定です。
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- ===== Floating action button for quick actions ===== -->
@@ -3532,6 +3972,7 @@
           ? __BOOT__.myTasks
           : { tasks: [], meta: {} };
       let IS_MANAGER = !!__BOOT__.isManager;
+      let ADMIN_STATE = { active: false, section: 'dashboard' };
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
       const SHIFT_FLOW_CONFIG = window.SHIFT_FLOW_CONFIG || {};
       const {
@@ -4192,6 +4633,9 @@
         });
         if (!shouldShow && typeof ACTIVE_TASK_TAB !== 'undefined' && ACTIVE_TASK_TAB === 'all') {
           ACTIVE_TASK_TAB = 'my';
+        }
+        if (!shouldShow) {
+          ensureAdminViewHidden();
         }
       }
 
@@ -5688,6 +6132,66 @@
           document.body.scrollTop = 0;
         });
       }
+      function ensureAdminViewHidden() {
+        if (!ADMIN_STATE.active) return;
+        var adminView = byId('view-admin');
+        if (adminView) {
+          adminView.classList.add('is-hidden');
+          adminView.setAttribute('hidden', 'hidden');
+        }
+        if (document.body) {
+          document.body.classList.remove('admin-view-active');
+        }
+        ADMIN_STATE.active = false;
+      }
+      function setAdminSection(section) {
+        var target = section || 'dashboard';
+        ADMIN_STATE.section = target;
+        document.querySelectorAll('[data-admin-panel]').forEach(function (panel) {
+          var match = panel.getAttribute('data-admin-panel') === target;
+          panel.classList.toggle('is-active', match);
+        });
+        document.querySelectorAll('[data-admin-nav]').forEach(function (btn) {
+          var match = btn.getAttribute('data-admin-section') === target;
+          btn.classList.toggle('active', match);
+          btn.setAttribute('aria-current', match ? 'page' : 'false');
+        });
+        var label = byId('admin-section-label');
+        if (label) {
+          var labelMap = {
+            dashboard: '管理トップ',
+            users: 'ユーザー管理',
+            orgs: '組織管理',
+            audit: '監査ログ',
+          };
+          label.textContent = labelMap[target] || '管理メニュー';
+        }
+      }
+      function openAdminView(section) {
+        var adminView = byId('view-admin');
+        if (!adminView) return;
+        ADMIN_STATE.active = true;
+        if (document.body) {
+          document.body.classList.add('admin-view-active');
+        }
+        adminView.classList.remove('is-hidden');
+        adminView.removeAttribute('hidden');
+        setAdminSection(section || ADMIN_STATE.section || 'dashboard');
+        scrollToTopNow();
+        var menuButton = byId('btn-admin-menu');
+        if (menuButton) {
+          try {
+            var dropdownInst = bootstrap.Dropdown.getInstance(menuButton);
+            if (dropdownInst) dropdownInst.hide();
+          } catch (_err) {
+            /* noop */
+          }
+        }
+      }
+      function closeAdminView() {
+        ensureAdminViewHidden();
+        navigateTo('home');
+      }
       function debounce(fn, ms) {
         var t = null;
         return function () {
@@ -6043,6 +6547,7 @@
         });
       }
       function navigateTo(v, opts) {
+        ensureAdminViewHidden();
         var options = opts || {};
         CURRENT_VIEW = v;
         setActiveNav(v);
@@ -9083,9 +9588,45 @@
           on('btn-open-new-msg', 'click', openNewMessageModal);
         }
 
+        function handleAdminTargetClick(event) {
+          if (event) event.preventDefault();
+          if (!IS_MANAGER) {
+            notify('管理者メニューへアクセスする権限がありません。', false);
+            return;
+          }
+          var target =
+            (event && event.currentTarget && event.currentTarget.getAttribute('data-admin-target')) ||
+            'dashboard';
+          if (ADMIN_STATE.active) {
+            setAdminSection(target);
+            scrollToTopNow();
+            return;
+          }
+          openAdminView(target);
+        }
+
         function attachAdminMenuHandler() {
-          on('btn-admin-menu', 'click', function () {
-            notify('管理者メニューは準備中です。機能は近日追加されます。', true);
+          document.querySelectorAll('[data-admin-target]').forEach(function (el) {
+            el.addEventListener('click', handleAdminTargetClick);
+          });
+          document.querySelectorAll('[data-admin-nav]').forEach(function (btn) {
+            btn.addEventListener('click', function (event) {
+              if (event) event.preventDefault();
+              if (!IS_MANAGER) {
+                notify('管理者メニューへアクセスする権限がありません。', false);
+                return;
+              }
+              var section = btn.getAttribute('data-admin-section') || 'dashboard';
+              if (!ADMIN_STATE.active) {
+                openAdminView(section);
+                return;
+              }
+              setAdminSection(section);
+            });
+          });
+          on('btn-exit-admin', 'click', function (event) {
+            if (event) event.preventDefault();
+            closeAdminView();
           });
         }
 
