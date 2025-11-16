@@ -2864,6 +2864,19 @@
           padding: 24px;
         }
       }
+      #notification-area {
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2000;
+        width: 92%;
+        max-width: 520px;
+      }
+      #notification-area.is-centered {
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
       body.bootstrapping header.navbar,
       body.bootstrapping nav.topbar,
       body.bootstrapping .footer-nav,
@@ -2999,15 +3012,6 @@
       id="notification-area"
       data-app-shell
       hidden
-      style="
-        position: fixed;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 2000;
-        width: 92%;
-        max-width: 520px;
-      "
     ></div>
     <!-- /COMPONENT: 通知エリア -->
 
@@ -5866,6 +5870,8 @@
         var wrap = byId('notification-area');
         if (!wrap) return;
         wrap.removeAttribute('hidden');
+        var isCentered = options.position === 'center';
+        wrap.classList.toggle('is-centered', !!isCentered);
         var el = document.createElement('div');
         el.className =
           'alert ' +
@@ -5922,6 +5928,7 @@
           actionLabel: '更新する',
           onAction: applyAppShellUpdate,
           duration: 0,
+          position: 'center',
         });
       }
 
