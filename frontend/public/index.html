@@ -1043,13 +1043,13 @@
 
       /* Layout / cards */
       .page-body {
-        padding-top: clamp(8px, calc(var(--header-h) - 36px), 20px);
+        padding-top: calc(var(--safe-top, 0px) + 8px);
         padding-bottom: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom) + 12px);
         min-height: calc(100vh - var(--header-h) - var(--footer-h));
       }
       @media (max-width: 768px) {
         .page-body {
-          padding-top: clamp(12px, calc(var(--header-h) + var(--safe-top) - 40px), 28px);
+          padding-top: calc(var(--safe-top, 0px) + 8px);
           min-height: calc(
             100vh - var(--header-h) - var(--footer-h) - var(--footer-extra) - var(--safe-top)
           );
