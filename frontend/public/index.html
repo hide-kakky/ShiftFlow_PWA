@@ -2274,13 +2274,15 @@
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        background: rgba(255, 255, 255, 0.12);
-        color: var(--on-primary);
-        border-color: rgba(255, 255, 255, 0.3);
+        background: #ffffff;
+        color: #0f172a;
+        border-color: rgba(15, 23, 42, 0.16);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
       }
       :root[data-theme='dark'] .admin-org-trigger {
-        background: rgba(12, 18, 36, 0.45);
-        color: #f6f8ff;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0f172a;
+        border-color: rgba(15, 23, 42, 0.2);
       }
       .admin-org-trigger .material-icons-outlined {
         font-size: 18px;
@@ -7413,6 +7415,21 @@
         var d = new Date(iso);
         if (isNaN(d.getTime())) return iso;
         return d.getMonth() + 1 + '/' + d.getDate();
+      }
+      function formatJst(input, includeTime) {
+        if (input === null || input === undefined) return '—';
+        var date = typeof input === 'number' ? new Date(input) : new Date(String(input));
+        if (!(date instanceof Date) || isNaN(date.getTime())) {
+          return '—';
+        }
+        var year = date.getFullYear();
+        var month = ('0' + (date.getMonth() + 1)).slice(-2);
+        var day = ('0' + date.getDate()).slice(-2);
+        var base = year + '-' + month + '-' + day;
+        if (!includeTime) return base;
+        var hours = ('0' + date.getHours()).slice(-2);
+        var minutes = ('0' + date.getMinutes()).slice(-2);
+        return base + ' ' + hours + ':' + minutes;
       }
       function normalizeArray(data) {
         if (Array.isArray(data)) return data;
