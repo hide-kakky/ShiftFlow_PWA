@@ -2692,17 +2692,81 @@
         background-color: #f9fbff !important;
         color: #0f172a !important;
       }
-      .admin-user-role-select {
-        min-width: 110px;
-        background-color: var(--card);
-        border-color: var(--card-border);
+      .admin-role-label {
+        font-weight: 600;
         color: var(--text-900);
-        padding-right: 1.75rem;
+        text-transform: capitalize;
       }
-      :root[data-theme='dark'] .admin-user-role-select {
-        background-color: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.25);
+      :root[data-theme='dark'] .admin-role-label {
         color: #f4f6ff;
+      }
+      .admin-dashboard-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .admin-dashboard-kpi {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 16px;
+        padding: 16px 20px;
+        box-shadow: var(--card-shadow);
+      }
+      .admin-dashboard-kpi-label {
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .admin-dashboard-kpi-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-900);
+      }
+      .admin-dashboard-kpi-meta {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .admin-dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .admin-dashboard-card {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: var(--card-shadow);
+        min-height: 220px;
+      }
+      .admin-dashboard-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .admin-dashboard-list li {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--divider);
+      }
+      .admin-dashboard-list li:last-child {
+        border-bottom: none;
+      }
+      .admin-dashboard-list .title {
+        font-weight: 600;
+        color: var(--text-900);
+      }
+      .admin-dashboard-list .meta {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .admin-dashboard-empty {
+        text-align: center;
+        color: var(--muted);
+        padding: 20px 0;
+        font-size: 0.9rem;
       }
       .admin-users-loading {
         display: inline-flex;
@@ -3636,51 +3700,36 @@
               <section class="admin-panel is-active" data-admin-panel="dashboard" aria-labelledby="adminDashboardTitle">
                 <div class="admin-panel-header">
                   <h3 id="adminDashboardTitle">管理トップ</h3>
-                  <p>現在の状況を一覧で把握し、アクションに繋げます。</p>
+                  <p>組織の承認状況と直近の操作ログをダッシュボードで把握します。</p>
                 </div>
                 <div class="admin-panel-body">
-                  <div class="admin-kpi-grid">
-                    <article class="admin-card admin-card--kpi">
-                      <p class="admin-card-label">承認待ち</p>
-                      <div class="admin-kpi-value">3<span>件</span></div>
-                      <div class="admin-kpi-trend positive">
-                        <span class="material-icons-outlined">arrow_upward</span>
-                        本日 +2
+                  <div class="admin-placeholder" id="adminDashboardNotice" hidden></div>
+                  <div class="admin-dashboard-kpi-grid">
+                    <article class="admin-dashboard-kpi">
+                      <p class="admin-dashboard-kpi-label">承認待ち</p>
+                      <div class="admin-dashboard-kpi-value" id="adminDashboardPendingCount">—</div>
+                      <div class="admin-dashboard-kpi-meta">
+                        最終更新: <span id="adminDashboardKpiUpdated">—</span>
                       </div>
                     </article>
-                    <article class="admin-card admin-card--kpi">
-                      <p class="admin-card-label">停止中ユーザー</p>
-                      <div class="admin-kpi-value text-warning">2<span>件</span></div>
-                      <div class="admin-kpi-trend warning">確認が必要です</div>
+                    <article class="admin-dashboard-kpi">
+                      <p class="admin-dashboard-kpi-label">有効ユーザー</p>
+                      <div class="admin-dashboard-kpi-value" id="adminDashboardActiveCount">—</div>
+                      <div class="admin-dashboard-kpi-meta">停止中 <span id="adminDashboardSuspendedMeta">—</span></div>
                     </article>
-                    <article class="admin-card admin-card--kpi">
-                      <p class="admin-card-label">監査ログ (24h)</p>
-                      <div class="admin-kpi-value">48<span>件</span></div>
-                      <div class="admin-kpi-trend">
-                        <span class="material-icons-outlined">schedule</span>
-                        深夜帯 6 件
-                      </div>
+                    <article class="admin-dashboard-kpi">
+                      <p class="admin-dashboard-kpi-label">停止中 / 剥奪</p>
+                      <div class="admin-dashboard-kpi-value" id="adminDashboardSuspendedCount">—</div>
+                      <div class="admin-dashboard-kpi-meta">差分を確認し、復帰判断に活用してください</div>
+                    </article>
+                    <article class="admin-dashboard-kpi">
+                      <p class="admin-dashboard-kpi-label">監査イベント (24h)</p>
+                      <div class="admin-dashboard-kpi-value" id="adminDashboardAuditCount">—</div>
+                      <div class="admin-dashboard-kpi-meta">ダッシュボードは最新 5 件を表示します</div>
                     </article>
                   </div>
-                  <div class="admin-card-grid mt-3">
-                    <article class="admin-card admin-card--chart">
-                      <div class="d-flex justify-content-between align-items-center">
-                        <h4 class="mb-0">ロール別メンバー構成</h4>
-                        <span class="text-muted small">現在の組織</span>
-                      </div>
-                      <div class="admin-chart admin-chart--bar" aria-label="ロール別構成">
-                        <div class="admin-chart-bar" style="--value:35%">
-                          <span>Manager 3</span>
-                        </div>
-                        <div class="admin-chart-bar" style="--value:60%">
-                          <span>Member 18</span>
-                        </div>
-                        <div class="admin-chart-bar" style="--value:5%">
-                          <span>Guest 2</span>
-                        </div>
-                      </div>
-                    </article>
-                    <article class="admin-card">
+                  <div class="admin-dashboard-grid">
+                    <article class="admin-dashboard-card" aria-live="polite">
                       <div class="d-flex justify-content-between align-items-center mb-2">
                         <h4 class="mb-0">承認待ちユーザー</h4>
                         <button class="btn btn-sm btn-outline-primary" type="button" data-admin-target="users">
@@ -3688,34 +3737,34 @@
                         </button>
                       </div>
                       <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
-                      <ul class="admin-log-list">
-                        <li class="admin-log-item">
-                          <strong>田中 翔太</strong>
-                          <span class="text-muted small">2024/05/04 10:12 申請（フロント）</span>
-                        </li>
-                        <li class="admin-log-item">
-                          <strong>guest@shiftflow.dev</strong>
-                          <span class="text-muted small">2024/05/03 22:51 申請（キッチン）</span>
-                        </li>
-                        <li class="text-muted small">...承認 API と連動予定...</li>
+                      <ul class="admin-dashboard-list" id="adminDashboardPendingList">
+                        <li class="admin-dashboard-empty">読み込み中...</li>
                       </ul>
                     </article>
-                    <article class="admin-card">
-                      <h4>最近の操作ログ</h4>
-                      <p class="text-muted small mb-2">直近 24 時間の主要な管理アクション。</p>
-                      <ul class="admin-log-list">
-                        <li class="admin-log-item">
-                          <strong>山田（manager）</strong>
-                          <span class="text-muted small">ユーザーAを承認</span>
-                        </li>
-                        <li class="admin-log-item">
-                          <strong>佐藤（admin）</strong>
-                          <span class="text-muted small">組織名を更新</span>
-                        </li>
-                        <li class="text-muted small">...監査ログ API と連携予定...</li>
+                    <article class="admin-dashboard-card" aria-live="polite">
+                      <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="mb-0">最近の操作ログ</h4>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-admin-target="audit">
+                          ログを見る
+                        </button>
+                      </div>
+                      <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
+                      <ul class="admin-dashboard-list" id="adminDashboardAuditList">
+                        <li class="admin-dashboard-empty">読み込み中...</li>
                       </ul>
                     </article>
                   </div>
+                  <article class="admin-dashboard-card">
+                    <h4 class="mb-3">システムメモ</h4>
+                    <dl class="row small mb-0">
+                      <dt class="col-4 col-md-3">対象組織</dt>
+                      <dd class="col-8 col-md-9" id="adminDashboardOrgLabel">現在の組織</dd>
+                      <dt class="col-4 col-md-3">Org ID</dt>
+                      <dd class="col-8 col-md-9" id="adminDashboardOrgId">—</dd>
+                      <dt class="col-4 col-md-3">更新</dt>
+                      <dd class="col-8 col-md-9" id="adminDashboardUpdatedAt">—</dd>
+                    </dl>
+                  </article>
                 </div>
               </section>
               <section class="admin-panel" data-admin-panel="users" aria-labelledby="adminUsersTitle">
@@ -4221,7 +4270,7 @@
               aria-label="管理トップ"
               title="管理トップ"
             >
-              <span class="material-icons-outlined" aria-hidden="true">home</span>
+              <span class="material-icons-outlined" aria-hidden="true">dashboard</span>
             </a>
           </li>
           <li class="nav-item">
@@ -10470,6 +10519,259 @@
         }
       }
 
+      const AdminDashboardController = (function () {
+        const PENDING_LIMIT = 5;
+        const AUDIT_LIMIT = 5;
+        const state = {
+          loading: false,
+          loaded: false,
+          stats: null,
+          pending: [],
+          audits: [],
+          auditCount: 0,
+          updatedAt: 0,
+        };
+
+        function setNotice(message, isError) {
+          var el = byId('adminDashboardNotice');
+          if (!el) return;
+          if (!message) {
+            el.textContent = '';
+            el.setAttribute('hidden', 'hidden');
+            el.classList.remove('text-danger');
+            return;
+          }
+          el.textContent = message;
+          el.classList.toggle('text-danger', !!isError);
+          el.removeAttribute('hidden');
+        }
+
+        function setText(id, value) {
+          var el = byId(id);
+          if (!el) return;
+          el.textContent = value == null ? '—' : String(value);
+        }
+
+        function setLoading(flag) {
+          state.loading = !!flag;
+          if (flag) {
+            setText('adminDashboardPendingCount', '—');
+            setText('adminDashboardActiveCount', '—');
+            setText('adminDashboardSuspendedCount', '—');
+            setText('adminDashboardAuditCount', '—');
+            var pendingList = byId('adminDashboardPendingList');
+            if (pendingList) {
+              pendingList.innerHTML = '<li class="admin-dashboard-empty">読み込み中...</li>';
+            }
+            var auditList = byId('adminDashboardAuditList');
+            if (auditList) {
+              auditList.innerHTML = '<li class="admin-dashboard-empty">読み込み中...</li>';
+            }
+          }
+        }
+
+        function formatNumber(value) {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+          }
+          return '—';
+        }
+
+        function renderStats(stats) {
+          stats = stats || {};
+          setText('adminDashboardPendingCount', formatNumber(stats.pending));
+          setText('adminDashboardActiveCount', formatNumber(stats.active));
+          var suspendedCount = (stats.suspended || 0) + (stats.revoked || 0);
+          setText('adminDashboardSuspendedCount', formatNumber(suspendedCount));
+          setText('adminDashboardSuspendedMeta', formatNumber(stats.suspended));
+          setText('adminDashboardAuditCount', state.auditCount ? state.auditCount : (state.loaded ? 0 : '—'));
+          setText(
+            'adminDashboardKpiUpdated',
+            state.updatedAt ? formatJst(state.updatedAt, true) : '—'
+          );
+        }
+
+        function formatRoleLabel(role) {
+          var normalized = String(role || '').toLowerCase();
+          if (normalized === 'admin') return 'Admin';
+          if (normalized === 'manager') return 'Manager';
+          if (normalized === 'member') return 'Member';
+          if (normalized === 'guest') return 'Guest';
+          return normalized || 'member';
+        }
+
+        function renderPendingList(rows) {
+          var list = byId('adminDashboardPendingList');
+          if (!list) return;
+          if (!rows || !rows.length) {
+            list.innerHTML = '<li class="admin-dashboard-empty">承認待ちはありません。</li>';
+            return;
+          }
+          list.innerHTML = rows
+            .slice(0, PENDING_LIMIT)
+            .map(function (row) {
+              return (
+                '<li>' +
+                '<div class="title">' +
+                esc(row.name || row.email || '—') +
+                '<span class="ms-2 badge bg-secondary">' +
+                esc(formatRoleLabel(row.role)) +
+                '</span>' +
+                '</div>' +
+                '<div class="meta">' +
+                esc(row.email || '') +
+                ' / 最終: ' +
+                esc(row.lastLoginLabel || '—') +
+                '</div>' +
+                '</li>'
+              );
+            })
+            .join('');
+        }
+
+        function renderAuditList(rows) {
+          var list = byId('adminDashboardAuditList');
+          if (!list) return;
+          if (!rows || !rows.length) {
+            list.innerHTML = '<li class="admin-dashboard-empty">新しいログはありません。</li>';
+            return;
+          }
+          list.innerHTML = rows
+            .slice(0, AUDIT_LIMIT)
+            .map(function (row) {
+              return (
+                '<li>' +
+                '<div class="title">' +
+                esc(row.eventLabel || 'イベント') +
+                '</div>' +
+                (row.summary ? '<div class="meta mb-1">' + esc(row.summary) + '</div>' : '') +
+                '<div class="meta">' +
+                esc(row.occurredLabel || '—') +
+                ' / ' +
+                esc(row.userLabel || 'システム') +
+                '</div>' +
+                '</li>'
+              );
+            })
+            .join('');
+        }
+
+        function renderSystemCard() {
+          setText('adminDashboardOrgLabel', ADMIN_STATE.orgLabel || '現在の組織');
+          var orgId = ADMIN_STATE.orgId && ADMIN_STATE.orgId !== 'current' ? ADMIN_STATE.orgId : 'current';
+          setText('adminDashboardOrgId', orgId);
+          setText(
+            'adminDashboardUpdatedAt',
+            state.updatedAt ? formatJst(state.updatedAt, true) : '—'
+          );
+        }
+
+        function fetchUserSnapshot() {
+          return new Promise(function (resolve, reject) {
+            if (!(globalThis.google && google.script && google.script.run)) {
+              resolve(null);
+              return;
+            }
+            var args = {
+              search: '',
+              status: '',
+              role: '',
+              orgId: ADMIN_STATE.orgId || 'current',
+              page: 1,
+              pageSize: 200,
+            };
+            google.script.run
+              .withSuccessHandler(function (payload) {
+                resolve(payload);
+              })
+              .withFailureHandler(function (err) {
+                reject(err);
+              })
+              .adminListUsers(args);
+          });
+        }
+
+        function fetchAuditSnapshot() {
+          return new Promise(function (resolve, reject) {
+            if (!(globalThis.google && google.script && google.script.run)) {
+              resolve(null);
+              return;
+            }
+            google.script.run
+              .withSuccessHandler(function (payload) {
+                resolve(payload);
+              })
+              .withFailureHandler(function (err) {
+                reject(err);
+              })
+              .getAuditLogs(AUDIT_LIMIT, { range: '24h', eventType: 'all' });
+          });
+        }
+
+        function fetchDashboard() {
+          if (!IS_MANAGER) {
+            setNotice('管理者権限が必要です。', true);
+            return Promise.resolve(false);
+          }
+          setNotice('', false);
+          setLoading(true);
+          return Promise.all([fetchUserSnapshot(), fetchAuditSnapshot()])
+            .then(function (results) {
+              var usersPayload = results[0] || {};
+              var auditPayload = results[1] || {};
+              var rows = Array.isArray(usersPayload.rows) ? usersPayload.rows : [];
+              var pending = rows.filter(function (row) {
+                return String(row.status || '').toLowerCase() === 'pending';
+              });
+              state.stats = (usersPayload.meta && usersPayload.meta.stats) || {};
+              state.pending = pending;
+              var audits = Array.isArray(auditPayload.rows) ? auditPayload.rows : [];
+              state.audits = audits;
+              state.auditCount = audits.length;
+              state.updatedAt = Date.now();
+              state.loaded = true;
+              renderStats(state.stats);
+              renderPendingList(pending);
+              renderAuditList(audits);
+              renderSystemCard();
+              return true;
+            })
+            .catch(function (err) {
+              setNotice(err && err.message ? err.message : '管理トップの読み込みに失敗しました。', true);
+              return false;
+            })
+            .finally(function () {
+              setLoading(false);
+            });
+        }
+
+        function ensureLoaded() {
+          if (state.loaded || state.loading) return;
+          fetchDashboard();
+        }
+
+        function init() {
+          renderSystemCard();
+          addAdminSectionListener(function (section) {
+            if (section === 'dashboard') {
+              ensureLoaded();
+            }
+          });
+          addAdminOrgListener(function () {
+            state.loaded = false;
+            if (ADMIN_STATE.section === 'dashboard' && ADMIN_STATE.active) {
+              fetchDashboard();
+            } else {
+              renderSystemCard();
+            }
+          });
+        }
+
+        return {
+          init: init,
+        };
+      })();
+
       const AdminUsersController = (function () {
         const STATUS_LABELS = {
           pending: '承認待ち',
@@ -10580,27 +10882,7 @@
 
         function buildRoleControl(row) {
           var normalizedRole = String(row.role || 'member');
-          if (!canModifyRow(row)) {
-            return '<span>' + esc(normalizedRole) + '</span>';
-          }
-          var options = ROLE_OPTIONS.filter(function (opt) {
-            if (opt.value === 'admin' && !IS_ADMIN) return false;
-            return true;
-          })
-            .map(function (opt) {
-              var selected = opt.value === normalizedRole ? ' selected' : '';
-              return '<option value="' + esc(opt.value) + '"' + selected + '>' + esc(opt.label) + '</option>';
-            })
-            .join('');
-          return (
-            '<select class="form-select form-select-sm admin-user-role-select" data-user-id="' +
-            esc(row.userId) +
-            '" data-user-email="' +
-            esc(row.email) +
-            '">' +
-            options +
-            '</select>'
-          );
+          return '<span class="admin-role-label" data-role="' + esc(normalizedRole) + '">' + esc(normalizedRole) + '</span>';
         }
 
         function buildActionButtons(row) {
@@ -10947,25 +11229,6 @@
           fetchUsers();
         }
 
-        function handleRoleSelectChange(event) {
-          var select = event.target.closest('.admin-user-role-select');
-          if (!select) return;
-          var userId = select.getAttribute('data-user-id');
-          var email = select.getAttribute('data-user-email');
-          var nextRole = select.value;
-          if (!userId || !nextRole) return;
-          if (!window.confirm('ロールを ' + nextRole + ' に変更しますか？')) {
-            var row = state.rows.find(function (entry) {
-              return entry.userId === userId;
-            });
-            if (row) {
-              select.value = row.role;
-            }
-            return;
-          }
-          performUpdate({ userId: userId, email: email, role: nextRole });
-        }
-
         function handleDetailSubmit(event) {
           if (event) event.preventDefault();
           if (!detailState.userId) return;
@@ -11051,7 +11314,6 @@
           });
           var table = byId('adminUsersTableBody');
           if (table) {
-            table.addEventListener('change', handleRoleSelectChange);
             table.addEventListener('click', handleActionClick);
           }
           var detailForm = byId('adminUserDetailForm');
@@ -11952,6 +12214,7 @@
         MessageAttachmentController.init();
         TaskFormController.init();
         MessageFormController.init();
+        AdminDashboardController.init();
         AdminUsersController.init();
         AdminAuditController.init();
         AdminOrgController.init();
