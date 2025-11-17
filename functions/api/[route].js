@@ -2898,6 +2898,257 @@ async function maybeHandleRouteWithD1(options) {
         requestId
       );
     }
+    if (normalizedRoute === 'getAuditLogs') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '管理者権限が必要です。'
+        );
+      }
+      const args = Array.isArray(parsedBody?.args) ? parsedBody.args : [];
+      let limitArg = null;
+      let filterArg = null;
+      if (args.length >= 2) {
+        limitArg = args[0];
+        filterArg = args[1];
+      } else if (args.length === 1) {
+        if (typeof args[0] === 'number') {
+          limitArg = args[0];
+        } else {
+          filterArg = args[0];
+        }
+      }
+      const filters =
+        filterArg && typeof filterArg === 'object' && !Array.isArray(filterArg) ? filterArg : {};
+      const candidateLimit =
+        typeof filters.limit === 'number' ? filters.limit : typeof limitArg === 'number' ? limitArg : 150;
+      const limit = clampAuditLimit(candidateLimit);
+      const rangeKey = filters.range || filters.period || '24h';
+      const resolvedRange = resolveAuditRange(rangeKey);
+      const candidateType = String(filters.eventType || filters.type || 'all').toLowerCase();
+      const recognizedTypes = new Set(['admin', 'login', 'api']);
+      const eventType = candidateType === 'all' || !recognizedTypes.has(candidateType) ? 'all' : candidateType;
+      const includeAdmin = eventType === 'all' || eventType === 'admin';
+      const includeLogin = eventType === 'all' || eventType === 'login';
+      const includeApi = eventType === 'all' || eventType === 'api';
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!actorMembership || !actorMembership.user_id) {
+        const resultPayload = {
+          rows: [],
+          meta: {
+            managerOnly: true,
+            reason: '監査対象の組織に参加していません。',
+          },
+        };
+        return jsonResponseFromD1(
+          200,
+          { ok: true, success: true, result: resultPayload },
+          allowedOrigin,
+          requestId
+        );
+      }
+      let orgId = actorMembership.org_id || accessContext?.orgId || null;
+      const requestedOrgId =
+        typeof filters.orgId === 'string' && filters.orgId.trim() && filters.orgId.trim() !== 'current'
+          ? filters.orgId.trim()
+          : '';
+      if (requestedOrgId && requestedOrgId !== orgId) {
+        const membershipForRequested = await fetchMembershipForOrg(
+          db,
+          actorMembership.user_id,
+          requestedOrgId
+        );
+        const membershipStatus = (membershipForRequested?.status || '').trim().toLowerCase();
+        if (!membershipForRequested || (membershipStatus && membershipStatus !== 'active')) {
+          return errorResponse(
+            403,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'org_access_denied',
+            '指定の組織にアクセスできません。'
+          );
+        }
+        orgId = requestedOrgId;
+      }
+      if (!orgId) {
+        orgId = await resolveDefaultOrgId(db);
+      }
+      if (!orgId) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '参照可能な組織が見つかりません。'
+        );
+      }
+      const now = Date.now();
+      const sinceMs = Math.max(0, now - resolvedRange.windowMs);
+      const adminEntries = [];
+      const loginEntries = [];
+      const apiEntries = [];
+      if (includeAdmin) {
+        const adminResult = await db
+          .prepare(
+            `
+            SELECT
+              al.audit_id,
+              al.target_type,
+              al.target_id,
+              al.action,
+              al.created_at_ms,
+              al.payload_json,
+              al.actor_membership_id,
+              u.email AS actor_email,
+              COALESCE(u.display_name, u.email) AS actor_name,
+              ms.role AS actor_role
+            FROM audit_logs al
+            LEFT JOIN memberships ms ON ms.membership_id = al.actor_membership_id
+            LEFT JOIN users u ON u.user_id = ms.user_id
+            WHERE al.org_id = ?1
+              AND al.created_at_ms >= ?2
+            ORDER BY al.created_at_ms DESC
+            LIMIT ?3
+          `
+          )
+          .bind(orgId, sinceMs, limit)
+          .all();
+        const rows = Array.isArray(adminResult?.results) ? adminResult.results : [];
+        rows.forEach((row) => {
+          const entry = buildAdminAuditEntry(row);
+          if (entry) {
+            adminEntries.push(entry);
+          }
+        });
+      }
+      if (includeLogin) {
+        const loginResult = await db
+          .prepare(
+            `
+            SELECT
+              la.login_id,
+              la.user_email,
+              la.status,
+              la.reason,
+              la.request_id,
+              la.token_iat_ms,
+              la.attempted_at_ms,
+              la.client_ip,
+              la.user_agent,
+              la.role,
+              la.org_id,
+              u.display_name
+            FROM login_audits la
+            LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
+            LEFT JOIN memberships ms ON ms.user_id = u.user_id
+            WHERE la.attempted_at_ms >= ?2
+              AND (?1 IS NULL OR la.org_id = ?1 OR (la.org_id IS NULL AND ms.org_id = ?1))
+            ORDER BY la.attempted_at_ms DESC
+            LIMIT ?3
+          `
+          )
+          .bind(orgId, sinceMs, limit)
+          .all();
+        const rows = Array.isArray(loginResult?.results) ? loginResult.results : [];
+        rows.forEach((row) => {
+          const entry = buildLoginAuditEntry(row);
+          if (entry) {
+            loginEntries.push(entry);
+          }
+        });
+      }
+      if (includeApi) {
+        const proxyResult = await db
+          .prepare(
+            `
+            SELECT
+              apl.log_id,
+              apl.level,
+              apl.event,
+              apl.message,
+              apl.request_id,
+              apl.route,
+              apl.email,
+              apl.status,
+              apl.meta_json,
+              apl.source,
+              apl.client_ip,
+              apl.user_agent,
+              apl.cf_ray,
+              apl.created_at_ms,
+              u.display_name
+            FROM auth_proxy_logs apl
+            LEFT JOIN users u ON LOWER(u.email) = LOWER(apl.email)
+            LEFT JOIN memberships ms ON ms.user_id = u.user_id
+            WHERE apl.created_at_ms >= ?2
+              AND (?1 IS NULL OR ms.org_id = ?1 OR apl.email IS NULL)
+            ORDER BY apl.created_at_ms DESC
+            LIMIT ?3
+          `
+          )
+          .bind(orgId, sinceMs, limit)
+          .all();
+        const rows = Array.isArray(proxyResult?.results) ? proxyResult.results : [];
+        rows.forEach((row) => {
+          const entry = buildProxyAuditEntry(row);
+          if (entry) {
+            apiEntries.push(entry);
+          }
+        });
+      }
+      const combined = adminEntries.concat(loginEntries, apiEntries);
+      combined.sort((a, b) => {
+        const aTime = typeof a.occurredAt === 'number' ? a.occurredAt : 0;
+        const bTime = typeof b.occurredAt === 'number' ? b.occurredAt : 0;
+        return bTime - aTime;
+      });
+      const limitedRows = combined.slice(0, limit);
+      const stats = {
+        admin: adminEntries.length,
+        login: loginEntries.length,
+        api: apiEntries.length,
+      };
+      const resultPayload = {
+        rows: limitedRows,
+        meta: {
+          totalRows: limitedRows.length,
+          availableRows: combined.length,
+          truncated: combined.length > limit,
+          stats,
+          filters: {
+            range: resolvedRange.key,
+            eventType,
+            orgId,
+            limit,
+          },
+          refreshedAt: formatJst(now, true),
+          rangeLabel: resolvedRange.label,
+        },
+      };
+      captureDiagnostics(config, 'info', 'd1_admin_audit_logs', {
+        event: 'd1_admin_audit_logs',
+        requestId,
+        orgId,
+        counts: stats,
+        filterType: eventType,
+        range: resolvedRange.key,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: resultPayload },
+        allowedOrigin,
+        requestId
+      );
+    }
     if (normalizedRoute === 'listMyTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const responsePayload = await buildMyTasksPayload(db, rawEmail);
@@ -4797,6 +5048,203 @@ async function insertAuditLog(db, entry) {
       payloadJson
     )
     .run();
+}
+
+function clampAuditLimit(value, min = 25, max = 500) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 150;
+  }
+  const normalized = Math.floor(value);
+  if (normalized < min) return min;
+  if (normalized > max) return max;
+  return normalized;
+}
+
+function resolveAuditRange(rangeKey) {
+  const ranges = {
+    '1h': { label: '直近1時間', windowMs: 60 * 60 * 1000 },
+    '6h': { label: '直近6時間', windowMs: 6 * 60 * 60 * 1000 },
+    '24h': { label: '直近24時間', windowMs: 24 * 60 * 60 * 1000 },
+    '7d': { label: '直近7日間', windowMs: 7 * 24 * 60 * 60 * 1000 },
+    '30d': { label: '直近30日間', windowMs: 30 * 24 * 60 * 60 * 1000 },
+  };
+  const normalized = String(rangeKey || '').toLowerCase();
+  if (ranges[normalized]) {
+    return { key: normalized, ...ranges[normalized] };
+  }
+  return { key: '24h', ...ranges['24h'] };
+}
+
+function describeAdminAction(action, payload) {
+  const normalized = String(action || '').trim();
+  const email = payload && typeof payload.email === 'string' ? payload.email : '';
+  if (normalized === 'user_status_update') {
+    return {
+      label: 'ユーザーステータス更新',
+      summary:
+        (email ? email + '：' : '') +
+        (payload && payload.from ? payload.from : '不明') +
+        ' → ' +
+        (payload && payload.to ? payload.to : '不明'),
+    };
+  }
+  if (normalized === 'user_role_update') {
+    return {
+      label: 'ユーザーロール更新',
+      summary:
+        (email ? email + '：' : '') +
+        (payload && payload.from ? payload.from : '不明') +
+        ' → ' +
+        (payload && payload.to ? payload.to : '不明'),
+    };
+  }
+  if (normalized === 'admin_org_update') {
+    return {
+      label: '組織設定更新',
+      summary: '名称・カラー・通知設定などを更新しました。',
+    };
+  }
+  return {
+    label: normalized || '管理操作',
+    summary: normalized || '管理操作を記録しました。',
+  };
+}
+
+function buildAdminAuditEntry(row) {
+  if (!row) return null;
+  const payload = safeParseJson(row.payload_json || '', {});
+  const descriptor = describeAdminAction(row.action, payload);
+  const actorName = row.actor_name || row.actor_email || 'システム';
+  const createdAt = row.created_at_ms || Date.now();
+  return {
+    id: row.audit_id || createUlid(createdAt),
+    type: 'admin',
+    typeLabel: '管理操作',
+    icon: 'fact_check',
+    eventLabel: descriptor.label,
+    statusLabel: '完了',
+    severity: 'info',
+    summary: descriptor.summary,
+    occurredAt: createdAt,
+    occurredLabel: formatJst(createdAt, true),
+    userLabel: actorName,
+    userEmail: row.actor_email || '',
+    meta: {
+      source: 'audit_logs',
+      action: row.action || '',
+      targetType: row.target_type || '',
+      targetId: row.target_id || '',
+      payload,
+      actor: {
+        email: row.actor_email || '',
+        name: actorName,
+        role: row.actor_role || '',
+        membershipId: row.actor_membership_id || '',
+      },
+    },
+  };
+}
+
+function buildLoginAuditEntry(row) {
+  if (!row) return null;
+  const attemptedAt = row.attempted_at_ms || Date.now();
+  const status = String(row.status || '').toLowerCase();
+  let eventLabel = 'ログイン記録';
+  let statusLabel = '記録';
+  let severity = 'info';
+  if (status === 'active') {
+    eventLabel = 'ログイン成功';
+    statusLabel = '成功';
+    severity = 'success';
+  } else if (status === 'pending') {
+    eventLabel = 'ログイン保留';
+    statusLabel = '承認待ち';
+    severity = 'warning';
+  } else if (status === 'suspended') {
+    eventLabel = 'ログイン拒否';
+    statusLabel = '停止中';
+    severity = 'danger';
+  } else if (status === 'revoked') {
+    eventLabel = 'ログイン拒否';
+    statusLabel = '権限剥奪';
+    severity = 'danger';
+  }
+  const userLabel = row.display_name || row.user_email || '不明なユーザー';
+  const summaryParts = [];
+  if (row.reason) summaryParts.push('理由: ' + row.reason);
+  if (row.role) summaryParts.push('ロール: ' + row.role);
+  const summary = summaryParts.length
+    ? summaryParts.join(' / ')
+    : 'ログインイベントを記録しました。';
+  return {
+    id: row.login_id || createUlid(attemptedAt),
+    type: 'login',
+    typeLabel: 'ログイン',
+    icon: 'login',
+    eventLabel,
+    statusLabel,
+    severity,
+    summary,
+    occurredAt: attemptedAt,
+    occurredLabel: formatJst(attemptedAt, true),
+    userLabel,
+    userEmail: row.user_email || '',
+    meta: {
+      source: 'login_audits',
+      requestId: row.request_id || '',
+      reason: row.reason || '',
+      role: row.role || '',
+      clientIp: row.client_ip || '',
+      userAgent: row.user_agent || '',
+      tokenIssuedAt: row.token_iat_ms || null,
+      orgId: row.org_id || '',
+      status,
+    },
+  };
+}
+
+function buildProxyAuditEntry(row) {
+  if (!row) return null;
+  const createdAt = row.created_at_ms || Date.now();
+  const meta = safeParseJson(row.meta_json || '', {});
+  const level = String(row.level || '').toLowerCase();
+  let severity = 'info';
+  if (level === 'error') severity = 'danger';
+  else if (level === 'warn') severity = 'warning';
+  const summaryParts = [];
+  if (row.message) summaryParts.push(row.message);
+  if (row.status) summaryParts.push('status: ' + row.status);
+  const summary = summaryParts.length
+    ? summaryParts.join(' / ')
+    : '認証プロキシイベントを記録しました。';
+  const userLabel = row.display_name || row.email || 'システム';
+  return {
+    id: row.log_id || createUlid(createdAt),
+    type: 'api',
+    typeLabel: 'API',
+    icon: 'sync_lock',
+    eventLabel: row.event || 'Auth Proxy',
+    statusLabel: row.status || row.level || 'info',
+    severity,
+    summary,
+    occurredAt: createdAt,
+    occurredLabel: formatJst(createdAt, true),
+    userLabel,
+    userEmail: row.email || '',
+    meta: {
+      source: 'auth_proxy_logs',
+      level: row.level || '',
+      event: row.event || '',
+      message: row.message || '',
+      requestId: row.request_id || '',
+      route: row.route || '',
+      clientIp: row.client_ip || '',
+      userAgent: row.user_agent || '',
+      cfRay: row.cf_ray || '',
+      status: row.status || '',
+      meta,
+    },
+  };
 }
 
 async function resolveMembershipForEmail(db, email) {

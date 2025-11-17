@@ -3930,53 +3930,58 @@
                 <div class="admin-panel-body">
                   <div class="admin-filter-bar">
                     <div class="admin-filter-item">
-                      <label class="form-label">期間</label>
-                      <select class="form-select">
-                        <option>24時間</option>
-                        <option>7日間</option>
-                        <option>30日間</option>
+                      <label class="form-label" for="adminAuditRange">期間</label>
+                      <select class="form-select" id="adminAuditRange">
+                        <option value="24h" selected>24時間</option>
+                        <option value="7d">7日間</option>
+                        <option value="30d">30日間</option>
                       </select>
                     </div>
                     <div class="admin-filter-item">
-                      <label class="form-label">イベント種別</label>
-                      <select class="form-select">
-                        <option>全て</option>
-                        <option>login</option>
-                        <option>admin</option>
-                        <option>api</option>
+                      <label class="form-label" for="adminAuditType">イベント種別</label>
+                      <select class="form-select" id="adminAuditType">
+                        <option value="all" selected>全て</option>
+                        <option value="admin">管理操作</option>
+                        <option value="login">ログイン</option>
+                        <option value="api">API</option>
                       </select>
                     </div>
+                    <div class="admin-filter-item admin-filter-actions">
+                      <label class="form-label d-none d-md-block">&nbsp;</label>
+                      <button class="btn btn-outline-secondary w-100" type="button" id="btnAdminAuditReload">
+                        <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                      </button>
+                    </div>
                   </div>
-                  <div class="table-responsive">
-                    <table class="admin-placeholder-table">
+                  <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3 admin-audit-meta">
+                    <div class="small text-muted" id="adminAuditSummary">—</div>
+                    <div class="small text-muted" id="adminAuditUpdatedAt">最終更新: —</div>
+                  </div>
+                  <div class="admin-placeholder" id="adminAuditNotice" hidden></div>
+                  <div class="table-responsive" id="adminAuditTableWrap" aria-live="polite">
+                    <table class="table admin-audit-table">
                       <thead>
                         <tr>
-                          <th>時刻</th>
-                          <th>ユーザー</th>
-                          <th>イベント</th>
-                          <th>概要</th>
+                          <th scope="col">時刻</th>
+                          <th scope="col">ユーザー</th>
+                          <th scope="col">イベント</th>
+                          <th scope="col">概要</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        <tr>
-                          <td>2024/05/04 11:23</td>
-                          <td>佐藤（manager）</td>
-                          <td>admin</td>
-                          <td>ユーザーAを承認</td>
-                        </tr>
-                        <tr>
-                          <td>2024/05/04 11:05</td>
-                          <td>山田（member）</td>
-                          <td>login</td>
-                          <td>ログイン成功 (requestId: abc123)</td>
-                        </tr>
+                      <tbody id="adminAuditTableBody">
                         <tr>
                           <td colspan="4">
-                            詳細リンクを押すとモーダルで requestId / route / payload 要約を表示する予定です。
+                            <div class="admin-users-loading">
+                              <span class="material-icons-outlined align-middle">hourglass_top</span>
+                              読み込み中...
+                            </div>
                           </td>
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                  <div class="admin-placeholder text-center" id="adminAuditEmpty" hidden>
+                    条件に一致するログがありません。
                   </div>
                 </div>
               </section>
@@ -3989,6 +3994,46 @@
         </div>
       </section>
     </main>
+
+    <div
+      class="modal fade"
+      id="adminAuditDetailModal"
+      tabindex="-1"
+      aria-labelledby="adminAuditDetailTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="adminAuditDetailTitle">ログ詳細</h5>
+            <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <dl class="row small mb-3">
+              <dt class="col-sm-4">時刻</dt>
+              <dd class="col-sm-8" id="adminAuditDetailTime">—</dd>
+              <dt class="col-sm-4">種別</dt>
+              <dd class="col-sm-8" id="adminAuditDetailType">—</dd>
+              <dt class="col-sm-4">ユーザー</dt>
+              <dd class="col-sm-8" id="adminAuditDetailUser">—</dd>
+              <dt class="col-sm-4">ステータス</dt>
+              <dd class="col-sm-8" id="adminAuditDetailStatus">—</dd>
+              <dt class="col-sm-4">リクエストID</dt>
+              <dd class="col-sm-8" id="adminAuditDetailRequest">—</dd>
+              <dt class="col-sm-4">ターゲット / ルート</dt>
+              <dd class="col-sm-8" id="adminAuditDetailRoute">—</dd>
+              <dt class="col-sm-4">概要</dt>
+              <dd class="col-sm-8" id="adminAuditDetailSummary">—</dd>
+            </dl>
+            <p class="text-muted small mb-1">詳細 JSON</p>
+            <pre class="bg-light rounded p-3 small" id="adminAuditDetailMeta">{}</pre>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">閉じる</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- ===== Floating action button for quick actions ===== -->
     <div class="fab dropup dropup-center" data-app-shell hidden>
@@ -10750,6 +10795,379 @@
         };
       })();
 
+      const AdminAuditController = (function () {
+        const AUDIT_LIMIT = 150;
+        const SEVERITY_CLASS = {
+          success: 'badge bg-success',
+          info: 'badge bg-primary',
+          warning: 'badge bg-warning text-dark',
+          danger: 'badge bg-danger',
+        };
+        const state = {
+          rows: [],
+          loading: false,
+          loaded: false,
+          filters: { range: '24h', eventType: 'all', orgId: 'current' },
+          requestToken: 0,
+          meta: {},
+        };
+        let detailModal = null;
+
+        function setNotice(message, isError) {
+          var el = byId('adminAuditNotice');
+          if (!el) return;
+          if (!message) {
+            el.textContent = '';
+            el.setAttribute('hidden', 'hidden');
+            el.classList.remove('text-danger');
+            return;
+          }
+          el.textContent = message;
+          el.classList.toggle('text-danger', !!isError);
+          el.removeAttribute('hidden');
+        }
+
+        function setLoading(isLoading) {
+          state.loading = !!isLoading;
+          var wrap = byId('adminAuditTableWrap');
+          if (wrap) {
+            wrap.setAttribute('aria-busy', state.loading ? 'true' : 'false');
+          }
+          if (state.loading && !state.loaded) {
+            renderTable();
+          }
+        }
+
+        function severityClass(row) {
+          return SEVERITY_CLASS[row.severity] || 'badge bg-secondary';
+        }
+
+        function renderSummary(meta) {
+          var el = byId('adminAuditSummary');
+          if (!el) return;
+          if (!meta) {
+            el.textContent = '—';
+            return;
+          }
+          var stats = meta.stats || {};
+          var parts = [];
+          if (meta.rangeLabel) {
+            parts.push(meta.rangeLabel);
+          }
+          parts.push('合計 ' + (meta.availableRows || 0) + ' 件');
+          parts.push(
+            '（管理 ' +
+              (stats.admin || 0) +
+              ' / ログイン ' +
+              (stats.login || 0) +
+              ' / API ' +
+              (stats.api || 0) +
+              '）'
+          );
+          if (meta.truncated) {
+            parts.push('最新 ' + (meta.filters && meta.filters.limit ? meta.filters.limit : AUDIT_LIMIT) + ' 件のみ表示');
+          }
+          el.textContent = parts.join(' / ');
+        }
+
+        function renderUpdatedAt(meta) {
+          var el = byId('adminAuditUpdatedAt');
+          if (!el) return;
+          if (!meta || !meta.refreshedAt) {
+            el.textContent = '最終更新: —';
+            return;
+          }
+          el.textContent = '最終更新: ' + meta.refreshedAt;
+        }
+
+        function toggleEmptyState(show) {
+          var emptyEl = byId('adminAuditEmpty');
+          if (!emptyEl) return;
+          if (show) {
+            emptyEl.removeAttribute('hidden');
+          } else {
+            emptyEl.setAttribute('hidden', 'hidden');
+          }
+        }
+
+        function renderTable() {
+          var body = byId('adminAuditTableBody');
+          if (!body) return;
+          if (!state.rows.length) {
+            if (state.loading) {
+              body.innerHTML =
+                '<tr><td colspan="4"><div class="admin-users-loading">' +
+                '<span class="material-icons-outlined align-middle">hourglass_top</span>' +
+                '読み込み中...' +
+                '</div></td></tr>';
+              toggleEmptyState(false);
+            } else {
+              body.innerHTML =
+                '<tr><td colspan="4" class="text-center text-muted">ログが見つかりません。</td></tr>';
+              toggleEmptyState(true);
+            }
+            return;
+          }
+          var rowsHtml = state.rows
+            .map(function (row) {
+              var detailBtn = row.meta
+                ? ' <button class="btn btn-link btn-sm ps-0" type="button" data-admin-audit-detail="' +
+                  esc(row.id) +
+                  '">詳細</button>'
+                : '';
+              var userMeta = row.userEmail
+                ? '<div class="text-muted small">' + esc(row.userEmail) + '</div>'
+                : '';
+              return (
+                '<tr data-admin-audit-row="' +
+                esc(row.id) +
+                '">' +
+                '<td><div class="fw-bold">' +
+                esc(row.occurredLabel || '—') +
+                '</div><div class="text-muted small">' +
+                esc(row.typeLabel || '') +
+                '</div></td>' +
+                '<td><div class="fw-bold">' +
+                esc(row.userLabel || '—') +
+                '</div>' +
+                userMeta +
+                '</td>' +
+                '<td>' +
+                '<span class="' +
+                severityClass(row) +
+                '">' +
+                esc(row.eventLabel || 'イベント') +
+                '</span>' +
+                (row.statusLabel
+                  ? '<div class="text-muted small mt-1">' + esc(row.statusLabel) + '</div>'
+                  : '') +
+                '</td>' +
+                '<td>' +
+                '<div class="text-truncate">' +
+                esc(row.summary || '—') +
+                '</div>' +
+                '<div class="text-muted small mt-1">' +
+                detailBtn +
+                '</div>' +
+                '</td>' +
+                '</tr>'
+              );
+            })
+            .join('');
+          body.innerHTML = rowsHtml;
+          toggleEmptyState(false);
+        }
+
+        function normalizeRows(rows) {
+          if (!Array.isArray(rows)) return [];
+          return rows.map(function (row) {
+            var id = row && row.id ? String(row.id) : 'audit_' + createRequestId();
+            var meta =
+              row && row.meta && typeof row.meta === 'object'
+                ? row.meta
+                : {};
+            return {
+              id: id,
+              type: row && row.type ? row.type : 'admin',
+              typeLabel: row && row.typeLabel ? row.typeLabel : '監査',
+              eventLabel: row && row.eventLabel ? row.eventLabel : row && row.statusLabel ? row.statusLabel : 'イベント',
+              statusLabel: row && row.statusLabel ? row.statusLabel : '',
+              severity: row && row.severity ? row.severity : 'info',
+              summary: row && row.summary ? row.summary : '',
+              occurredAt: row && typeof row.occurredAt === 'number' ? row.occurredAt : null,
+              occurredLabel: row && row.occurredLabel ? row.occurredLabel : '',
+              userLabel: row && row.userLabel ? row.userLabel : '',
+              userEmail: row && row.userEmail ? row.userEmail : '',
+              meta: meta,
+            };
+          });
+        }
+
+        function applyPayload(payload) {
+          if (payload && payload.meta && payload.meta.managerOnly) {
+            setNotice(payload.meta.reason || '管理者権限が必要です。', false);
+          } else {
+            setNotice('', false);
+          }
+          state.rows = normalizeRows(payload && payload.rows ? payload.rows : []);
+          state.meta = payload && payload.meta ? payload.meta : {};
+          state.loaded = true;
+          renderTable();
+          renderSummary(state.meta);
+          renderUpdatedAt(state.meta);
+        }
+
+        function buildRequestArgs() {
+          return {
+            range: state.filters.range,
+            eventType: state.filters.eventType,
+            orgId: state.filters.orgId,
+            limit: AUDIT_LIMIT,
+          };
+        }
+
+        function fetchLogs() {
+          if (!IS_MANAGER) {
+            setNotice('管理者権限が必要です。', true);
+            state.rows = [];
+            renderTable();
+            return Promise.resolve(false);
+          }
+          var requestId = ++state.requestToken;
+          setNotice('', false);
+          setLoading(true);
+          return new Promise(function (resolve) {
+            google.script.run
+              .withSuccessHandler(function (payload) {
+                if (requestId !== state.requestToken) {
+                  resolve(false);
+                  return;
+                }
+                setLoading(false);
+                applyPayload(payload);
+                resolve(true);
+              })
+              .withFailureHandler(function (err) {
+                if (requestId !== state.requestToken) {
+                  resolve(false);
+                  return;
+                }
+                setLoading(false);
+                setNotice(
+                  err && err.message ? err.message : '監査ログの取得に失敗しました。',
+                  true
+                );
+                state.rows = [];
+                renderTable();
+                resolve(false);
+              })
+              .getAuditLogs(AUDIT_LIMIT, buildRequestArgs());
+          });
+        }
+
+        function ensureLoaded() {
+          if (!IS_MANAGER) return;
+          if (!state.loaded && !state.loading) {
+            fetchLogs();
+          }
+        }
+
+        function handleRangeChange(event) {
+          state.filters.range = event && event.target ? event.target.value : '24h';
+          fetchLogs();
+        }
+
+        function handleTypeChange(event) {
+          state.filters.eventType = event && event.target ? event.target.value : 'all';
+          fetchLogs();
+        }
+
+        function handleReload() {
+          fetchLogs();
+        }
+
+        function stringifyMeta(meta) {
+          try {
+            return JSON.stringify(meta || {}, null, 2);
+          } catch (_err) {
+            return '{}';
+          }
+        }
+
+        function openDetail(rowId) {
+          if (!rowId) return;
+          var row = state.rows.find(function (entry) {
+            return entry.id === rowId;
+          });
+          if (!row) return;
+          var title = byId('adminAuditDetailTitle');
+          if (title) {
+            title.textContent = (row.eventLabel || 'ログ詳細') + '（' + (row.typeLabel || '') + '）';
+          }
+          var mapping = [
+            ['adminAuditDetailTime', row.occurredLabel || '—'],
+            ['adminAuditDetailType', row.typeLabel || row.eventLabel || '—'],
+            [
+              'adminAuditDetailUser',
+              row.userEmail ? row.userLabel + ' <' + row.userEmail + '>' : row.userLabel || '—',
+            ],
+            ['adminAuditDetailStatus', row.statusLabel || '—'],
+            ['adminAuditDetailSummary', row.summary || '—'],
+          ];
+          mapping.forEach(function (entry) {
+            var el = byId(entry[0]);
+            if (el) el.textContent = entry[1] || '—';
+          });
+          var requestEl = byId('adminAuditDetailRequest');
+          if (requestEl) {
+            requestEl.textContent =
+              (row.meta && row.meta.requestId) || (row.meta && row.meta.request_id) || '—';
+          }
+          var routeText = '';
+          if (row.meta) {
+            if (row.meta.route) routeText = row.meta.route;
+            if (row.meta.targetType || row.meta.targetId) {
+              var target = (row.meta.targetType || '') + (row.meta.targetId ? ' / ' + row.meta.targetId : '');
+              routeText = routeText ? routeText + ' / ' + target : target;
+            }
+          }
+          var routeEl = byId('adminAuditDetailRoute');
+          if (routeEl) {
+            routeEl.textContent = routeText || '—';
+          }
+          var metaEl = byId('adminAuditDetailMeta');
+          if (metaEl) {
+            metaEl.textContent = stringifyMeta(row.meta);
+          }
+          var modalEl = byId('adminAuditDetailModal');
+          if (!modalEl) return;
+          if (window.bootstrap && typeof window.bootstrap.Modal === 'function') {
+            if (!detailModal) {
+              detailModal = new bootstrap.Modal(modalEl, {});
+            }
+            detailModal.show();
+          } else {
+            modalEl.removeAttribute('hidden');
+          }
+        }
+
+        function handleDetailClick(event) {
+          var btn = event.target.closest('[data-admin-audit-detail]');
+          if (!btn) return;
+          var rowId = btn.getAttribute('data-admin-audit-detail');
+          openDetail(rowId);
+        }
+
+        function init() {
+          state.filters.orgId = ADMIN_STATE.orgId || 'current';
+          var rangeEl = byId('adminAuditRange');
+          if (rangeEl) rangeEl.addEventListener('change', handleRangeChange);
+          var typeEl = byId('adminAuditType');
+          if (typeEl) typeEl.addEventListener('change', handleTypeChange);
+          var reloadBtn = byId('btnAdminAuditReload');
+          if (reloadBtn) reloadBtn.addEventListener('click', handleReload);
+          var table = byId('adminAuditTableBody');
+          if (table) table.addEventListener('click', handleDetailClick);
+          addAdminSectionListener(function (section) {
+            if (section === 'audit') {
+              ensureLoaded();
+            }
+          });
+          addAdminOrgListener(function (orgId) {
+            state.filters.orgId = orgId || 'current';
+            state.loaded = false;
+            if (ADMIN_STATE.section === 'audit' && ADMIN_STATE.active) {
+              fetchLogs();
+            }
+          });
+        }
+
+        return {
+          init: init,
+          ensureLoaded: ensureLoaded,
+        };
+      })();
+
       const AdminOrgController = (function () {
         const DEFAULT_COLOR = '#517CB2';
         const TIMEZONES = [
@@ -11246,6 +11664,7 @@
         TaskFormController.init();
         MessageFormController.init();
         AdminUsersController.init();
+        AdminAuditController.init();
         AdminOrgController.init();
 
         initPullToRefresh();
