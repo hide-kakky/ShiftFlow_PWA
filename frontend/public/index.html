@@ -3742,7 +3742,7 @@
                     <div class="small text-muted" id="adminUsersUpdatedAt"></div>
                   </div>
                   <div class="admin-placeholder" id="adminUsersNotice" hidden></div>
-                  <div class="table-responsive" id="adminUsersTableWrap" aria-live="polite">
+                  <div class="table-responsive" id="adminUsersTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
                     <table class="table admin-users-table">
                       <thead>
                         <tr>
@@ -3958,7 +3958,7 @@
                     <div class="small text-muted" id="adminAuditUpdatedAt">最終更新: —</div>
                   </div>
                   <div class="admin-placeholder" id="adminAuditNotice" hidden></div>
-                  <div class="table-responsive" id="adminAuditTableWrap" aria-live="polite">
+                  <div class="table-responsive" id="adminAuditTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
                     <table class="table admin-audit-table">
                       <thead>
                         <tr>
@@ -4032,6 +4032,72 @@
             <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">閉じる</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div
+      class="offcanvas offcanvas-end"
+      tabindex="-1"
+      id="adminUserDrawer"
+      aria-labelledby="adminUserDrawerTitle"
+    >
+      <div class="offcanvas-header">
+        <div>
+          <h5 class="offcanvas-title" id="adminUserDrawerTitle">ユーザー管理</h5>
+          <p class="small text-muted mb-0" id="adminUserDrawerEmail">—</p>
+        </div>
+        <button class="btn-close" type="button" data-bs-dismiss="offcanvas" aria-label="閉じる"></button>
+      </div>
+      <div class="offcanvas-body">
+        <form id="adminUserDetailForm">
+          <div class="mb-3">
+            <label class="form-label" for="adminUserDetailRole">ロール</label>
+            <select class="form-select" id="adminUserDetailRole">
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="member">Member</option>
+              <option value="guest">Guest</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="adminUserDetailStatus">組織ステータス</label>
+            <select class="form-select" id="adminUserDetailStatus">
+              <option value="pending">承認待ち</option>
+              <option value="active">有効</option>
+              <option value="suspended">停止中</option>
+              <option value="revoked">剥奪</option>
+            </select>
+            <div class="form-text">
+              ここで変更すると組織内のステータスに加え、ユーザー全体のステータスも同じ値に揃えられます。
+            </div>
+          </div>
+          <div class="alert alert-info small" id="adminUserDetailRestriction" hidden>
+            このユーザーは管理者のため、ロールやステータスを変更できません。
+          </div>
+          <dl class="row small admin-user-detail-meta">
+            <dt class="col-4">組織</dt>
+            <dd class="col-8" id="adminUserDetailOrg">—</dd>
+            <dt class="col-4">組織内ステータス</dt>
+            <dd class="col-8" id="adminUserDetailMembershipStatus">—</dd>
+            <dt class="col-4">アカウント全体</dt>
+            <dd class="col-8" id="adminUserDetailAccountStatus">—</dd>
+            <dt class="col-4">最終ログイン</dt>
+            <dd class="col-8" id="adminUserDetailLastLogin">—</dd>
+            <dt class="col-4">承認者</dt>
+            <dd class="col-8" id="adminUserDetailApproved">—</dd>
+            <dt class="col-4">メモ</dt>
+            <dd class="col-8" id="adminUserDetailNotes">—</dd>
+          </dl>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary flex-grow-1" type="submit" id="adminUserDetailSave">
+              <span class="label">変更を保存</span>
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            </button>
+            <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="offcanvas">
+              閉じる
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -10410,6 +10476,10 @@
           busyRowId: '',
           meta: {},
         };
+        const detailState = {
+          userId: '',
+          drawer: null,
+        };
 
         function getOrgFilter() {
           return state.filters.orgId === 'current' ? ADMIN_STATE.orgId || 'current' : state.filters.orgId;
@@ -10511,7 +10581,11 @@
 
         function buildActionButtons(row) {
           if (!canModifyRow(row)) {
-            return '<span class="text-muted">—</span>';
+            return (
+              '<button type="button" class="btn btn-link btn-sm p-0" data-admin-user-detail="' +
+              esc(row.userId) +
+              '">詳細</button>'
+            );
           }
           var actions = [];
           var actionTemplate = function (action, label, style) {
@@ -10538,7 +10612,115 @@
           } else {
             actions.push(actionTemplate('resume', '再開', 'btn-outline-primary'));
           }
+          actions.push(
+            '<button type="button" class="btn btn-link btn-sm" data-admin-user-detail="' +
+              esc(row.userId) +
+              '">詳細</button>'
+          );
           return actions.join('');
+        }
+
+        function findRowById(userId) {
+          return state.rows.find(function (entry) {
+            return entry.userId === userId;
+          });
+        }
+
+        function formatStatusDisplay(status) {
+          var normalized = String(status || '').toLowerCase();
+          return STATUS_LABELS[normalized] || '―';
+        }
+
+        function populateDetail(row) {
+          var titleEl = byId('adminUserDrawerTitle');
+          if (titleEl) titleEl.textContent = row.name || row.email || 'ユーザー管理';
+          var emailEl = byId('adminUserDrawerEmail');
+          if (emailEl) emailEl.textContent = row.email || '';
+          var orgEl = byId('adminUserDetailOrg');
+          if (orgEl) orgEl.textContent = row.orgName || '現在の組織';
+          var membershipEl = byId('adminUserDetailMembershipStatus');
+          if (membershipEl) membershipEl.textContent = formatStatusDisplay(row.membershipStatus || row.status);
+          var accountEl = byId('adminUserDetailAccountStatus');
+          if (accountEl) accountEl.textContent = formatStatusDisplay(row.userStatus || row.status);
+          var lastLoginEl = byId('adminUserDetailLastLogin');
+          if (lastLoginEl) lastLoginEl.textContent = row.lastLoginLabel || '―';
+          var approvedEl = byId('adminUserDetailApproved');
+          if (approvedEl) {
+            approvedEl.textContent = row.approvedBy
+              ? row.approvedBy + (row.approvedAtLabel ? '（' + row.approvedAtLabel + '）' : '')
+              : '—';
+          }
+          var notesEl = byId('adminUserDetailNotes');
+          if (notesEl) notesEl.textContent = row.notes ? row.notes : '—';
+          var roleSelect = byId('adminUserDetailRole');
+          var statusSelect = byId('adminUserDetailStatus');
+          var editable = canModifyRow(row);
+          if (roleSelect) {
+            roleSelect.value = row.role;
+            roleSelect.disabled = !editable;
+            var adminOption = roleSelect.querySelector('option[value="admin"]');
+            if (adminOption) {
+              if (!IS_ADMIN) adminOption.disabled = true;
+              else adminOption.disabled = false;
+            }
+          }
+          if (statusSelect) {
+            statusSelect.value = row.status;
+            statusSelect.disabled = !editable;
+          }
+          var restriction = byId('adminUserDetailRestriction');
+          if (restriction) {
+            if (editable) restriction.setAttribute('hidden', 'hidden');
+            else restriction.removeAttribute('hidden');
+          }
+        }
+
+        function getDrawerInstance() {
+          if (detailState.drawer) return detailState.drawer;
+          var drawerEl = byId('adminUserDrawer');
+          if (drawerEl && window.bootstrap && typeof window.bootstrap.Offcanvas === 'function') {
+            detailState.drawer = new bootstrap.Offcanvas(drawerEl, { scroll: true });
+          }
+          return detailState.drawer;
+        }
+
+        function openDetail(userId) {
+          var row = findRowById(userId);
+          if (!row) {
+            notify('対象ユーザーが見つかりません。', false);
+            return;
+          }
+          detailState.userId = row.userId;
+          populateDetail(row);
+          var drawer = getDrawerInstance();
+          if (drawer) {
+            drawer.show();
+          } else {
+            var el = byId('adminUserDrawer');
+            if (el) el.removeAttribute('hidden');
+          }
+        }
+
+        function closeDetail() {
+          detailState.userId = '';
+          if (detailState.drawer) {
+            try {
+              detailState.drawer.hide();
+            } catch (_err) {}
+          } else {
+            var el = byId('adminUserDrawer');
+            if (el) el.setAttribute('hidden', 'hidden');
+          }
+        }
+
+        function refreshDetailIfNeeded() {
+          if (!detailState.userId) return;
+          var row = findRowById(detailState.userId);
+          if (!row) {
+            closeDetail();
+            return;
+          }
+          populateDetail(row);
         }
 
         function renderTable() {
@@ -10602,7 +10784,14 @@
               status: (row.status || 'pending').toLowerCase(),
               avatarUrl: row.avatarUrl || PROFILE_PLACEHOLDER_URL,
               orgName: row.orgName || '現在の組織',
+              orgId: row.orgId || '',
               lastLoginLabel: row.lastLoginLabel || row.lastLogin || '―',
+              membershipStatus: (row.membershipStatus || row.status || 'pending').toLowerCase(),
+              userStatus: (row.userStatus || row.status || 'pending').toLowerCase(),
+              approvedBy: row.approvedBy || '',
+              approvedAtLabel: row.approvedAtLabel || '',
+              notes: row.notes || '',
+              isActive: typeof row.isActive === 'boolean' ? row.isActive : true,
             };
           });
           state.meta = meta;
@@ -10616,6 +10805,7 @@
           renderTable();
           renderSummary(meta);
           renderUpdatedAt(meta);
+          refreshDetailIfNeeded();
         }
 
         function scheduleFetch(delay) {
@@ -10685,18 +10875,35 @@
           }
         }
 
-        function performUpdate(payload) {
+        function performUpdate(payload, options) {
+          options = options || {};
           if (!payload || !payload.userId) return;
-          setRowBusy(payload.userId, true);
+          if (!options.skipRowBusy) {
+            setRowBusy(payload.userId, true);
+          }
           google.script.run
             .withSuccessHandler(function (res) {
-              setRowBusy(payload.userId, false);
+              if (!options.skipRowBusy) {
+                setRowBusy(payload.userId, false);
+              }
               notify(res && res.message ? res.message : '更新しました。', res && res.success !== false);
+              if (typeof options.onSuccess === 'function') {
+                try {
+                  options.onSuccess(res);
+                } catch (_err) {}
+              }
               fetchUsers();
             })
             .withFailureHandler(function (err) {
-              setRowBusy(payload.userId, false);
+              if (!options.skipRowBusy) {
+                setRowBusy(payload.userId, false);
+              }
               notify(err && err.message ? err.message : '更新に失敗しました。', false);
+              if (typeof options.onError === 'function') {
+                try {
+                  options.onError(err);
+                } catch (_err) {}
+              }
             })
             .adminUpdateUser(payload);
         }
@@ -10735,7 +10942,55 @@
           performUpdate({ userId: userId, email: email, role: nextRole });
         }
 
+        function handleDetailSubmit(event) {
+          if (event) event.preventDefault();
+          if (!detailState.userId) return;
+          var row = findRowById(detailState.userId);
+          if (!row) return;
+          if (!canModifyRow(row)) {
+            notify('管理者ユーザーは UI から変更できません。', false);
+            return;
+          }
+          var roleSelect = byId('adminUserDetailRole');
+          var statusSelect = byId('adminUserDetailStatus');
+          var requestedRole = roleSelect ? roleSelect.value : '';
+          var requestedStatus = statusSelect ? statusSelect.value : '';
+          if (requestedRole === row.role) requestedRole = '';
+          if (requestedStatus === row.status) requestedStatus = '';
+          var saveBtn = byId('adminUserDetailSave');
+          if (!requestedRole && !requestedStatus) {
+            setButtonLoading(saveBtn, false);
+            notify('変更する内容を選択してください。', false);
+            return;
+          }
+          var payload = {
+            userId: row.userId,
+            email: row.email,
+            role: requestedRole,
+            status: requestedStatus,
+          };
+          setButtonLoading(saveBtn, true);
+          performUpdate(payload, {
+            skipRowBusy: true,
+            onSuccess: function () {
+              setButtonLoading(saveBtn, false);
+              closeDetail();
+            },
+            onError: function () {
+              setButtonLoading(saveBtn, false);
+            },
+          });
+        }
+
         function handleActionClick(event) {
+          var detailBtn = event.target.closest('[data-admin-user-detail]');
+          if (detailBtn) {
+            var rowId = detailBtn.getAttribute('data-admin-user-detail');
+            if (rowId) {
+              openDetail(rowId);
+            }
+            return;
+          }
           var btn = event.target.closest('[data-admin-user-action]');
           if (!btn) return;
           var action = btn.getAttribute('data-admin-user-action');
@@ -10774,6 +11029,16 @@
           if (table) {
             table.addEventListener('change', handleRoleSelectChange);
             table.addEventListener('click', handleActionClick);
+          }
+          var detailForm = byId('adminUserDetailForm');
+          if (detailForm) detailForm.addEventListener('submit', handleDetailSubmit);
+          var drawerEl = byId('adminUserDrawer');
+          if (drawerEl) {
+            drawerEl.addEventListener('hidden.bs.offcanvas', function () {
+              detailState.userId = '';
+              var saveBtn = byId('adminUserDetailSave');
+              setButtonLoading(saveBtn, false);
+            });
           }
           addAdminSectionListener(function (section) {
             if (section === 'users') {
@@ -11702,6 +11967,7 @@
           startY: 0,
           dx: 0,
           dy: 0,
+          skip: false,
         };
         var threshold = 60;
         wrap.addEventListener(
@@ -11709,6 +11975,16 @@
           function (e) {
             if (!ADMIN_STATE.active) return;
             if (e.touches && e.touches.length > 1) return;
+            var guardTarget =
+              e.target && typeof e.target.closest === 'function'
+                ? e.target.closest('[data-prevent-admin-swipe="true"]')
+                : null;
+            state.skip = !!guardTarget;
+            if (state.skip) {
+              state.active = false;
+              state.locked = false;
+              return;
+            }
             var touch = e.touches ? e.touches[0] : e;
             state.active = true;
             state.locked = false;
@@ -11722,7 +11998,7 @@
         wrap.addEventListener(
           'touchmove',
           function (e) {
-            if (!state.active || !ADMIN_STATE.active) return;
+            if (state.skip || !state.active || !ADMIN_STATE.active) return;
             var touch = e.touches ? e.touches[0] : e;
             state.dx = touch.clientX - state.startX;
             state.dy = touch.clientY - state.startY;
@@ -11741,6 +12017,10 @@
         wrap.addEventListener(
           'touchend',
           function () {
+            if (state.skip) {
+              state.skip = false;
+              return;
+            }
             if (!state.locked) {
               state.active = false;
               return;

@@ -1865,6 +1865,7 @@ async function maybeHandleRouteWithD1(options) {
               : '',
           isActive: row.is_active == null ? true : row.is_active !== 0,
           membershipStatus: row.membership_status || '',
+          userStatus: row.user_status || '',
           notes: row.notes || '',
           createdAtLabel:
             row.membership_created_at_ms && Number.isFinite(row.membership_created_at_ms)
