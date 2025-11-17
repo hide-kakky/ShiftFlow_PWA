@@ -11749,6 +11749,89 @@
           orgs: [],
           activeOrgId: '',
         };
+        function shouldFallbackToAppsScript() {
+          return (
+            globalThis.google &&
+            google.script &&
+            google.script.run &&
+            (!google.script.run.__bridge || google.script.run.__bridge !== 'fetch')
+          );
+        }
+
+        function callOrgApi(route, args) {
+          var payloadArgs = Array.isArray(args) ? args : typeof args === 'undefined' ? [] : [args];
+          function viaFetch() {
+            if (typeof fetch !== 'function') {
+              return Promise.reject(new Error('fetch_unavailable'));
+            }
+            return Promise.resolve()
+              .then(function () {
+                return syncAuthSession({ silent: true }).catch(function () {
+                  return null;
+                });
+              })
+              .then(function () {
+                var requestId = createRequestId();
+                return fetch(API_BASE_PATH + '/' + encodeURIComponent(route), {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-ShiftFlow-Request-Id': requestId,
+                  },
+                  body: JSON.stringify({ route: route, args: payloadArgs }),
+                });
+              })
+              .then(async function (res) {
+                var body = null;
+                try {
+                  body = await res.json();
+                } catch (_err) {}
+                if (!res.ok) {
+                  var message =
+                    (body && body.reason) ||
+                    (body && body.error) ||
+                    'API request failed (' + res.status + ')';
+                  var err = new Error(message);
+                  err.status = res.status;
+                  err.code = (body && body.code) || 'api_error';
+                  throw err;
+                }
+                if (body && typeof body === 'object' && body.ok === false) {
+                  var errMsg = body.reason || 'API error';
+                  var backendErr = new Error(errMsg);
+                  backendErr.code = body.code || 'api_error';
+                  throw backendErr;
+                }
+                if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'result')) {
+                  return body.result;
+                }
+                return body;
+              });
+          }
+          function viaGoogleScript() {
+            return new Promise(function (resolve, reject) {
+              if (!(globalThis.google && google.script && google.script.run)) {
+                reject(new Error('apps_script_unavailable'));
+                return;
+              }
+              var runner = google.script.run.withSuccessHandler(function (payload) {
+                resolve(payload);
+              });
+              runner = runner.withFailureHandler(function (err) {
+                reject(err instanceof Error ? err : new Error(String(err || 'API error')));
+              });
+              runner[route].apply(runner, payloadArgs);
+            });
+          }
+          return viaFetch().catch(function (err) {
+            if (shouldFallbackToAppsScript()) {
+              return viaGoogleScript();
+            }
+            throw err;
+          });
+        }
 
         function renderTimezoneOptions() {
           var select = byId('adminOrgTimezone');
@@ -11897,8 +11980,8 @@
 
         function fetchOrgList() {
           if (!IS_MANAGER) return;
-          google.script.run
-            .withSuccessHandler(function (payload) {
+          callOrgApi('adminListOrganizations')
+            .then(function (payload) {
               setNotice('', false);
               state.orgs = Array.isArray(payload?.orgs) ? payload.orgs : [];
               renderDropdown();
@@ -11915,16 +11998,15 @@
                 highlightActiveOrg(state.activeOrgId);
               }
             })
-            .withFailureHandler(function (err) {
+            .catch(function (err) {
               setNotice(err && err.message ? err.message : '組織一覧の取得に失敗しました。', true);
-            })
-            .adminListOrganizations();
+            });
         }
 
         function fetchOrgDetail(orgId) {
           if (!IS_MANAGER || !orgId) return;
-          google.script.run
-            .withSuccessHandler(function (payload) {
+          callOrgApi('adminGetOrganization', { orgId: orgId })
+            .then(function (payload) {
               setNotice('', false);
               if (payload && payload.org) {
                 updateMeta(payload.org);
@@ -11934,10 +12016,9 @@
               }
               updateRefreshedAt(payload && payload.refreshedAt ? payload.refreshedAt : '');
             })
-            .withFailureHandler(function (err) {
+            .catch(function (err) {
               setNotice(err && err.message ? err.message : '組織情報の取得に失敗しました。', true);
-            })
-            .adminGetOrganization({ orgId: orgId });
+            });
         }
 
         function handleColorInput(event) {
@@ -11974,18 +12055,17 @@
           var btn = byId('btnAdminOrgSave');
           setNotice('', false);
           setButtonLoading(btn, true);
-          google.script.run
-            .withSuccessHandler(function (res) {
+          callOrgApi('adminUpdateOrganization', payload)
+            .then(function (res) {
               setButtonLoading(btn, false);
               notify(res && res.message ? res.message : '組織情報を更新しました。', res && res.success !== false);
               fetchOrgDetail(state.activeOrgId);
               fetchOrgList();
             })
-            .withFailureHandler(function (err) {
+            .catch(function (err) {
               setButtonLoading(btn, false);
               setNotice(err && err.message ? err.message : '組織情報の更新に失敗しました。', true);
-            })
-            .adminUpdateOrganization(payload);
+            });
         }
 
         function bindEvents() {
