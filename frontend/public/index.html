@@ -2680,6 +2680,18 @@
         display: block;
         font-size: 1.15rem;
       }
+      .admin-table-light,
+      .admin-table-light th,
+      .admin-table-light td {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+      }
+      :root[data-theme='dark'] .admin-table-light,
+      :root[data-theme='dark'] .admin-table-light th,
+      :root[data-theme='dark'] .admin-table-light td {
+        background-color: #f9fbff !important;
+        color: #0f172a !important;
+      }
       .admin-user-role-select {
         min-width: 110px;
         background-color: var(--card);
@@ -3755,7 +3767,7 @@
                   </div>
                   <div class="admin-placeholder" id="adminUsersNotice" hidden></div>
                   <div class="table-responsive" id="adminUsersTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
-                    <table class="table admin-users-table">
+                    <table class="table admin-users-table admin-table-light">
                       <thead>
                         <tr>
                           <th scope="col">ユーザー</th>
@@ -3971,7 +3983,7 @@
                   </div>
                   <div class="admin-placeholder" id="adminAuditNotice" hidden></div>
                   <div class="table-responsive" id="adminAuditTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
-                    <table class="table admin-audit-table">
+                    <table class="table admin-audit-table admin-table-light">
                       <thead>
                         <tr>
                           <th scope="col">時刻</th>
