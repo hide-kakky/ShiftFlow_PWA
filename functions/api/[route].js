@@ -30,6 +30,9 @@ const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const MAX_ULID_TIME = 2 ** 48 - 1;
 const DEFAULT_ORG_COLOR = '#517CB2';
 const DEFAULT_ORG_TIMEZONE = 'Asia/Tokyo';
+const DEFAULT_FOLDER_COLOR = '#517CB2';
+const DEFAULT_SYSTEM_FOLDER_NAME = 'Main';
+const PINNED_MESSAGE_LIMIT = 5;
 const HEX_COLOR_REGEX = /^#?([0-9a-fA-F]{6})$/;
 const SUPPORTED_TIMEZONES = [
   'Asia/Tokyo',
@@ -1057,37 +1060,347 @@ function buildUserLabel(email, displayName) {
   return typeof email === 'string' ? email.trim() : '';
 }
 
-async function fetchActiveFoldersFromD1(db) {
+function safeJsonParse(text, fallback = null) {
+  if (typeof text !== 'string' || !text) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return fallback;
+  }
+}
+
+function normalizeFolderName(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().slice(0, 120);
+}
+
+async function ensureDefaultFolderForOrg(db, orgId) {
+  if (!db || !orgId) return null;
+  const existing = await db
+    .prepare(
+      `
+      SELECT id
+        FROM folders
+       WHERE org_id = ?1
+         AND is_system = 1
+       ORDER BY created_at_ms ASC
+       LIMIT 1
+    `
+    )
+    .bind(orgId)
+    .first();
+  if (existing && existing.id) {
+    return existing.id;
+  }
+  const now = Date.now();
+  const folderId = createUlid(now);
+  await db
+    .prepare(
+      `
+      INSERT INTO folders (
+        id,
+        org_id,
+        name,
+        sort_order,
+        color,
+        is_active,
+        is_public,
+        is_system,
+        created_at_ms,
+        updated_at_ms
+      )
+      VALUES (?1, ?2, ?3, 0, ?4, 1, 1, 1, ?5, ?5)
+    `
+    )
+    .bind(folderId, orgId, DEFAULT_SYSTEM_FOLDER_NAME, DEFAULT_FOLDER_COLOR, now)
+    .run();
+  return folderId;
+}
+
+async function fetchFolderMemberMap(db, folderIds) {
+  const map = new Map();
+  if (!db || !Array.isArray(folderIds) || !folderIds.length) {
+    return map;
+  }
+  const uniqueIds = Array.from(new Set(folderIds.filter(Boolean)));
+  if (!uniqueIds.length) {
+    return map;
+  }
+  const placeholders = uniqueIds.map((_, index) => `?${index + 1}`).join(',');
+  const query = `SELECT folder_id, user_id FROM folder_members WHERE folder_id IN (${placeholders})`;
+  const result = await db.prepare(query).bind(...uniqueIds).all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  rows.forEach((row) => {
+    const folderId = row?.folder_id ? String(row.folder_id).trim() : '';
+    const userId = row?.user_id ? String(row.user_id).trim() : '';
+    if (!folderId || !userId) return;
+    if (!map.has(folderId)) {
+      map.set(folderId, []);
+    }
+    const list = map.get(folderId);
+    if (!list.includes(userId)) {
+      list.push(userId);
+    }
+  });
+  uniqueIds.forEach((id) => {
+    if (!map.has(id)) {
+      map.set(id, []);
+    }
+  });
+  return map;
+}
+
+async function fetchFoldersWithAccess(db, options = {}) {
+  if (!db) return [];
+  const orgId = options.orgId || (await resolveDefaultOrgId(db));
+  if (!orgId) return [];
+  if (options.ensureDefaultFolder) {
+    await ensureDefaultFolderForOrg(db, orgId);
+  }
+  const userId = options.userId || '';
+  const includeInactive = !!options.includeInactive;
+  const includeMembers = !!options.includeMembers;
+  const isManager = !!options.isManager;
   const result = await db
     .prepare(
       `
-      SELECT DISTINCT TRIM(COALESCE(folder_id, '')) AS folder_id
-        FROM messages
+      SELECT f.id,
+             f.org_id,
+             f.name,
+             f.sort_order,
+             f.color,
+             f.is_active,
+             f.is_public,
+             f.is_system,
+             f.archived_at_ms,
+             f.archive_year,
+             f.archive_category,
+             f.notes,
+             f.meta_json,
+             f.created_at_ms,
+             f.updated_at_ms,
+             fm_user.user_id AS granted_user_id,
+             COALESCE(member_counts.member_count, 0) AS member_count
+        FROM folders f
+        LEFT JOIN folder_members fm_user
+          ON fm_user.folder_id = f.id
+         AND fm_user.user_id = ?2
+        LEFT JOIN (
+          SELECT folder_id, COUNT(*) AS member_count
+            FROM folder_members
+           GROUP BY folder_id
+        ) member_counts
+          ON member_counts.folder_id = f.id
+       WHERE f.org_id = ?1
+         ${includeInactive ? '' : 'AND f.is_active = 1'}
+       ORDER BY f.is_system DESC, f.sort_order ASC, lower(f.name) ASC
     `
     )
+    .bind(orgId, userId || '')
     .all();
   const rows = Array.isArray(result?.results) ? result.results : [];
-  const folders = [];
-  const seen = new Set();
-  const pushFolder = (id, name) => {
-    const normalizedId = (id || '').trim();
-    if (!normalizedId || seen.has(normalizedId)) return;
-    seen.add(normalizedId);
-    folders.push({ id: normalizedId, name: name || normalizedId });
-  };
-  pushFolder('全体', '全体');
+  const allowedRows = rows.filter((row) => {
+    if (isManager) return true;
+    if (row?.is_public) return true;
+    return !!row?.granted_user_id;
+  });
+  const folderIds = allowedRows.map((row) => row?.id).filter(Boolean);
+  let memberMap = new Map();
+  if (includeMembers && folderIds.length) {
+    memberMap = await fetchFolderMemberMap(db, folderIds);
+  }
+  return allowedRows.map((row) => {
+    const base = {
+      id: row.id,
+      orgId: row.org_id,
+      name: row.name || DEFAULT_SYSTEM_FOLDER_NAME,
+      sortOrder: typeof row.sort_order === 'number' ? row.sort_order : 0,
+      color: row.color || null,
+      isActive: row.is_active === 1,
+      isPublic: row.is_public === 1,
+      isSystem: row.is_system === 1,
+      archivedAt: row.archived_at_ms || null,
+      archiveYear: row.archive_year || null,
+      archiveCategory: row.archive_category || '',
+      notes: row.notes || '',
+      meta: safeJsonParse(row.meta_json, null),
+      memberCount: row.member_count || 0,
+      createdAt: row.created_at_ms || null,
+      updatedAt: row.updated_at_ms || null,
+    };
+    if (includeMembers) {
+      base.memberUserIds = memberMap.get(row.id) || [];
+    }
+    return base;
+  });
+}
+
+async function fetchPinnedMessagesFromD1(db, options = {}) {
+  if (!db) return {};
+  const orgId = options.orgId || (await resolveDefaultOrgId(db));
+  if (!orgId) return {};
+  const membershipId = options.membershipId || '';
+  const userId = options.userId || '';
+  const isManager = !!options.isManager;
+  const perFolderLimit =
+    typeof options.perFolderLimit === 'number' && options.perFolderLimit > 0
+      ? Math.floor(options.perFolderLimit)
+      : PINNED_MESSAGE_LIMIT;
+  const result = await db
+    .prepare(
+      `
+      SELECT m.message_id,
+             m.title,
+             m.body,
+             m.folder_id,
+             m.created_at_ms,
+             m.updated_at_ms,
+             m.is_pinned,
+             f.name AS folder_name,
+             f.color AS folder_color,
+             CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read,
+             CASE WHEN fm_user.user_id IS NOT NULL THEN 1 ELSE 0 END AS has_private_access,
+             f.is_public
+        FROM messages m
+        JOIN folders f ON f.id = m.folder_id
+        LEFT JOIN message_reads mr
+          ON mr.message_id = m.message_id
+         AND mr.membership_id = ?2
+        LEFT JOIN folder_members fm_user
+          ON fm_user.folder_id = f.id
+         AND fm_user.user_id = ?3
+       WHERE m.org_id = ?1
+         AND m.is_pinned = 1
+         AND f.is_active = 1
+       ORDER BY f.sort_order ASC,
+                m.created_at_ms DESC
+    `
+    )
+    .bind(orgId, membershipId || '', userId || '')
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const grouped = new Map();
   for (const row of rows) {
-    const value = row?.folder_id ? String(row.folder_id).trim() : '';
-    if (!value) continue;
-    pushFolder(value, value);
+    const folderId = row?.folder_id ? String(row.folder_id).trim() : '';
+    if (!folderId) continue;
+    const isPublic = row?.is_public === 1;
+    const hasAccess = isPublic || isManager || row?.has_private_access;
+    if (!hasAccess) continue;
+    if (!grouped.has(folderId)) {
+      grouped.set(folderId, []);
+    }
+    const list = grouped.get(folderId);
+    if (list.length >= perFolderLimit) continue;
+    list.push({
+      id: row?.message_id || '',
+      title: row?.title || '',
+      body: typeof row?.body === 'string' ? row.body : '',
+      preview: buildMessagePreview(row?.body || ''),
+      folderId,
+      folderName: row?.folder_name || '',
+      folderColor: row?.folder_color || '',
+      createdAt: row?.created_at_ms || 0,
+      updatedAt: row?.updated_at_ms || 0,
+      isPinned: true,
+      isRead: row?.is_read ? true : false,
+    });
   }
-  if (!folders.length) {
-    pushFolder('全体', '全体');
-    pushFolder('ブッフェ', 'ブッフェ');
-    pushFolder('レセプション', 'レセプション');
-    pushFolder('ホール', 'ホール');
+  const payload = {};
+  grouped.forEach((value, key) => {
+    payload[key] = value;
+  });
+  return payload;
+}
+
+async function fetchFolderById(db, orgId, folderId) {
+  if (!db || !folderId) return null;
+  const row = await db
+    .prepare(
+      `
+      SELECT *
+        FROM folders
+       WHERE id = ?1
+         AND (?2 IS NULL OR org_id = ?2)
+       LIMIT 1
+    `
+    )
+    .bind(folderId, orgId || null)
+    .first();
+  return row || null;
+}
+
+async function ensureFolderAccessForUser(db, options = {}) {
+  if (!db || !options.folderId) return null;
+  const folder = await fetchFolderById(db, options.orgId || null, options.folderId);
+  if (!folder) return null;
+  if (options.requireActive && folder.is_active !== 1) {
+    return null;
   }
-  return folders;
+  if (folder.is_public === 1 || options.isManager) {
+    return folder;
+  }
+  const userId = options.userId || '';
+  if (!userId) return null;
+  const member = await db
+    .prepare(
+      `
+      SELECT 1
+        FROM folder_members
+       WHERE folder_id = ?1
+         AND user_id = ?2
+       LIMIT 1
+    `
+    )
+    .bind(folder.id, userId)
+    .first();
+  return member ? folder : null;
+}
+
+async function normalizeFolderMemberIds(db, orgId, memberUserIds) {
+  if (!db || !orgId || !Array.isArray(memberUserIds) || !memberUserIds.length) {
+    return [];
+  }
+  const uniqueIds = Array.from(
+    new Set(memberUserIds.map((id) => normalizeIdValue(id)).filter(Boolean))
+  );
+  if (!uniqueIds.length) return [];
+  const placeholders = uniqueIds.map((_, index) => `?${index + 2}`).join(',');
+  const query = `
+    SELECT DISTINCT user_id
+      FROM memberships
+     WHERE org_id = ?1
+       AND user_id IN (${placeholders})
+       AND LOWER(COALESCE(status, 'active')) = 'active'
+  `;
+  const result = await db.prepare(query).bind(orgId, ...uniqueIds).all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const allowed = new Set(rows.map((row) => row?.user_id).filter(Boolean));
+  return uniqueIds.filter((userId) => allowed.has(userId));
+}
+
+async function folderNameExists(db, orgId, name, excludeFolderId) {
+  if (!db || !orgId || !name) return false;
+  const sql = excludeFolderId
+    ? `
+      SELECT id
+        FROM folders
+       WHERE org_id = ?1
+         AND lower(name) = lower(?2)
+         AND id <> ?3
+       LIMIT 1
+    `
+    : `
+      SELECT id
+        FROM folders
+       WHERE org_id = ?1
+         AND lower(name) = lower(?2)
+       LIMIT 1
+    `;
+  const statement = db.prepare(sql);
+  const row = excludeFolderId
+    ? await statement.bind(orgId, name, excludeFolderId).first()
+    : await statement.bind(orgId, name).first();
+  return !!row;
 }
 
 const MY_TASK_COMPLETED_WINDOW_DAYS = 14;
@@ -1200,11 +1513,17 @@ async function fetchMessageAttachments(db, messageId) {
   });
 }
 
-async function buildMessagesForUser(db, options) {
-  const folderRaw = typeof options?.folderId === 'string' ? options.folderId.trim() : '';
+async function buildMessagesForUser(db, options = {}) {
+  if (!db) return [];
+  const folderRaw = typeof options.folderId === 'string' ? options.folderId.trim() : '';
   const folderFilter =
     folderRaw && folderRaw.toLowerCase() !== 'all' ? folderRaw : '';
-  const membershipId = options?.membershipId || null;
+  const membershipId = options?.membershipId || '';
+  const userId = options?.userId || '';
+  const orgId = options?.orgId || (await resolveDefaultOrgId(db));
+  if (!orgId) return [];
+  const isManager = !!options?.isManager;
+  const includeInactiveFolders = !!options?.includeInactiveFolders;
   const result = await db
     .prepare(
       `
@@ -1214,18 +1533,34 @@ async function buildMessagesForUser(db, options) {
              m.folder_id,
              m.created_at_ms,
              m.updated_at_ms,
+             m.is_pinned,
+             f.name AS folder_name,
+             f.color AS folder_color,
              CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read
         FROM messages m
+        JOIN folders f ON f.id = m.folder_id
         LEFT JOIN message_reads mr
           ON mr.message_id = m.message_id
-         AND mr.membership_id = ?2
-       WHERE (?1 = '' OR m.folder_id = ?1)
+         AND mr.membership_id = ?3
+        LEFT JOIN folder_members fm_user
+          ON fm_user.folder_id = f.id
+         AND fm_user.user_id = ?4
+       WHERE m.org_id = ?1
+         AND (?2 = '' OR m.folder_id = ?2)
+         ${includeInactiveFolders ? '' : 'AND f.is_active = 1'}
+         AND (
+           f.is_public = 1
+           OR ?5 = 1
+           OR fm_user.user_id IS NOT NULL
+         )
+       ORDER BY m.is_pinned DESC,
+                m.created_at_ms DESC
     `
     )
-    .bind(folderFilter, membershipId)
+    .bind(orgId, folderFilter || '', membershipId || '', userId || '', isManager ? 1 : 0)
     .all();
   const rows = Array.isArray(result?.results) ? result.results : [];
-  const items = rows.map((row) => {
+  return rows.map((row) => {
     const createdAtMs =
       typeof row?.created_at_ms === 'number' && Number.isFinite(row.created_at_ms)
         ? row.created_at_ms
@@ -1238,18 +1573,14 @@ async function buildMessagesForUser(db, options) {
       preview: buildMessagePreview(row?.body || ''),
       priority: priority || '中',
       folderId: row?.folder_id || '',
+      folderName: row?.folder_name || '',
+      folderColor: row?.folder_color || '',
       isRead: row?.is_read ? true : false,
+      isPinned: row?.is_pinned ? true : false,
       createdAt: createdAtMs,
+      updatedAt: row?.updated_at_ms || 0,
     };
   });
-  items.sort((a, b) => {
-    if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
-    const priorityDiff = priorityWeight(a.priority || '中') - priorityWeight(b.priority || '中');
-    if (priorityDiff !== 0) return priorityDiff;
-    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
-    return String(a.id || '').localeCompare(String(b.id || ''));
-  });
-  return items;
 }
 
 function createLegacyTokenDetails(rawToken) {
@@ -1534,8 +1865,13 @@ async function maybeHandleRouteWithD1(options) {
       'D1 データベース接続が設定されていません。'
     );
   }
-  const normalizedRoute = typeof route === 'string' ? route.trim() : '';
+  const normalizedRoute =
+    typeof route === 'string' ? route.trim().replace(/^\/+|\/+$/g, '') : '';
   if (!normalizedRoute) return null;
+  const routeSegments = normalizedRoute ? normalizedRoute.split('/') : [];
+  const primaryRoute = routeSegments[0] || '';
+  const secondaryRoute = routeSegments[1] || '';
+  const tertiaryRoute = routeSegments[2] || '';
 
   try {
     if (normalizedRoute === 'getBootstrapData') {
@@ -1570,6 +1906,8 @@ async function maybeHandleRouteWithD1(options) {
           .bind(normalizedEmail)
           .first();
       }
+      const resolvedUserId =
+        membership?.user_id || userRow?.user_id || accessContext?.userId || '';
       const resolvedRole =
         membership?.role || accessContext?.role || userRow?.role || 'member';
       const userInfo = {
@@ -1583,6 +1921,7 @@ async function maybeHandleRouteWithD1(options) {
         userInfo,
         users: [],
         folders: [],
+        pinnedMessages: {},
         myTasks: { tasks: [], meta: {} },
         isManager: isManagerRole(resolvedRole),
         theme: userInfo.theme || 'light',
@@ -1592,11 +1931,12 @@ async function maybeHandleRouteWithD1(options) {
         const usersResult = await db
           .prepare(
             `
-            SELECT users.email AS email,
-                   COALESCE(users.display_name, users.email) AS display_name,
-                   COALESCE(memberships.role, 'member') AS role,
-                   users.profile_image_url AS profile_image_url
-              FROM memberships
+          SELECT users.user_id AS user_id,
+                 users.email AS email,
+                 COALESCE(users.display_name, users.email) AS display_name,
+                 COALESCE(memberships.role, 'member') AS role,
+                 users.profile_image_url AS profile_image_url
+            FROM memberships
               JOIN users ON users.user_id = memberships.user_id
              WHERE (?1 IS NULL OR memberships.org_id = ?1)
                AND LOWER(COALESCE(memberships.status, 'active')) = 'active'
@@ -1611,26 +1951,39 @@ async function maybeHandleRouteWithD1(options) {
         bootstrap.users =
           rows.length > 0
             ? rows.map((row) => ({
+                userId: row.user_id || '',
                 email: row.email,
                 name: row.display_name || row.email || '',
                 role: row.role ? String(row.role).trim() || 'member' : 'member',
                 imageUrl: row.profile_image_url || PROFILE_PLACEHOLDER_URL,
               }))
-            : [
-                { id: '全体', name: '全体' },
-                { id: 'ブッフェ', name: 'ブッフェ' },
-                { id: 'レセプション', name: 'レセプション' },
-                { id: 'ホール', name: 'ホール' },
-              ];
+            : [];
       } catch (err) {
         bootstrap.users = [];
         bootstrap.usersError = err && err.message ? err.message : String(err);
       }
       try {
-        bootstrap.folders = await fetchActiveFoldersFromD1(db);
+        bootstrap.folders = await fetchFoldersWithAccess(db, {
+          orgId,
+          userId: resolvedUserId,
+          isManager: bootstrap.isManager,
+          includeMembers: bootstrap.isManager,
+          ensureDefaultFolder: true,
+        });
       } catch (err) {
         bootstrap.folders = [];
         bootstrap.foldersError = err && err.message ? err.message : String(err);
+      }
+      try {
+        bootstrap.pinnedMessages = await fetchPinnedMessagesFromD1(db, {
+          orgId,
+          membershipId: membership?.membership_id || '',
+          userId: resolvedUserId,
+          isManager: bootstrap.isManager,
+        });
+      } catch (err) {
+        bootstrap.pinnedMessages = {};
+        bootstrap.pinnedMessagesError = err && err.message ? err.message : String(err);
       }
       try {
         bootstrap.myTasks = await buildMyTasksPayload(db, rawEmail);
@@ -1670,7 +2023,8 @@ async function maybeHandleRouteWithD1(options) {
       const result = await db
         .prepare(
           `
-          SELECT users.email AS email,
+          SELECT users.user_id AS user_id,
+                 users.email AS email,
                  COALESCE(users.display_name, users.email) AS display_name,
                  COALESCE(memberships.role, 'member') AS role
             FROM memberships
@@ -1687,17 +2041,13 @@ async function maybeHandleRouteWithD1(options) {
       const rows = Array.isArray(result?.results) ? result.results : [];
       const mapped =
         rows.length > 0
-          ? rows.map((row) => ({
-              email: row.email,
-              name: row.display_name || row.email || '',
-              role: row.role ? String(row.role).trim() || 'member' : 'member',
-            }))
-          : [
-              { id: '全体', name: '全体' },
-              { id: 'ブッフェ', name: 'ブッフェ' },
-              { id: 'レセプション', name: 'レセプション' },
-              { id: 'ホール', name: 'ホール' },
-            ];
+            ? rows.map((row) => ({
+                userId: row.user_id || '',
+                email: row.email,
+                name: row.display_name || row.email || '',
+                role: row.role ? String(row.role).trim() || 'member' : 'member',
+              }))
+            : [];
       logAuthInfo('Served route from D1', {
         requestId,
         route: normalizedRoute,
@@ -1719,7 +2069,18 @@ async function maybeHandleRouteWithD1(options) {
       );
     }
     if (normalizedRoute === 'listActiveFolders') {
-      const folders = await fetchActiveFoldersFromD1(db);
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const resolvedOrgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const folders = await fetchFoldersWithAccess(db, {
+        orgId: resolvedOrgId,
+        userId: membership?.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        includeMembers: isManagerRole(accessContext?.role),
+        ensureDefaultFolder: true,
+      });
       captureDiagnostics(config, 'info', 'd1_route_served', {
         event: 'd1_route_served',
         route: normalizedRoute,
@@ -1729,6 +2090,711 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: folders },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'folders' && routeSegments.length === 1 && requestMethod === 'GET') {
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const resolvedOrgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const includeMembersRequested =
+        query?.get('includeMembers') === '1' || query?.get('include_members') === '1';
+      const isManager = isManagerRole(accessContext?.role);
+      const folders = await fetchFoldersWithAccess(db, {
+        orgId: resolvedOrgId,
+        userId: membership?.user_id || accessContext?.userId || '',
+        isManager,
+        includeMembers: includeMembersRequested && isManager,
+        ensureDefaultFolder: true,
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: folders,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'folders' && routeSegments.length === 1 && requestMethod === 'POST') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'フォルダを作成する権限がありません。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      if (!orgId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'org_not_found',
+          '所属組織を特定できません。'
+        );
+      }
+      const payload = parsedBody && typeof parsedBody === 'object' ? parsedBody : {};
+      const folderName = normalizeFolderName(payload.name || payload.folderName);
+      if (!folderName) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_name_required',
+          'フォルダ名を入力してください。'
+        );
+      }
+      const duplicate = await folderNameExists(db, orgId, folderName, null);
+      if (duplicate) {
+        return errorResponse(
+          409,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_name_exists',
+          '同名のフォルダが既に存在します。'
+        );
+      }
+      const rawColor = typeof payload.color === 'string' ? payload.color : payload.folderColor;
+      const folderColor = normalizeOrgColor(rawColor) || null;
+      let isPublicFlag = true;
+      if (typeof payload.isPublic === 'boolean') {
+        isPublicFlag = payload.isPublic;
+      } else if (typeof payload.is_public === 'number' || typeof payload.is_public === 'boolean') {
+        isPublicFlag = !!payload.is_public;
+      }
+      const memberUserIdsInput =
+        Array.isArray(payload.memberUserIds) && payload.memberUserIds.length
+          ? payload.memberUserIds
+          : Array.isArray(payload.member_user_ids)
+          ? payload.member_user_ids
+          : [];
+      const authorizedMembers = isPublicFlag
+        ? []
+        : await normalizeFolderMemberIds(db, orgId, memberUserIdsInput);
+      const now = Date.now();
+      const folderId = createUlid(now);
+      const sortRow = await db
+        .prepare('SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM folders WHERE org_id = ?1')
+        .bind(orgId)
+        .first();
+      const sortOrder =
+        typeof sortRow?.max_order === 'number' && Number.isFinite(sortRow.max_order)
+          ? sortRow.max_order + 10
+          : 0;
+      const statements = [
+        db
+          .prepare(
+            `
+            INSERT INTO folders (
+              id,
+              org_id,
+              name,
+              sort_order,
+              color,
+              is_active,
+              is_public,
+              is_system,
+              created_at_ms,
+              updated_at_ms
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 0, ?7, ?7)
+          `
+          )
+          .bind(folderId, orgId, folderName, sortOrder, folderColor, isPublicFlag ? 1 : 0, now),
+      ];
+      if (!isPublicFlag && authorizedMembers.length) {
+        authorizedMembers.forEach((userId) => {
+          statements.push(
+            db
+              .prepare(
+                `
+                INSERT INTO folder_members (
+                  folder_id,
+                  user_id,
+                  added_at_ms
+                )
+                VALUES (?1, ?2, ?3)
+              `
+              )
+              .bind(folderId, userId, now)
+          );
+        });
+      }
+      try {
+        await db.batch(statements);
+      } catch (err) {
+        console.error('[ShiftFlow][Folders] Failed to insert folder', {
+          requestId,
+          message: err && err.message ? err.message : String(err),
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_create_failed',
+          'フォルダの作成に失敗しました。'
+        );
+      }
+      if (orgId) {
+        await insertAuditLog(db, {
+          orgId,
+          actorMembershipId: actorMembership?.membership_id || null,
+          targetType: 'folder',
+          targetId: folderId,
+          action: 'folder.create',
+          payload: {
+            name: folderName,
+            color: folderColor,
+            isPublic: isPublicFlag,
+            memberUserIds: authorizedMembers,
+          },
+        });
+      }
+      return jsonResponseFromD1(
+        201,
+        {
+          ok: true,
+          success: true,
+          result: {
+            id: folderId,
+            orgId,
+            name: folderName,
+            color: folderColor,
+            isActive: true,
+            isPublic: isPublicFlag,
+            isSystem: false,
+            sortOrder,
+            memberUserIds: authorizedMembers,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'folders' && routeSegments.length === 2 && requestMethod === 'PATCH') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'フォルダを更新する権限がありません。'
+        );
+      }
+      const targetFolderId = normalizeIdValue(secondaryRoute);
+      if (!targetFolderId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_id_required',
+          'フォルダ ID を指定してください。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const folder = await fetchFolderById(db, orgId, targetFolderId);
+      if (!folder) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_not_found',
+          '対象のフォルダが見つかりません。'
+        );
+      }
+      const payload = parsedBody && typeof parsedBody === 'object' ? parsedBody : {};
+      let nextName = folder.name || DEFAULT_SYSTEM_FOLDER_NAME;
+      let nextColor = folder.color || null;
+      let nextIsPublic = folder.is_public === 1;
+      let nextIsActive = folder.is_active === 1;
+      const changedFields = [];
+      if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+        const normalizedName = normalizeFolderName(payload.name);
+        if (!normalizedName) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'folder_name_required',
+            'フォルダ名を入力してください。'
+          );
+        }
+        if (normalizedName !== folder.name) {
+          const dup = await folderNameExists(db, folder.org_id, normalizedName, folder.id);
+          if (dup) {
+            return errorResponse(
+              409,
+              allowedOrigin,
+              requestId,
+              'cf-api',
+              'folder_name_exists',
+              '同名のフォルダが既に存在します。'
+            );
+          }
+          nextName = normalizedName;
+          changedFields.push('name');
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'color')) {
+        const normalizedColor = normalizeOrgColor(payload.color) || null;
+        if (normalizedColor !== folder.color) {
+          nextColor = normalizedColor;
+          changedFields.push('color');
+        }
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(payload, 'isPublic') ||
+        Object.prototype.hasOwnProperty.call(payload, 'is_public')
+      ) {
+        const rawPublic =
+          Object.prototype.hasOwnProperty.call(payload, 'isPublic') && payload.isPublic !== undefined
+            ? payload.isPublic
+            : payload.is_public;
+        const normalizedPublic = !!rawPublic;
+        if (normalizedPublic !== nextIsPublic) {
+          nextIsPublic = normalizedPublic;
+          changedFields.push('isPublic');
+        }
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(payload, 'isActive') ||
+        Object.prototype.hasOwnProperty.call(payload, 'is_active')
+      ) {
+        if (folder.is_system === 1 && !payload.isActive && !payload.is_active) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'system_folder_protected',
+            'システムフォルダは無効化できません。'
+          );
+        }
+        const rawActive =
+          Object.prototype.hasOwnProperty.call(payload, 'isActive') && payload.isActive !== undefined
+            ? payload.isActive
+            : payload.is_active;
+        const normalizedActive = !!rawActive;
+        if (normalizedActive !== nextIsActive) {
+          nextIsActive = normalizedActive;
+          changedFields.push('isActive');
+        }
+      }
+      const memberListProvided =
+        Array.isArray(payload.memberUserIds) || Array.isArray(payload.member_user_ids);
+      let updatedMemberIds = null;
+      if (memberListProvided) {
+        const rawMembers = Array.isArray(payload.memberUserIds)
+          ? payload.memberUserIds
+          : payload.member_user_ids;
+        updatedMemberIds = await normalizeFolderMemberIds(db, folder.org_id, rawMembers);
+      }
+      if (!changedFields.length && updatedMemberIds === null) {
+        return jsonResponseFromD1(
+          200,
+          {
+            ok: true,
+            success: true,
+            result: {
+              id: folder.id,
+              name: folder.name,
+              color: folder.color,
+              isPublic: folder.is_public === 1,
+              isActive: folder.is_active === 1,
+              isSystem: folder.is_system === 1,
+              memberUserIds: [],
+              updated: false,
+            },
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      const now = Date.now();
+      await db
+        .prepare(
+          `
+          UPDATE folders
+             SET name = ?2,
+                 color = ?3,
+                 is_public = ?4,
+                 is_active = ?5,
+                 updated_at_ms = ?6
+           WHERE id = ?1
+        `
+        )
+        .bind(
+          folder.id,
+          nextName,
+          nextColor,
+          nextIsPublic ? 1 : 0,
+          nextIsActive ? 1 : 0,
+          now
+        )
+        .run();
+      if (updatedMemberIds !== null) {
+        await db.prepare('DELETE FROM folder_members WHERE folder_id = ?1').bind(folder.id).run();
+        if (updatedMemberIds.length) {
+          for (const userId of updatedMemberIds) {
+            await db
+              .prepare(
+                `
+                INSERT INTO folder_members (
+                  folder_id,
+                  user_id,
+                  added_at_ms
+                )
+                VALUES (?1, ?2, ?3)
+              `
+              )
+              .bind(folder.id, userId, now)
+              .run();
+          }
+        }
+        changedFields.push('memberUserIds');
+      }
+      await insertAuditLog(db, {
+        orgId: folder.org_id,
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetType: 'folder',
+        targetId: folder.id,
+        action: 'folder.update',
+        payload: {
+          changes: changedFields,
+          name: nextName,
+          isPublic: nextIsPublic,
+        },
+      });
+      const memberMap = await fetchFolderMemberMap(db, [folder.id]);
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            id: folder.id,
+            orgId: folder.org_id,
+            name: nextName,
+            color: nextColor,
+            isPublic: nextIsPublic,
+            isActive: nextIsActive,
+            isSystem: folder.is_system === 1,
+            memberUserIds: memberMap.get(folder.id) || [],
+            updatedAt: now,
+            updated: true,
+          },
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'folders' && routeSegments.length === 2 && requestMethod === 'DELETE') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'フォルダをアーカイブする権限がありません。'
+        );
+      }
+      const targetFolderId = normalizeIdValue(secondaryRoute);
+      if (!targetFolderId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_id_required',
+          'フォルダ ID を指定してください。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const folder = await fetchFolderById(db, orgId, targetFolderId);
+      if (!folder) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_not_found',
+          '対象のフォルダが見つかりません。'
+        );
+      }
+      if (folder.is_system === 1) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'system_folder_protected',
+          'システムフォルダは削除できません。'
+        );
+      }
+      const messageCountRow = await db
+        .prepare(
+          `
+          SELECT COUNT(*) AS cnt
+            FROM messages
+           WHERE folder_id = ?1
+        `
+        )
+        .bind(folder.id)
+        .first();
+      const messageCount =
+        typeof messageCountRow?.cnt === 'number'
+          ? messageCountRow.cnt
+          : typeof messageCountRow?.['COUNT(*)'] === 'number'
+          ? messageCountRow['COUNT(*)']
+          : 0;
+      if (messageCount > 0) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_has_messages',
+          'メッセージが存在するフォルダはアーカイブできません。'
+        );
+      }
+      const now = Date.now();
+      await db
+        .prepare(
+          `
+          UPDATE folders
+             SET is_active = 0,
+                 archived_at_ms = ?2,
+                 archive_year = CAST(STRFTIME('%Y', 'now') AS INTEGER),
+                 updated_at_ms = ?2
+           WHERE id = ?1
+        `
+        )
+        .bind(folder.id, now)
+        .run();
+      await insertAuditLog(db, {
+        orgId: folder.org_id,
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetType: 'folder',
+        targetId: folder.id,
+        action: 'folder.archive',
+        payload: {
+          name: folder.name,
+        },
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            id: folder.id,
+            archived: true,
+            archivedAt: now,
+          },
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'templates' && routeSegments.length === 1 && requestMethod === 'GET') {
+      const folderIdParam = query?.get('folderId') || query?.get('folder_id') || '';
+      const folderId =
+        folderIdParam || (parsedBody && typeof parsedBody === 'object' ? parsedBody.folderId : '');
+      if (!folderId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_id_required',
+          'フォルダ ID を指定してください。'
+        );
+      }
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const orgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const folder = await ensureFolderAccessForUser(db, {
+        orgId,
+        folderId,
+        userId: membership?.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        requireActive: true,
+      });
+      if (!folder) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '指定されたフォルダにアクセスできません。'
+        );
+      }
+      const result = await db
+        .prepare(
+          `
+          SELECT id,
+                 name,
+                 title_format,
+                 body_format,
+                 created_at_ms,
+                 updated_at_ms
+            FROM templates
+           WHERE org_id = ?1
+             AND folder_id = ?2
+           ORDER BY updated_at_ms DESC
+        `
+        )
+        .bind(folder.org_id, folder.id)
+        .all();
+      const rows = Array.isArray(result?.results) ? result.results : [];
+      const templates = rows.map((row) => ({
+        id: row.id,
+        name: row.name || '',
+        titleFormat: row.title_format || '',
+        bodyFormat: row.body_format || '',
+        folderId: folder.id,
+        createdAt: row.created_at_ms || 0,
+        updatedAt: row.updated_at_ms || 0,
+      }));
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: templates,
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (primaryRoute === 'templates' && routeSegments.length === 1 && requestMethod === 'POST') {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'テンプレートを作成する権限がありません。'
+        );
+      }
+      const payload = parsedBody && typeof parsedBody === 'object' ? parsedBody : {};
+      const folderId = normalizeIdValue(payload.folderId || payload.folder_id);
+      if (!folderId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_id_required',
+          'フォルダ ID を指定してください。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const folder = await fetchFolderById(db, orgId, folderId);
+      if (!folder) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_not_found',
+          'フォルダが見つかりません。'
+        );
+      }
+      const templateName = normalizeFolderName(payload.name || payload.templateName);
+      if (!templateName) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'template_name_required',
+          'テンプレート名を入力してください。'
+        );
+      }
+      const templateId = createUlid();
+      const now = Date.now();
+      await db
+        .prepare(
+          `
+          INSERT INTO templates (
+            id,
+            org_id,
+            folder_id,
+            name,
+            title_format,
+            body_format,
+            created_at_ms,
+            updated_at_ms
+          )
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+        `
+        )
+        .bind(
+          templateId,
+          folder.org_id,
+          folder.id,
+          templateName,
+          typeof payload.titleFormat === 'string' ? payload.titleFormat : payload.title_format || '',
+          typeof payload.bodyFormat === 'string' ? payload.bodyFormat : payload.body_format || '',
+          now
+        )
+        .run();
+      return jsonResponseFromD1(
+        201,
+        {
+          ok: true,
+          success: true,
+          result: {
+            id: templateId,
+            folderId: folder.id,
+            name: templateName,
+            titleFormat:
+              typeof payload.titleFormat === 'string'
+                ? payload.titleFormat
+                : payload.title_format || '',
+            bodyFormat:
+              typeof payload.bodyFormat === 'string' ? payload.bodyFormat : payload.body_format || '',
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
         allowedOrigin,
         requestId
       );
@@ -3674,6 +4740,35 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedActorEmail = normalizeEmailValue(actorEmail);
       const membership = normalizedActorEmail ? await resolveMembershipForEmail(db, normalizedActorEmail) : null;
+      const orgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      let folderId =
+        typeof messagePayload.folderId === 'string'
+          ? messagePayload.folderId
+          : typeof messagePayload.folder_id === 'string'
+          ? messagePayload.folder_id
+          : '';
+      if (!folderId) {
+        folderId = (await ensureDefaultFolderForOrg(db, orgId)) || '';
+      }
+      const folderAccess = await ensureFolderAccessForUser(db, {
+        orgId,
+        folderId,
+        userId: membership?.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        requireActive: true,
+      });
+      if (!folderAccess) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'このフォルダには投稿できません。'
+        );
+      }
+      messagePayload.folderId = folderAccess.id;
       const rawAttachments = Array.isArray(messagePayload.attachments) ? messagePayload.attachments : [];
       const preparedAttachments = [];
       const uploadKeysForRollback = [];
@@ -4037,6 +5132,33 @@ async function maybeHandleRouteWithD1(options) {
         requestId
       );
     }
+    if (primaryRoute === 'messages' && routeSegments.length === 1 && requestMethod === 'GET') {
+      const folderId = query?.get('folderId') || query?.get('folder_id') || '';
+      const unreadOnly =
+        query?.get('unreadOnly') === '1' || query?.get('unread_only') === '1';
+      const rawEmail = tokenDetails?.email || accessContext?.email || '';
+      const normalizedEmail = normalizeEmailValue(rawEmail);
+      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membershipId = membership?.membership_id || null;
+      const orgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const userId = membership?.user_id || accessContext?.userId || '';
+      const isManager = isManagerRole(accessContext?.role);
+      const messages = await buildMessagesForUser(db, {
+        folderId,
+        membershipId,
+        orgId,
+        userId,
+        isManager,
+      });
+      const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
+    }
     if (normalizedRoute === 'getMessages') {
       const args =
         parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
@@ -4048,14 +5170,122 @@ async function maybeHandleRouteWithD1(options) {
       const normalizedEmail = normalizeEmailValue(rawEmail);
       const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
       const membershipId = membership?.membership_id || null;
+      const orgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const userId = membership?.user_id || accessContext?.userId || '';
+      const isManager = isManagerRole(accessContext?.role);
       const messages = await buildMessagesForUser(db, {
         folderId,
         membershipId,
+        orgId,
+        userId,
+        isManager,
       });
       const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: payload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (
+      primaryRoute === 'messages' &&
+      routeSegments.length === 3 &&
+      tertiaryRoute === 'pin' &&
+      requestMethod === 'POST'
+    ) {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'ピン留めを変更する権限がありません。'
+        );
+      }
+      const messageId = normalizeIdValue(secondaryRoute);
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const messageRow = await db
+        .prepare(
+          `
+          SELECT m.message_id,
+                 m.is_pinned,
+                 m.folder_id,
+                 m.org_id
+            FROM messages m
+           WHERE m.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .first();
+      if (!messageRow) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          'メッセージが見つかりません。'
+        );
+      }
+      if (orgId && messageRow.org_id && orgId !== messageRow.org_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '他組織のメッセージには操作できません。'
+        );
+      }
+      const nextPinned = messageRow.is_pinned ? 0 : 1;
+      const now = Date.now();
+      await db
+        .prepare(
+          `
+          UPDATE messages
+             SET is_pinned = ?2,
+                 updated_at_ms = ?3
+           WHERE message_id = ?1
+        `
+        )
+        .bind(messageRow.message_id, nextPinned, now)
+        .run();
+      await insertAuditLog(db, {
+        orgId: messageRow.org_id || orgId,
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetType: 'message',
+        targetId: messageRow.message_id,
+        action: nextPinned ? 'message.pin' : 'message.unpin',
+        payload: {
+          folderId: messageRow.folder_id,
+        },
+      });
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            messageId: messageRow.message_id,
+            isPinned: !!nextPinned,
+          },
+        },
         allowedOrigin,
         requestId
       );
@@ -4098,6 +5328,25 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
+      const viewerEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const viewerMembership = viewerEmail ? await resolveMembershipForEmail(db, viewerEmail) : null;
+      const folderAccess = await ensureFolderAccessForUser(db, {
+        orgId: messageRow.org_id || viewerMembership?.org_id || accessContext?.orgId || null,
+        folderId: messageRow.folder_id,
+        userId: viewerMembership?.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        requireActive: false,
+      });
+      if (!folderAccess) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'このメッセージにはアクセスできません。'
+        );
+      }
       const attachments = await fetchMessageAttachments(db, messageId);
       const readResult = await db
         .prepare(
@@ -4131,10 +5380,7 @@ async function maybeHandleRouteWithD1(options) {
           });
         }
       }
-      const membership = await resolveMembershipForEmail(
-        db,
-        normalizeEmailValue(tokenDetails?.email || accessContext?.email || '')
-      );
+      const membership = viewerMembership;
       const orgId = messageRow?.org_id || membership?.org_id || messageRow?.author_org_id || null;
       const activeUsers = await fetchActiveUsersForOrg(db, orgId);
       const unreadUsers = [];
@@ -4172,6 +5418,140 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: detail },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (
+      primaryRoute === 'messages' &&
+      routeSegments.length === 3 &&
+      tertiaryRoute === 'read_status' &&
+      requestMethod === 'GET'
+    ) {
+      if (!isManagerRole(accessContext?.role)) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '未読状況を確認する権限がありません。'
+        );
+      }
+      const messageId = normalizeIdValue(secondaryRoute);
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const messageRow = await db
+        .prepare(
+          `
+          SELECT m.message_id,
+                 m.folder_id,
+                 m.org_id,
+                 f.is_public AS folder_is_public
+            FROM messages m
+            JOIN folders f ON f.id = m.folder_id
+           WHERE m.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .first();
+      if (!messageRow) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          'メッセージが見つかりません。'
+        );
+      }
+      if (orgId && messageRow.org_id && orgId !== messageRow.org_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '他組織のメッセージにはアクセスできません。'
+        );
+      }
+      const publicFolder = messageRow.folder_is_public === 1;
+      const memberPublicQuery = `
+          SELECT ms.membership_id,
+                 ms.user_id,
+                 u.email,
+                 COALESCE(u.display_name, u.email) AS display_name
+            FROM memberships ms
+            JOIN users u ON u.user_id = ms.user_id
+           WHERE ms.org_id = ?1
+             AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+        `;
+      const memberPrivateQuery = `
+          SELECT ms.membership_id,
+                 ms.user_id,
+                 u.email,
+                 COALESCE(u.display_name, u.email) AS display_name
+            FROM memberships ms
+            JOIN users u ON u.user_id = ms.user_id
+           WHERE ms.org_id = ?1
+             AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+             AND ms.user_id IN (
+               SELECT user_id FROM folder_members WHERE folder_id = ?2
+             )
+        `;
+      const memberStmt = publicFolder
+        ? db.prepare(memberPublicQuery).bind(messageRow.org_id || orgId)
+        : db.prepare(memberPrivateQuery).bind(messageRow.org_id || orgId, messageRow.folder_id);
+      const memberResult = await memberStmt.all();
+      const members = Array.isArray(memberResult?.results) ? memberResult.results : [];
+      const readRows = await db
+        .prepare(
+          `
+          SELECT membership_id
+            FROM message_reads
+           WHERE message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .all();
+      const readSet = new Set(
+        (Array.isArray(readRows?.results) ? readRows.results : [])
+          .map((row) => row?.membership_id)
+          .filter(Boolean)
+      );
+      const unread = members
+        .filter((row) => row?.membership_id && !readSet.has(row.membership_id))
+        .map((row) => ({
+          membershipId: row.membership_id,
+          userId: row.user_id,
+          email: row.email,
+          name: row.display_name,
+        }));
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            messageId,
+            folderId: messageRow.folder_id,
+            unread,
+            totalCandidates: members.length,
+            readCount: readSet.size,
+          },
+        },
         allowedOrigin,
         requestId
       );
@@ -4227,9 +5607,14 @@ async function maybeHandleRouteWithD1(options) {
           status: task.status,
           isCompleted: task.isCompleted,
         }));
+      const orgId =
+        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const messages = await buildMessagesForUser(db, {
         folderId: '',
         membershipId,
+        orgId,
+        userId: membership?.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
       });
       const payload = {
         tasks: todays,

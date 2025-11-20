@@ -1250,11 +1250,20 @@
           var(--card);
         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
       }
+      .card.app-card.msg-card.msg-card--pinned {
+        border-left-color: rgba(251, 188, 5, 0.75);
+        background: linear-gradient(135deg, rgba(251, 188, 5, 0.18), rgba(255, 248, 224, 0.4) 70%),
+          var(--card);
+      }
       :root[data-theme='dark'] .card.app-card.msg-card {
         border-left-color: rgba(133, 163, 234, 0.45);
         background: linear-gradient(135deg, rgba(53, 85, 168, 0.26), rgba(16, 25, 45, 0.88) 76%),
           var(--card);
         box-shadow: 0 16px 40px rgba(4, 10, 26, 0.65);
+      }
+      :root[data-theme='dark'] .card.app-card.msg-card.msg-card--pinned {
+        background: linear-gradient(135deg, rgba(251, 188, 5, 0.35), rgba(17, 29, 54, 0.88) 76%),
+          var(--card);
       }
       .card.app-card.msg-card.unread {
         border-left-color: rgba(255, 111, 97, 0.85);
@@ -1341,6 +1350,14 @@
       .msg-title-line .msg-title {
         font-weight: 700;
       }
+      .msg-card .pin-indicator {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        color: #fbbc05;
+      }
       .msg-actions {
         display: flex;
         align-items: center;
@@ -1356,6 +1373,35 @@
       }
       .msg-actions .spinner-border {
         margin-left: 8px;
+      }
+      .template-chip-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .template-chip-row small {
+        color: var(--muted);
+      }
+      .template-chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .template-chip {
+        border: 1px solid rgba(81, 124, 178, 0.3);
+        border-radius: 999px;
+        padding: 3px 12px;
+        font-size: 0.82rem;
+        background: transparent;
+        cursor: pointer;
+      }
+      .template-chip:hover,
+      .template-chip:focus-visible {
+        background: rgba(81, 124, 178, 0.12);
+      }
+      :root[data-theme='dark'] .template-chip {
+        border-color: rgba(255, 255, 255, 0.25);
       }
       .msg-content {
         display: flex;
@@ -3281,6 +3327,16 @@
           </button>
           <button
             type="button"
+            class="pwa-footer__button d-none"
+            data-admin-target="dashboard"
+            data-manager-only
+            aria-label="管理"
+          >
+            <span class="material-icons-outlined" aria-hidden="true">shield</span>
+            <span>管理</span>
+          </button>
+          <button
+            type="button"
             class="pwa-footer__button is-disabled"
             id="btn-mobile-logout"
             aria-label="ログアウト"
@@ -3385,6 +3441,11 @@
             <a class="nav-link" href="#" data-view="settings" title="Settings"
               ><span class="material-icons-outlined">settings</span></a
             >
+          </li>
+          <li class="nav-item d-none" data-manager-only>
+            <a class="nav-link nav-icon" href="#" data-admin-target="dashboard" title="Admin">
+              <span class="material-icons-outlined">shield</span>
+            </a>
           </li>
         </ul>
       </div>
@@ -4025,6 +4086,39 @@
                       <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
                     </button>
                   </article>
+                  <article class="admin-card mt-3" data-manager-only>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                      <div>
+                        <h4 class="mb-1">フォルダ管理</h4>
+                        <p class="text-muted small mb-0">名称・公開設定・メンバー数を確認します。</p>
+                      </div>
+                      <button
+                        class="btn btn-sm btn-outline-primary d-none"
+                        type="button"
+                        id="btnAdminNewFolder"
+                        data-manager-only
+                      >
+                        <span class="material-icons-outlined align-middle me-1">add</span>フォルダ作成
+                      </button>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">名称</th>
+                            <th scope="col">公開</th>
+                            <th scope="col">メンバー数</th>
+                            <th scope="col">更新</th>
+                          </tr>
+                        </thead>
+                        <tbody id="adminFolderList">
+                          <tr>
+                            <td colspan="4" class="text-muted">フォルダ情報を読み込み中...</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </article>
                 </div>
               </section>
               <section class="admin-panel" data-admin-panel="audit" aria-labelledby="adminAuditTitle">
@@ -4482,9 +4576,20 @@
                 <div class="row g-3">
                   <div class="col-12 col-md-6">
                     <label class="form-label">フォルダ</label>
-                    <select class="form-select" id="messageFolder" data-folder-select="compose">
-                      <option value="">フォルダを選択</option>
-                    </select>
+                    <div class="input-group">
+                      <select class="form-select" id="messageFolder" data-folder-select="compose">
+                        <option value="">フォルダを選択</option>
+                      </select>
+                      <button
+                        class="btn btn-outline-secondary d-none"
+                        type="button"
+                        id="btnQuickFolder"
+                        data-manager-only
+                        title="フォルダを作成"
+                      >
+                        <span class="material-icons-outlined" aria-hidden="true">add</span>
+                      </button>
+                    </div>
                   </div>
                   <div class="col-12 col-md-6">
                     <label class="form-label">優先度</label>
@@ -4493,6 +4598,12 @@
                       <option>高</option>
                       <option>低</option>
                     </select>
+                  </div>
+                  <div class="col-12">
+                    <div class="template-chip-row d-none" id="templateChipRow">
+                      <small>定型文</small>
+                      <div class="template-chip-list" id="templateChipList"></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4664,6 +4775,14 @@
                     aria-hidden="true"
                   ></span>
                 </button>
+                <button
+                  class="btn btn-outline-secondary d-none"
+                  id="btnUnreadStatus"
+                  data-manager-only
+                  type="button"
+                >
+                  <span class="material-icons align-middle me-1">visibility</span>未読状況確認
+                </button>
               </div>
               <h5 class="mt-4">コメント</h5>
               <div id="comments-list" class="mb-2"></div>
@@ -4686,6 +4805,73 @@
             <button type="button" class="btn btn-danger me-auto d-none" id="deleteMessageButton">
               削除
             </button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="quickFolderModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content modal-modern">
+          <div class="modal-header">
+            <button type="button" class="btn btn-link" data-bs-dismiss="modal">
+              <span class="material-icons">arrow_back</span>
+            </button>
+            <h6 class="m-0">フォルダを作成</h6>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-danger d-none" id="quickFolderError"></div>
+            <div class="mb-3">
+              <label class="form-label" for="quickFolderName">名称</label>
+              <input type="text" class="form-control" id="quickFolderName" placeholder="Main" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="quickFolderColor">カラー</label>
+              <input
+                type="color"
+                class="form-control form-control-color"
+                id="quickFolderColor"
+                value="#517cb2"
+              />
+            </div>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="quickFolderPublic" checked />
+              <label class="form-check-label" for="quickFolderPublic">全員に公開</label>
+            </div>
+            <div class="mb-3" id="quickFolderMemberWrap">
+              <label class="form-label">メンバー (限定公開時)</label>
+              <div class="border rounded p-2 member-list" id="quickFolderMemberList"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="button" class="btn btn-primary" id="btnQuickFolderSave">
+              <span class="label">保存</span>
+              <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="unreadStatusModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content modal-modern">
+          <div class="modal-header">
+            <button type="button" class="btn btn-link" data-bs-dismiss="modal">
+              <span class="material-icons">arrow_back</span>
+            </button>
+            <h6 class="m-0">未読状況</h6>
+          </div>
+          <div class="modal-body">
+            <div id="unreadStatusLoading" class="skeleton"></div>
+            <div id="unreadStatusContent" class="d-none">
+              <p class="text-muted small mb-2" id="unreadStatusSummary"></p>
+              <ul class="list-group" id="unreadStatusList"></ul>
+            </div>
+          </div>
+          <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
           </div>
         </div>
@@ -4766,6 +4952,10 @@
               ? bootstrap.myTasks
               : { tasks: [], meta: {} },
           folders: Array.isArray(bootstrap.folders) ? bootstrap.folders : [],
+          pinnedMessages:
+            bootstrap.pinnedMessages && typeof bootstrap.pinnedMessages === 'object'
+              ? bootstrap.pinnedMessages
+              : {},
         };
       })();
       let ACTIVE_USERS = Array.isArray(__BOOT__.users) ? __BOOT__.users : [];
@@ -4811,6 +5001,10 @@
         });
       }
       let FOLDERS = Array.isArray(__BOOT__.folders) ? __BOOT__.folders : [];
+      let PINNED_MESSAGES =
+        __BOOT__.pinnedMessages && typeof __BOOT__.pinnedMessages === 'object'
+          ? __BOOT__.pinnedMessages
+          : {};
       const SHIFT_FLOW_CONFIG = window.SHIFT_FLOW_CONFIG || {};
       const {
         BOOTSTRAP_CACHE_PREFIX,
@@ -5520,14 +5714,11 @@
 
       function getDefaultFolderId() {
         if (!Array.isArray(FOLDERS) || FOLDERS.length === 0) return '';
-        var fallback = FOLDERS[0].id || '';
-        for (var i = 0; i < FOLDERS.length; i++) {
-          var id = String(FOLDERS[i].id || '');
-          var name = String(FOLDERS[i].name || '');
-          if (id === '全体' || name === '全体') {
-            return id || name;
-          }
-        }
+        var systemFolder = FOLDERS.find(function (folder) {
+          return folder && (folder.isSystem || folder.name === 'Main' || folder.id === 'Main');
+        });
+        if (systemFolder && systemFolder.id) return systemFolder.id;
+        var fallback = FOLDERS[0] && FOLDERS[0].id ? FOLDERS[0].id : '';
         return fallback;
       }
 
@@ -5585,7 +5776,373 @@
           } else {
             composeSelect.value = '';
           }
+          MessageDraftController.handleFolderChange(composeSelect.value || '');
         }
+        renderAdminFolderList();
+      }
+
+      const MessageDraftController = (function () {
+        const STORAGE_PREFIX = 'shiftflow_draft_';
+        let activeFolderId = '';
+        let saveTimer = null;
+
+        function getKey(folderId) {
+          return STORAGE_PREFIX + (folderId || 'default');
+        }
+
+        function readDraft(folderId) {
+          try {
+            const raw = localStorage.getItem(getKey(folderId));
+            return raw ? JSON.parse(raw) : null;
+          } catch (_err) {
+            return null;
+          }
+        }
+
+        function saveDraft() {
+          const folderId = byId('messageFolder') ? byId('messageFolder').value : '';
+          if (!folderId) return;
+          const payload = {
+            folderId,
+            title: (byId('messageTitle') && byId('messageTitle').value) || '',
+            body: (byId('messageBody') && byId('messageBody').value) || '',
+            savedAt: Date.now(),
+          };
+          try {
+            localStorage.setItem(getKey(folderId), JSON.stringify(payload));
+          } catch (_err) {
+            /* ignore quota errors */
+          }
+        }
+
+        function scheduleSave() {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(saveDraft, 300);
+        }
+
+        function clearDraft(folderId) {
+          try {
+            localStorage.removeItem(getKey(folderId));
+          } catch (_err) {
+            /* ignore */
+          }
+        }
+
+        function restoreDraft(folderId) {
+          const draft = readDraft(folderId);
+          if (!draft) return false;
+          if (!draft.title && !draft.body) return false;
+          const shouldRestore = confirm('フォルダに保存された下書きを復元しますか？');
+          if (!shouldRestore) return false;
+          const titleEl = byId('messageTitle');
+          const bodyEl = byId('messageBody');
+          if (titleEl) titleEl.value = draft.title || '';
+          if (bodyEl) bodyEl.value = draft.body || '';
+          return true;
+        }
+
+        function handleFolderChange(folderId) {
+          activeFolderId = folderId || '';
+          TemplateController.renderForFolder(folderId);
+          if (!folderId) return;
+          restoreDraft(folderId);
+        }
+
+        function init() {
+          const titleEl = byId('messageTitle');
+          const bodyEl = byId('messageBody');
+          const folderEl = byId('messageFolder');
+          if (titleEl) titleEl.addEventListener('input', scheduleSave);
+          if (bodyEl) bodyEl.addEventListener('input', scheduleSave);
+          if (folderEl) {
+            folderEl.addEventListener('change', function () {
+              scheduleSave();
+              handleFolderChange(folderEl.value || '');
+            });
+          }
+        }
+
+        return {
+          init,
+          save: scheduleSave,
+          clear: clearDraft,
+          handleFolderChange,
+        };
+      })();
+
+      const TemplateController = (function () {
+        const cache = new Map();
+
+        function fetchTemplates(folderId) {
+          if (!folderId) return Promise.resolve([]);
+          if (cache.has(folderId)) {
+            return Promise.resolve(cache.get(folderId));
+          }
+          const url = `${API_BASE_PATH}/templates?folderId=${encodeURIComponent(folderId)}`;
+          return apiRequest(url, { method: 'GET' })
+            .then(function (result) {
+              const list = Array.isArray(result) ? result : [];
+              cache.set(folderId, list);
+              return list;
+            })
+            .catch(function (err) {
+              console.warn('Failed to load templates:', err);
+              return [];
+            });
+        }
+
+        function renderForFolder(folderId) {
+          const row = byId('templateChipRow');
+          const listEl = byId('templateChipList');
+          if (!row || !listEl) return;
+          if (!folderId) {
+            row.classList.add('d-none');
+            listEl.innerHTML = '';
+            return;
+          }
+          fetchTemplates(folderId).then(function (templates) {
+            if (!templates.length) {
+              row.classList.add('d-none');
+              listEl.innerHTML = '';
+              return;
+            }
+            listEl.innerHTML = templates
+              .map(function (tpl, index) {
+                return (
+                  '<button type="button" class="template-chip" data-template-index="' +
+                  index +
+                  '">' +
+                  esc(tpl.name || '定型文') +
+                  '</button>'
+                );
+              })
+              .join('');
+            listEl.querySelectorAll('.template-chip').forEach(function (chip) {
+              chip.addEventListener('click', function () {
+                const idx = Number(chip.getAttribute('data-template-index') || '0');
+                const template = templates[idx];
+                if (!template) return;
+                applyTemplate(template);
+              });
+            });
+            row.classList.remove('d-none');
+          });
+        }
+
+        function applyTemplate(template) {
+          const titleEl = byId('messageTitle');
+          const bodyEl = byId('messageBody');
+          if (titleEl && typeof template.titleFormat === 'string') {
+            titleEl.value = template.titleFormat;
+          }
+          if (bodyEl && typeof template.bodyFormat === 'string') {
+            bodyEl.value = template.bodyFormat;
+          }
+          MessageDraftController.save();
+          notify('定型文を適用しました。', true);
+        }
+
+        return {
+          renderForFolder,
+          clearCache: function () {
+            cache.clear();
+          },
+        };
+      })();
+
+      const QuickFolderController = (function () {
+        const MODAL_ID = 'quickFolderModal';
+        function renderMembers() {
+          const list = byId('quickFolderMemberList');
+          if (!list) return;
+          const sorted = ACTIVE_USERS.slice().sort(function (a, b) {
+            return String(a.name || a.email || '').localeCompare(
+              String(b.name || b.email || ''),
+              'ja'
+            );
+          });
+          list.innerHTML = sorted
+            .map(function (user, index) {
+              const id = `quick-folder-member-${index}`;
+              return (
+                '<div class="form-check form-check-sm">' +
+                '<input class="form-check-input" type="checkbox" id="' +
+                id +
+                '" value="' +
+                esc(user.userId || user.email || '') +
+                '">' +
+                '<label class="form-check-label" for="' +
+                id +
+                '">' +
+                esc(user.name || user.email || '') +
+                '</label>' +
+                '</div>'
+              );
+            })
+            .join('');
+        }
+
+        function toggleMemberVisibility() {
+          const wrap = byId('quickFolderMemberWrap');
+          const checkbox = byId('quickFolderPublic');
+          if (!wrap || !checkbox) return;
+          wrap.classList.toggle('d-none', checkbox.checked);
+        }
+
+        function showModal() {
+          if (!IS_MANAGER) {
+            notify('フォルダを作成できるのは管理者のみです。', false);
+            return;
+          }
+          const modalEl = byId(MODAL_ID);
+          if (!modalEl) return;
+          byId('quickFolderError').classList.add('d-none');
+          byId('quickFolderName').value = '';
+          byId('quickFolderColor').value = '#517cb2';
+          const publicSwitch = byId('quickFolderPublic');
+          if (publicSwitch) {
+            publicSwitch.checked = true;
+          }
+          toggleMemberVisibility();
+          renderMembers();
+          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modal.show();
+        }
+
+        function setSavingState(isSaving) {
+          const btn = byId('btnQuickFolderSave');
+          if (!btn) return;
+          const label = btn.querySelector('.label');
+          const spinner = btn.querySelector('.spinner-border');
+          btn.disabled = !!isSaving;
+          if (label) label.classList.toggle('d-none', !!isSaving);
+          if (spinner) spinner.classList.toggle('d-none', !isSaving);
+        }
+
+        function showError(message) {
+          const box = byId('quickFolderError');
+          if (!box) return;
+          if (!message) {
+            box.classList.add('d-none');
+            box.textContent = '';
+            return;
+          }
+          box.textContent = message;
+          box.classList.remove('d-none');
+        }
+
+        function appendFolder(folder) {
+          if (!folder || !folder.id) return;
+          FOLDERS.push(folder);
+          window.folders = FOLDERS.slice();
+          populateFolderSelects();
+          const select = byId('messageFolder');
+          if (select) {
+            select.value = folder.id;
+            MessageDraftController.handleFolderChange(folder.id);
+          }
+        }
+
+        async function saveFolder() {
+          const name = (byId('quickFolderName') && byId('quickFolderName').value.trim()) || '';
+          if (!name) {
+            showError('フォルダ名を入力してください。');
+            return;
+          }
+          const color = (byId('quickFolderColor') && byId('quickFolderColor').value) || '#517cb2';
+          const isPublic =
+            byId('quickFolderPublic') && byId('quickFolderPublic').checked ? true : false;
+          const members = [];
+          if (!isPublic) {
+            document.querySelectorAll('#quickFolderMemberList input[type="checkbox"]').forEach(
+              function (input) {
+                if (input.checked && input.value) {
+                  members.push(input.value);
+                }
+              }
+            );
+          }
+          setSavingState(true);
+          showError('');
+          try {
+            const result = await apiRequest(`${API_BASE_PATH}/folders`, {
+              method: 'POST',
+              body: {
+                name,
+                color,
+                isPublic,
+                memberUserIds: members,
+              },
+            });
+            if (result && result.id) {
+              appendFolder(result);
+            }
+            const modalEl = byId(MODAL_ID);
+            if (modalEl) {
+              const modal = bootstrap.Modal.getInstance(modalEl);
+              if (modal) modal.hide();
+            }
+            notify('フォルダを作成しました。', true);
+          } catch (err) {
+            console.warn('Failed to create folder:', err);
+            showError(err && err.message ? err.message : 'フォルダ作成に失敗しました。');
+          } finally {
+            setSavingState(false);
+          }
+        }
+
+        return {
+          open: showModal,
+          save: saveFolder,
+          toggleMembers: toggleMemberVisibility,
+        };
+      })();
+      on('btnAdminNewFolder', 'click', function (event) {
+        event.preventDefault();
+        QuickFolderController.open();
+      });
+
+      function renderAdminFolderList() {
+        var tbody = byId('adminFolderList');
+        if (!tbody) return;
+        if (!IS_MANAGER) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" class="text-muted">管理者のみ利用できます。</td></tr>';
+          return;
+        }
+        if (!Array.isArray(FOLDERS) || !FOLDERS.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" class="text-muted">フォルダがまだありません。</td></tr>';
+          return;
+        }
+        tbody.innerHTML = FOLDERS.map(function (folder) {
+          var badge = folder.isPublic ? '公開' : '限定';
+          var icon = folder.isPublic ? 'lock_open' : 'lock';
+          var colorChip =
+            '<span class="badge rounded-pill" style="background:' +
+            esc(folder.color || '#517cb2') +
+            '"></span>';
+          return (
+            '<tr>' +
+            '<td>' +
+            colorChip +
+            ' ' +
+            esc(folder.name || folder.id) +
+            '</td>' +
+            '<td><span class="material-icons-outlined align-middle me-1" aria-hidden="true">' +
+            icon +
+            '</span>' +
+            badge +
+            '</td>' +
+            '<td>' +
+            (folder.memberCount != null ? folder.memberCount : '—') +
+            '</td>' +
+            '<td>' +
+            (folder.updatedAt ? new Date(folder.updatedAt).toLocaleString() : '—') +
+            '</td>' +
+            '</tr>'
+          );
+        }).join('');
       }
 
       function setBootstrapLoading(isLoading) {
@@ -5654,6 +6211,7 @@
 
         ACTIVE_USERS = Array.isArray(window.users) ? window.users : [];
         FOLDERS = Array.isArray(window.folders) ? window.folders : [];
+        renderAdminFolderList();
         IS_MANAGER = !!normalized.isManager;
 
         var userInfo = normalized.userInfo || {};
@@ -6842,6 +7400,51 @@
           }
         }
         return data;
+      }
+
+      async function apiRequest(path, init) {
+        await syncAuthSession({ silent: true }).catch(function () {});
+        const options = init || {};
+        const headers = Object.assign(
+          {
+            Accept: 'application/json',
+          },
+          options.headers || {}
+        );
+        if (
+          options.body &&
+          typeof options.body === 'object' &&
+          !(options.body instanceof FormData)
+        ) {
+          headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+        }
+        const response = await fetch(path, {
+          credentials: 'include',
+          ...options,
+          headers,
+          body:
+            options.body && typeof options.body === 'object' && !(options.body instanceof FormData)
+              ? JSON.stringify(options.body)
+              : options.body,
+        });
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch (_err) {}
+        if (!response.ok || (payload && payload.ok === false)) {
+          const reason =
+            (payload && payload.reason) ||
+            (payload && payload.error) ||
+            `API request failed (${response.status})`;
+          const err = new Error(reason);
+          err.code = (payload && payload.code) || 'api_error';
+          err.status = response.status;
+          throw err;
+        }
+        if (payload && Object.prototype.hasOwnProperty.call(payload, 'result')) {
+          return payload.result;
+        }
+        return payload;
       }
 
       function normalizeReturnTo(rawValue) {
@@ -9123,6 +9726,7 @@
         var isRead = !!m.isRead;
         var classes = ['card', 'app-card', 'msg-card', 'mb-2'];
         if (!isRead) classes.push('unread');
+        if (m.isPinned) classes.push('msg-card--pinned');
         if (opts.compact) classes.push('msg-card-compact');
         var priority = m.priority || '中';
         var priorityPill =
@@ -9131,6 +9735,9 @@
           '">' +
           esc(priority) +
           '</span>';
+        var pinIndicator = m.isPinned
+          ? '<span class="pin-indicator material-icons-outlined" aria-hidden="true">push_pin</span>'
+          : '';
         var preview = m.preview || m.body || '';
         var previewHtml = esc(preview || '').replace(/\n/g, '<br>');
         var icon = isRead ? 'mark_email_read' : 'mark_email_unread';
@@ -9155,6 +9762,16 @@
             '</span>' +
             '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>' +
             '</button>' +
+            (IS_MANAGER
+              ? '<button class="btn btn-outline-secondary btn-sm msg-action-btn" onclick="event.preventDefault(); togglePin(this,\'' +
+                m.id +
+                "'," +
+                (m.isPinned ? 'false' : 'true') +
+                ')">' +
+                '<span class="material-icons align-middle me-1">push_pin</span>' +
+                (m.isPinned ? 'ピン解除' : 'ピン留め') +
+                '</button>'
+              : '') +
             '</div>';
         }
         return (
@@ -9177,6 +9794,7 @@
           '</span>' +
           '<div class="msg-lines app-card-main flex-grow-1">' +
           '<div class="msg-title-line">' +
+          pinIndicator +
           priorityPill +
           '<span class="msg-title ' +
           (isRead ? 'text-muted' : '') +
@@ -9360,6 +9978,26 @@
             }
           })
           .toggleMemoRead(memoId, shouldRead);
+      }
+      function togglePin(btn, memoId, shouldPin) {
+        if (!IS_MANAGER) {
+          notify('ピン操作は管理者のみ可能です。', false);
+          return;
+        }
+        setButtonLoading(btn, true);
+        apiRequest(`${API_BASE_PATH}/messages/${encodeURIComponent(memoId)}/pin`, {
+          method: 'POST',
+        })
+          .then(function (res) {
+            setButtonLoading(btn, false);
+            notify('ピン状態を更新しました。', true);
+            loadMessages();
+            loadHome();
+          })
+          .catch(function (err) {
+            setButtonLoading(btn, false);
+            notify('ピン更新に失敗しました: ' + (err.message || ''), false);
+          });
       }
       on('btn-msg-markall', 'click', function () {
         var btn = byId('btn-msg-markall');
@@ -9937,6 +10575,71 @@
           })
           .getMessageById(CURRENT_MEMO_ID);
       }
+      const UnreadStatusController = (function () {
+        const MODAL_ID = 'unreadStatusModal';
+        function render(result) {
+          const content = byId('unreadStatusContent');
+          const loading = byId('unreadStatusLoading');
+          const list = byId('unreadStatusList');
+          const summary = byId('unreadStatusSummary');
+          if (loading) loading.classList.add('d-none');
+          if (!content || !list || !summary) return;
+          const unread = Array.isArray(result?.unread) ? result.unread : [];
+          summary.textContent =
+            '未読 ' +
+            unread.length +
+            ' / 対象 ' +
+            (typeof result?.totalCandidates === 'number' ? result.totalCandidates : unread.length);
+          if (!unread.length) {
+            list.innerHTML = '<li class="list-group-item text-muted">未読ユーザーはいません。</li>';
+          } else {
+            list.innerHTML = unread
+              .map(function (entry) {
+                return (
+                  '<li class="list-group-item d-flex justify-content-between align-items-center">' +
+                  '<span>' +
+                  esc(entry.name || entry.email || '未設定') +
+                  '</span>' +
+                  '<span class="text-muted small">' +
+                  esc(entry.email || '') +
+                  '</span>' +
+                  '</li>'
+                );
+              })
+              .join('');
+          }
+          content.classList.remove('d-none');
+        }
+
+        function open(messageId) {
+          if (!messageId || !IS_MANAGER) {
+            notify('管理者のみ未読状況を確認できます。', false);
+            return;
+          }
+          const modalEl = byId(MODAL_ID);
+          if (!modalEl) return;
+          const loading = byId('unreadStatusLoading');
+          const content = byId('unreadStatusContent');
+          if (loading) loading.classList.remove('d-none');
+          if (content) content.classList.add('d-none');
+          bootstrap.Modal.getOrCreateInstance(modalEl).show();
+          apiRequest(`${API_BASE_PATH}/messages/${encodeURIComponent(messageId)}/read_status`, {
+            method: 'GET',
+          })
+            .then(render)
+            .catch(function (err) {
+              console.warn('Failed to load unread status:', err);
+              notify('未読状況の取得に失敗しました: ' + (err.message || ''), false);
+              const loadingEl = byId('unreadStatusLoading');
+              if (loadingEl) loadingEl.classList.add('d-none');
+            });
+        }
+
+        return {
+          open,
+        };
+      })();
+
       function openMessageModal(memoId) {
         CURRENT_MEMO_ID = memoId;
         CURRENT_MEMO_IS_READ = false;
@@ -10068,6 +10771,10 @@
             notify('削除に失敗: ' + e.message, false);
           })
           .deleteMessageById(CURRENT_MEMO_ID);
+      });
+      on('btnUnreadStatus', 'click', function () {
+        if (!CURRENT_MEMO_ID) return;
+        UnreadStatusController.open(CURRENT_MEMO_ID);
       });
 
       const ProfileImageController = (function () {
@@ -10434,6 +11141,7 @@
           folder: 'messageFolder',
         };
         const MODAL_ID = 'newMessageModal';
+        let lastFolderId = '';
 
         function buildPayload() {
           var titleEl = byId(SELECTORS.title);
@@ -10442,15 +11150,20 @@
           var folderEl = byId(SELECTORS.folder);
           var title = titleEl ? titleEl.value : '';
           var body = bodyEl ? bodyEl.value : '';
+          var folderId = folderEl ? folderEl.value : '';
           if (!title || !body) {
             notify('件名と本文は必須です。', false);
+            return null;
+          }
+          if (!folderId) {
+            notify('フォルダを選択してください。', false);
             return null;
           }
           return {
             title: title,
             body: body,
             priority: priorityEl ? priorityEl.value : '中',
-            folderId: folderEl ? folderEl.value : '',
+            folderId: folderId,
             attachments: pendingMessageAttachments.slice(),
           };
         }
@@ -10464,6 +11177,9 @@
                 modalEl && (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl));
               if (modal) modal.hide();
               MessageAttachmentController.reset();
+              if (lastFolderId) {
+                MessageDraftController.clear(lastFolderId);
+              }
             }
             notify(res && res.message ? res.message : '完了', res && res.success !== false);
             loadHome();
@@ -10484,6 +11200,7 @@
           if (!btn) return;
           var payload = buildPayload();
           if (!payload) return;
+          lastFolderId = payload.folderId || '';
           setButtonLoading(btn, true);
           google.script.run
             .withSuccessHandler(handleSuccess(btn))
@@ -10491,8 +11208,38 @@
             .addNewMessage(payload);
         }
 
+        function handleFolderChange() {
+          var folderEl = byId(SELECTORS.folder);
+          var folderId = folderEl ? folderEl.value : '';
+          MessageDraftController.handleFolderChange(folderId);
+        }
+
+        function bindTemplateRefresh() {
+          const folderEl = byId(SELECTORS.folder);
+          if (folderEl) {
+            folderEl.addEventListener('change', function () {
+              TemplateController.renderForFolder(folderEl.value || '');
+            });
+          }
+        }
+
         function init() {
           on(SELECTORS.save, 'click', handleSave);
+           MessageDraftController.init();
+           bindTemplateRefresh();
+           const quickFolderBtn = byId('btnQuickFolder');
+           if (quickFolderBtn) {
+             quickFolderBtn.addEventListener('click', QuickFolderController.open);
+           }
+           const quickFolderSave = byId('btnQuickFolderSave');
+           if (quickFolderSave) {
+             quickFolderSave.addEventListener('click', QuickFolderController.save);
+           }
+           const quickFolderPublic = byId('quickFolderPublic');
+           if (quickFolderPublic) {
+             quickFolderPublic.addEventListener('change', QuickFolderController.toggleMembers);
+           }
+           handleFolderChange();
         }
 
         return {
