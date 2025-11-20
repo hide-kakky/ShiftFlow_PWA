@@ -3,7 +3,7 @@ compatibility_date = "2025-11-02"
 pages_build_output_dir = "frontend/public"
 
 [[d1_databases]]
-binding = "DB"
+binding = "DB_DEV"
 database_name = "app_d1_dev"
 database_id = "6ed349e4-06e1-4eab-b850-b2b99450bfda"
 
@@ -17,7 +17,7 @@ bucket_name = "app-r2-dev"
 
 [env.preview]
 [[env.preview.d1_databases]]
-binding = "DB"
+binding = "DB_DEV"
 database_name = "app_d1_dev"
 database_id = "6ed349e4-06e1-4eab-b850-b2b99450bfda"
 
@@ -31,7 +31,7 @@ bucket_name = "app-r2-dev"
 
 [env.production]
 [[env.production.d1_databases]]
-binding = "DB"
+binding = "DB_PROD"
 database_name = "app_d1_prod"
 # TODO: update to the real production D1 database_id
 database_id = "2a9b6101-3c1c-400a-bd3d-f19a8e8d103e"
