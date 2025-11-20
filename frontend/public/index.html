@@ -3848,6 +3848,44 @@
                     </article>
                   </div>
                   <article class="admin-dashboard-card">
+                    <h4 class="mb-2">管理メニュー</h4>
+                    <p class="text-muted small">主要な管理機能へすぐに移動できます。</p>
+                    <div class="list-group admin-menu-quick">
+                      <button
+                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                        type="button"
+                        data-admin-target="folders"
+                      >
+                        <span><span class="material-icons-outlined align-middle me-2">folder_shared</span>フォルダ管理</span>
+                        <span class="material-icons-outlined text-muted">chevron_right</span>
+                      </button>
+                      <button
+                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                        type="button"
+                        data-admin-target="folders"
+                      >
+                        <span><span class="material-icons-outlined align-middle me-2">note_alt</span>定型文設定</span>
+                        <span class="material-icons-outlined text-muted">chevron_right</span>
+                      </button>
+                      <button
+                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                        type="button"
+                        data-admin-target="users"
+                      >
+                        <span><span class="material-icons-outlined align-middle me-2">verified_user</span>ユーザー承認・管理</span>
+                        <span class="material-icons-outlined text-muted">chevron_right</span>
+                      </button>
+                      <button
+                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                        type="button"
+                        data-admin-target="audit"
+                      >
+                        <span><span class="material-icons-outlined align-middle me-2">fact_check</span>監査ログ</span>
+                        <span class="material-icons-outlined text-muted">chevron_right</span>
+                      </button>
+                    </div>
+                  </article>
+                  <article class="admin-dashboard-card">
                     <h4 class="mb-3">システムメモ</h4>
                     <dl class="row small mb-0">
                       <dt class="col-4 col-md-3">対象組織</dt>
@@ -3935,6 +3973,136 @@
                   <div class="admin-placeholder text-center" id="adminUsersEmpty" hidden>
                     条件に一致するユーザーがいません。
                   </div>
+                </div>
+              </section>
+              <section class="admin-panel" data-admin-panel="folders" aria-labelledby="adminFoldersTitle">
+                <div class="admin-panel-header">
+                  <h3 id="adminFoldersTitle">フォルダ管理</h3>
+                  <p>公開設定や限定メンバー、定型文をまとめて管理します。</p>
+                </div>
+                <div class="admin-panel-body">
+                  <article class="admin-card">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                      <div>
+                        <h4 class="mb-1">フォルダ一覧</h4>
+                        <p class="text-muted small mb-0">名称・公開設定・メンバー数を確認します。</p>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAdminFolderReload">
+                          <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                        </button>
+                        <button
+                          class="btn btn-sm btn-outline-primary"
+                          type="button"
+                          id="btnAdminNewFolder"
+                          data-manager-only
+                        >
+                          <span class="material-icons-outlined align-middle me-1">add</span>フォルダ作成
+                        </button>
+                      </div>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">名称</th>
+                            <th scope="col">公開</th>
+                            <th scope="col">メンバー数</th>
+                            <th scope="col">更新</th>
+                            <th scope="col" class="text-end">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody id="adminFolderList">
+                          <tr>
+                            <td colspan="5" class="text-muted">フォルダ情報を読み込み中...</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </article>
+                  <article class="admin-card mt-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                      <div>
+                        <h4 class="mb-1">定型文設定</h4>
+                        <p class="text-muted small mb-0">フォルダごとの件名・本文の雛形を管理します。</p>
+                      </div>
+                      <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAdminTemplateReload">
+                          <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                        </button>
+                      </div>
+                    </div>
+                    <div class="row g-3 align-items-end">
+                      <div class="col-12 col-lg-4">
+                        <label class="form-label" for="adminTemplateFolder">対象フォルダ</label>
+                        <select class="form-select" id="adminTemplateFolder">
+                          <option value="">フォルダを選択</option>
+                        </select>
+                        <div class="form-text">限定公開フォルダは管理者のみ表示されます。</div>
+                      </div>
+                      <div class="col-12 col-lg-8">
+                        <form class="card border-0 shadow-sm h-100" id="adminTemplateForm">
+                          <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                              <h6 class="mb-0">新規定型文</h6>
+                              <span class="badge bg-light text-dark" id="adminTemplateFolderHint">フォルダ未選択</span>
+                            </div>
+                            <div class="alert alert-danger d-none" id="adminTemplateAlert"></div>
+                            <div class="row g-3">
+                              <div class="col-12 col-md-6">
+                                <label class="form-label" for="adminTemplateName">名称</label>
+                                <input
+                                  type="text"
+                                  class="form-control"
+                                  id="adminTemplateName"
+                                  placeholder="例: 早番共有"
+                                />
+                              </div>
+                              <div class="col-12 col-md-6">
+                                <label class="form-label" for="adminTemplateTitle">件名雛形</label>
+                                <input
+                                  type="text"
+                                  class="form-control"
+                                  id="adminTemplateTitle"
+                                  placeholder="例: 【共有】"
+                                />
+                              </div>
+                              <div class="col-12">
+                                <label class="form-label" for="adminTemplateBody">本文雛形</label>
+                                <textarea
+                                  class="form-control"
+                                  id="adminTemplateBody"
+                                  rows="3"
+                                  placeholder="本文のひな形を入力"
+                                ></textarea>
+                              </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 mt-3">
+                              <button class="btn btn-primary" type="submit" id="btnAdminTemplateSave">
+                                <span class="label">
+                                  <span class="material-icons-outlined align-middle me-1">save</span>保存
+                                </span>
+                                <span
+                                  class="spinner-border spinner-border-sm d-none"
+                                  role="status"
+                                  aria-hidden="true"
+                                ></span>
+                              </button>
+                              <span class="small text-muted" id="adminTemplateStatus"
+                                >フォルダを選択してください。</span
+                              >
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                    <div class="mt-3">
+                      <div class="admin-placeholder" id="adminTemplateEmpty">
+                        フォルダを選択すると定型文が表示されます。
+                      </div>
+                      <div class="list-group" id="adminTemplateList"></div>
+                    </div>
+                  </article>
                 </div>
               </section>
               <section class="admin-panel" data-admin-panel="orgs" aria-labelledby="adminOrgsTitle">
@@ -4085,39 +4253,6 @@
                     >
                       <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
                     </button>
-                  </article>
-                  <article class="admin-card mt-3" data-manager-only>
-                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-                      <div>
-                        <h4 class="mb-1">フォルダ管理</h4>
-                        <p class="text-muted small mb-0">名称・公開設定・メンバー数を確認します。</p>
-                      </div>
-                      <button
-                        class="btn btn-sm btn-outline-primary d-none"
-                        type="button"
-                        id="btnAdminNewFolder"
-                        data-manager-only
-                      >
-                        <span class="material-icons-outlined align-middle me-1">add</span>フォルダ作成
-                      </button>
-                    </div>
-                    <div class="table-responsive">
-                      <table class="table table-sm align-middle">
-                        <thead>
-                          <tr>
-                            <th scope="col">名称</th>
-                            <th scope="col">公開</th>
-                            <th scope="col">メンバー数</th>
-                            <th scope="col">更新</th>
-                          </tr>
-                        </thead>
-                        <tbody id="adminFolderList">
-                          <tr>
-                            <td colspan="4" class="text-muted">フォルダ情報を読み込み中...</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
                   </article>
                 </div>
               </section>
@@ -4409,6 +4544,18 @@
               title="ユーザー管理"
             >
               <span class="material-icons-outlined" aria-hidden="true">groups</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a
+              class="nav-link text-center"
+              href="#"
+              data-admin-target="folders"
+              data-admin-nav-link
+              aria-label="フォルダ管理"
+              title="フォルダ管理"
+            >
+              <span class="material-icons-outlined" aria-hidden="true">folder_shared</span>
             </a>
           </li>
           <li class="nav-item">
@@ -4818,7 +4965,7 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="m-0">フォルダを作成</h6>
+            <h6 class="m-0" id="quickFolderModalTitle">フォルダを作成</h6>
           </div>
           <div class="modal-body">
             <div class="alert alert-danger d-none" id="quickFolderError"></div>
@@ -4841,6 +4988,17 @@
             </div>
             <div class="mb-3" id="quickFolderMemberWrap">
               <label class="form-label">メンバー (限定公開時)</label>
+              <div class="input-group input-group-sm mb-2">
+                <span class="input-group-text">
+                  <span class="material-icons-outlined fs-6" aria-hidden="true">search</span>
+                </span>
+                <input
+                  type="search"
+                  class="form-control"
+                  id="quickFolderMemberSearch"
+                  placeholder="名前・メールで絞り込み"
+                />
+              </div>
               <div class="border rounded p-2 member-list" id="quickFolderMemberList"></div>
             </div>
           </div>
@@ -5952,27 +6110,63 @@
 
       const QuickFolderController = (function () {
         const MODAL_ID = 'quickFolderModal';
+        const state = {
+          editingId: '',
+          selectedMembers: new Set(),
+          memberFilter: '',
+        };
+
+        function setSelectedMembers(list) {
+          state.selectedMembers = new Set(
+            Array.isArray(list)
+              ? list
+                  .map(function (id) {
+                    return typeof id === 'string' ? id : '';
+                  })
+                  .filter(Boolean)
+              : []
+          );
+        }
+
+        function memberMatchesKeyword(user, keyword) {
+          if (!keyword) return true;
+          var label = String(user.name || user.email || '').toLowerCase();
+          return label.indexOf(keyword) !== -1;
+        }
+
         function renderMembers() {
           const list = byId('quickFolderMemberList');
           if (!list) return;
+          const keyword = (state.memberFilter || '').toLowerCase();
           const sorted = ACTIVE_USERS.slice().sort(function (a, b) {
             return String(a.name || a.email || '').localeCompare(
               String(b.name || b.email || ''),
               'ja'
             );
           });
-          list.innerHTML = sorted
+          const filtered = sorted.filter(function (user) {
+            return memberMatchesKeyword(user, keyword);
+          });
+          if (!filtered.length) {
+            list.innerHTML = '<div class="text-muted small px-2">一致するメンバーがいません。</div>';
+            return;
+          }
+          list.innerHTML = filtered
             .map(function (user, index) {
-              const id = `quick-folder-member-${index}`;
+              const id = user && (user.userId || user.email || '');
+              const inputId = `quick-folder-member-${index}`;
+              const checked = state.selectedMembers.has(id);
               return (
                 '<div class="form-check form-check-sm">' +
                 '<input class="form-check-input" type="checkbox" id="' +
-                id +
+                inputId +
                 '" value="' +
-                esc(user.userId || user.email || '') +
-                '">' +
+                esc(id) +
+                '"' +
+                (checked ? ' checked' : '') +
+                '>' +
                 '<label class="form-check-label" for="' +
-                id +
+                inputId +
                 '">' +
                 esc(user.name || user.email || '') +
                 '</label>' +
@@ -5980,31 +6174,88 @@
               );
             })
             .join('');
+          list.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+            input.addEventListener('change', function () {
+              if (!input.value) return;
+              if (input.checked) {
+                state.selectedMembers.add(input.value);
+              } else {
+                state.selectedMembers.delete(input.value);
+              }
+            });
+          });
         }
 
         function toggleMemberVisibility() {
           const wrap = byId('quickFolderMemberWrap');
           const checkbox = byId('quickFolderPublic');
+          const search = byId('quickFolderMemberSearch');
           if (!wrap || !checkbox) return;
-          wrap.classList.toggle('d-none', checkbox.checked);
+          const hidden = checkbox.checked;
+          wrap.classList.toggle('d-none', hidden);
+          if (search) {
+            search.disabled = hidden;
+          }
+          if (!hidden) {
+            renderMembers();
+          }
         }
 
-        function showModal() {
+        function resetModalState(folder) {
+          const modalTitle = byId('quickFolderModalTitle');
+          const nameInput = byId('quickFolderName');
+          const colorInput = byId('quickFolderColor');
+          const publicSwitch = byId('quickFolderPublic');
+          const saveLabel =
+            byId('btnQuickFolderSave') && byId('btnQuickFolderSave').querySelector('.label');
+          const searchInput = byId('quickFolderMemberSearch');
+          state.editingId = folder && folder.id ? folder.id : '';
+          state.memberFilter = '';
+          setSelectedMembers(
+            folder && Array.isArray(folder.memberUserIds) ? folder.memberUserIds : []
+          );
+          if (modalTitle) {
+            modalTitle.textContent = state.editingId ? 'フォルダを編集' : 'フォルダを作成';
+          }
+          if (saveLabel) {
+            saveLabel.textContent = state.editingId ? '更新' : '保存';
+          }
+          if (nameInput) nameInput.value = (folder && folder.name) || '';
+          if (colorInput) colorInput.value = (folder && folder.color) || '#517cb2';
+          if (publicSwitch) {
+            publicSwitch.checked = folder && Object.prototype.hasOwnProperty.call(folder, 'isPublic')
+              ? !!folder.isPublic
+              : true;
+          }
+          if (searchInput) {
+            searchInput.value = '';
+          }
+        }
+
+        function open(targetFolderId) {
           if (!IS_MANAGER) {
             notify('フォルダを作成できるのは管理者のみです。', false);
             return;
           }
           const modalEl = byId(MODAL_ID);
           if (!modalEl) return;
-          byId('quickFolderError').classList.add('d-none');
-          byId('quickFolderName').value = '';
-          byId('quickFolderColor').value = '#517cb2';
-          const publicSwitch = byId('quickFolderPublic');
-          if (publicSwitch) {
-            publicSwitch.checked = true;
-          }
+          const folder =
+            targetFolderId && Array.isArray(FOLDERS)
+              ? FOLDERS.find(function (f) {
+                  return f && f.id === targetFolderId;
+                })
+              : null;
+          showError('');
+          resetModalState(folder || {});
           toggleMemberVisibility();
           renderMembers();
+          const searchInput = byId('quickFolderMemberSearch');
+          if (searchInput) {
+            searchInput.oninput = function () {
+              state.memberFilter = searchInput.value || '';
+              renderMembers();
+            };
+          }
           const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
           modal.show();
         }
@@ -6031,15 +6282,73 @@
           box.classList.remove('d-none');
         }
 
-        function appendFolder(folder) {
-          if (!folder || !folder.id) return;
-          FOLDERS.push(folder);
+        function upsertFolder(folder) {
+          const normalMemberIds = Array.isArray(folder?.memberUserIds)
+            ? folder.memberUserIds.filter(Boolean)
+            : Array.isArray(folder?.member_user_ids)
+            ? folder.member_user_ids.filter(Boolean)
+            : [];
+          const normalized = {
+            id: folder.id,
+            orgId: folder.orgId || folder.org_id,
+            name: folder.name || folder.id,
+            color: folder.color || null,
+            isPublic:
+              Object.prototype.hasOwnProperty.call(folder, 'isPublic') && folder.isPublic != null
+                ? !!folder.isPublic
+                : folder.is_public === 1,
+            isActive:
+              Object.prototype.hasOwnProperty.call(folder, 'isActive') && folder.isActive != null
+                ? !!folder.isActive
+                : folder.is_active !== 0,
+            isSystem:
+              Object.prototype.hasOwnProperty.call(folder, 'isSystem') && folder.isSystem != null
+                ? !!folder.isSystem
+                : folder.is_system === 1,
+            sortOrder:
+              Object.prototype.hasOwnProperty.call(folder, 'sortOrder') && folder.sortOrder != null
+                ? folder.sortOrder
+                : folder.sort_order,
+            memberUserIds: normalMemberIds,
+            memberCount:
+              folder.memberCount != null
+                ? folder.memberCount
+                : normalMemberIds.length > 0
+                ? normalMemberIds.length
+                : null,
+            createdAt: folder.createdAt || folder.created_at_ms || folder.createdAtMs || null,
+            updatedAt:
+              folder.updatedAt ||
+              folder.updated_at_ms ||
+              folder.updatedAtMs ||
+              (typeof folder.updatedAt === 'number' ? folder.updatedAt : Date.now()),
+          };
+          const idx = Array.isArray(FOLDERS)
+            ? FOLDERS.findIndex(function (f) {
+                return f && f.id === normalized.id;
+              })
+            : -1;
+          if (idx >= 0) {
+            FOLDERS[idx] = Object.assign({}, FOLDERS[idx], normalized);
+          } else {
+            FOLDERS.push(normalized);
+          }
           window.folders = FOLDERS.slice();
           populateFolderSelects();
-          const select = byId('messageFolder');
-          if (select) {
-            select.value = folder.id;
-            MessageDraftController.handleFolderChange(folder.id);
+          TemplateController.clearCache();
+          renderAdminFolderList();
+          if (
+            globalThis.AdminTemplateController &&
+            typeof globalThis.AdminTemplateController.refreshFolders === 'function'
+          ) {
+            globalThis.AdminTemplateController.refreshFolders();
+          }
+          if (!state.editingId) {
+            const select = byId('messageFolder');
+            if (select) {
+              select.value = normalized.id;
+              MessageDraftController.handleFolderChange(normalized.id);
+            }
           }
         }
 
@@ -6052,47 +6361,44 @@
           const color = (byId('quickFolderColor') && byId('quickFolderColor').value) || '#517cb2';
           const isPublic =
             byId('quickFolderPublic') && byId('quickFolderPublic').checked ? true : false;
-          const members = [];
-          if (!isPublic) {
-            document.querySelectorAll('#quickFolderMemberList input[type="checkbox"]').forEach(
-              function (input) {
-                if (input.checked && input.value) {
-                  members.push(input.value);
-                }
-              }
-            );
-          }
+          const members = isPublic ? [] : Array.from(state.selectedMembers);
           setSavingState(true);
           showError('');
           try {
-            const result = await apiRequest(`${API_BASE_PATH}/folders`, {
-              method: 'POST',
-              body: {
-                name,
-                color,
-                isPublic,
-                memberUserIds: members,
-              },
-            });
+            const result = await apiRequest(
+              state.editingId
+                ? `${API_BASE_PATH}/folders/${encodeURIComponent(state.editingId)}`
+                : `${API_BASE_PATH}/folders`,
+              {
+                method: state.editingId ? 'PATCH' : 'POST',
+                body: {
+                  name,
+                  color,
+                  isPublic,
+                  memberUserIds: members,
+                },
+              }
+            );
             if (result && result.id) {
-              appendFolder(result);
+              upsertFolder(result);
             }
             const modalEl = byId(MODAL_ID);
             if (modalEl) {
               const modal = bootstrap.Modal.getInstance(modalEl);
               if (modal) modal.hide();
             }
-            notify('フォルダを作成しました。', true);
+            notify(state.editingId ? 'フォルダを更新しました。' : 'フォルダを作成しました。', true);
           } catch (err) {
-            console.warn('Failed to create folder:', err);
-            showError(err && err.message ? err.message : 'フォルダ作成に失敗しました。');
+            console.warn('Failed to save folder:', err);
+            showError(err && err.message ? err.message : 'フォルダの保存に失敗しました。');
           } finally {
+            state.editingId = '';
             setSavingState(false);
           }
         }
 
         return {
-          open: showModal,
+          open,
           save: saveFolder,
           toggleMembers: toggleMemberVisibility,
         };
@@ -6101,33 +6407,104 @@
         event.preventDefault();
         QuickFolderController.open();
       });
+      on('btnAdminFolderReload', 'click', function (event) {
+        event.preventDefault();
+        reloadFoldersFromApi();
+      });
+
+      async function reloadFoldersFromApi() {
+        var tbody = byId('adminFolderList');
+        if (tbody) {
+          tbody.innerHTML =
+            '<tr><td colspan="5" class="text-muted">フォルダを再読込中...</td></tr>';
+        }
+        try {
+          const list = await apiRequest(`${API_BASE_PATH}/folders?includeMembers=1`, {
+            method: 'GET',
+          });
+          if (Array.isArray(list)) {
+            FOLDERS = list;
+            window.folders = FOLDERS.slice();
+            populateFolderSelects();
+            TemplateController.clearCache();
+            if (
+              globalThis.AdminTemplateController &&
+              typeof globalThis.AdminTemplateController.refreshFolders === 'function'
+            ) {
+              globalThis.AdminTemplateController.refreshFolders();
+            }
+            if (
+              globalThis.AdminTemplateController &&
+              typeof globalThis.AdminTemplateController.refreshTemplates === 'function'
+            ) {
+              globalThis.AdminTemplateController.refreshTemplates();
+            }
+            renderAdminFolderList();
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to reload folders:', err);
+          notify('フォルダ一覧の再読込に失敗しました: ' + (err.message || ''), false);
+        }
+        renderAdminFolderList();
+      }
 
       function renderAdminFolderList() {
         var tbody = byId('adminFolderList');
         if (!tbody) return;
         if (!IS_MANAGER) {
           tbody.innerHTML =
-            '<tr><td colspan="4" class="text-muted">管理者のみ利用できます。</td></tr>';
+            '<tr><td colspan="5" class="text-muted">管理者のみ利用できます。</td></tr>';
           return;
         }
         if (!Array.isArray(FOLDERS) || !FOLDERS.length) {
           tbody.innerHTML =
-            '<tr><td colspan="4" class="text-muted">フォルダがまだありません。</td></tr>';
+            '<tr><td colspan="5" class="text-muted">フォルダがまだありません。</td></tr>';
           return;
         }
         tbody.innerHTML = FOLDERS.map(function (folder) {
-          var badge = folder.isPublic ? '公開' : '限定';
-          var icon = folder.isPublic ? 'lock_open' : 'lock';
+          var isPublic =
+            Object.prototype.hasOwnProperty.call(folder, 'isPublic') && folder.isPublic != null
+              ? !!folder.isPublic
+              : folder.is_public === 1;
+          var isActive =
+            Object.prototype.hasOwnProperty.call(folder, 'isActive') && folder.isActive != null
+              ? !!folder.isActive
+              : folder.is_active !== 0;
+          var isSystem =
+            Object.prototype.hasOwnProperty.call(folder, 'isSystem') && folder.isSystem != null
+              ? !!folder.isSystem
+              : folder.is_system === 1;
+          var badge = isPublic ? '公開' : '限定';
+          var icon = isPublic ? 'lock_open' : 'lock';
           var colorChip =
             '<span class="badge rounded-pill" style="background:' +
             esc(folder.color || '#517cb2') +
             '"></span>';
+          var memberCount =
+            folder.memberCount != null
+              ? folder.memberCount
+              : Array.isArray(folder.memberUserIds)
+              ? folder.memberUserIds.length
+              : '—';
+          var statusBadge = !isActive ? '<span class="badge bg-secondary ms-1">無効</span>' : '';
+          var systemBadge = isSystem ? '<span class="badge bg-light text-dark ms-1">system</span>' : '';
+          var actions =
+            IS_MANAGER && !isSystem
+              ? '<button class="btn btn-sm btn-outline-secondary" type="button" data-folder-edit="' +
+                esc(folder.id) +
+                '">' +
+                '<span class="material-icons-outlined align-middle me-1">edit</span>編集' +
+                '</button>'
+              : '';
           return (
             '<tr>' +
             '<td>' +
             colorChip +
             ' ' +
             esc(folder.name || folder.id) +
+            statusBadge +
+            systemBadge +
             '</td>' +
             '<td><span class="material-icons-outlined align-middle me-1" aria-hidden="true">' +
             icon +
@@ -6135,14 +6512,26 @@
             badge +
             '</td>' +
             '<td>' +
-            (folder.memberCount != null ? folder.memberCount : '—') +
+            memberCount +
             '</td>' +
             '<td>' +
             (folder.updatedAt ? new Date(folder.updatedAt).toLocaleString() : '—') +
             '</td>' +
+            '<td class="text-end">' +
+            actions +
+            '</td>' +
             '</tr>'
           );
         }).join('');
+        tbody.querySelectorAll('[data-folder-edit]').forEach(function (btn) {
+          btn.addEventListener('click', function (event) {
+            event.preventDefault();
+            var targetId = btn.getAttribute('data-folder-edit');
+            if (targetId) {
+              QuickFolderController.open(targetId);
+            }
+          });
+        });
       }
 
       function setBootstrapLoading(isLoading) {
@@ -6203,6 +6592,10 @@
         window.userInfo = normalized.userInfo || {};
         window.users = Array.isArray(normalized.users) ? normalized.users : [];
         window.folders = Array.isArray(normalized.folders) ? normalized.folders : [];
+        window.pinnedMessages =
+          normalized.pinnedMessages && typeof normalized.pinnedMessages === 'object'
+            ? normalized.pinnedMessages
+            : {};
         window.initialTasks =
           normalized.myTasks && typeof normalized.myTasks === 'object'
             ? normalized.myTasks
@@ -6211,6 +6604,10 @@
 
         ACTIVE_USERS = Array.isArray(window.users) ? window.users : [];
         FOLDERS = Array.isArray(window.folders) ? window.folders : [];
+        PINNED_MESSAGES =
+          normalized.pinnedMessages && typeof normalized.pinnedMessages === 'object'
+            ? normalized.pinnedMessages
+            : {};
         renderAdminFolderList();
         IS_MANAGER = !!normalized.isManager;
 
@@ -6235,6 +6632,19 @@
         populateAssigneeFilters();
         renderAssigneeList();
         populateFolderSelects();
+        TemplateController.clearCache();
+        if (
+          globalThis.AdminTemplateController &&
+          typeof globalThis.AdminTemplateController.refreshFolders === 'function'
+        ) {
+          globalThis.AdminTemplateController.refreshFolders();
+        }
+        if (
+          globalThis.AdminTemplateController &&
+          typeof globalThis.AdminTemplateController.refreshTemplates === 'function'
+        ) {
+          globalThis.AdminTemplateController.refreshTemplates();
+        }
         var shouldCacheBootstrap = true;
         var responseMeta =
           (typeof window !== 'undefined' && window.__SHIFT_FLOW_RESPONSE_META__) || {};
@@ -7800,6 +8210,7 @@
           var labelMap = {
             dashboard: '管理トップ',
             users: 'ユーザー管理',
+            folders: 'フォルダ・定型文',
             orgs: '組織管理',
             audit: '監査ログ',
           };
@@ -7810,6 +8221,7 @@
           var iconMap = {
             dashboard: 'dashboard',
             users: 'groups',
+            folders: 'folder_shared',
             orgs: 'apartment',
             audit: 'fact_check',
           };
@@ -7820,6 +8232,7 @@
           var descMap = {
             dashboard: '現在の状況を一覧で把握し、アクションにつなげます。',
             users: 'ステータスやロールを横断してユーザーを管理します。',
+            folders: 'フォルダの公開設定や定型文を管理します。',
             orgs: '組織設定とメンバー構成を編集できます。',
             audit: 'ログインや管理操作の履歴を確認します。',
           };
@@ -8212,7 +8625,7 @@
 
       // ===== スワイプビュー =====
       var order = ['home', 'tasks', 'messages', 'settings'];
-      var ADMIN_ORDER = ['dashboard', 'users', 'orgs', 'audit'];
+      var ADMIN_ORDER = ['dashboard', 'users', 'folders', 'orgs', 'audit'];
       var CURRENT_VIEW = 'home';
       var SWIPE_LOCK = false;
       var SWIPE_VERTICAL_TOLERANCE = 160;
@@ -11410,6 +11823,277 @@
         }
       }
 
+      const AdminTemplateController = (function () {
+        const state = {
+          folderId: '',
+          templates: [],
+          loading: false,
+        };
+
+        function setStatus(text) {
+          var el = byId('adminTemplateStatus');
+          if (el) el.textContent = text || '';
+        }
+
+        function setAlert(message) {
+          var box = byId('adminTemplateAlert');
+          if (!box) return;
+          if (!message) {
+            box.classList.add('d-none');
+            box.textContent = '';
+            return;
+          }
+          box.textContent = message;
+          box.classList.remove('d-none');
+        }
+
+        function setSaving(flag) {
+          setButtonLoading(byId('btnAdminTemplateSave'), flag);
+        }
+
+        function updateFolderHint() {
+          var hint = byId('adminTemplateFolderHint');
+          if (!hint) return;
+          hint.textContent = state.folderId ? 'ID: ' + state.folderId : 'フォルダ未選択';
+        }
+
+        function syncFolderOptions() {
+          var select = byId('adminTemplateFolder');
+          if (!select) return;
+          var previous = state.folderId || select.value || '';
+          select.innerHTML = '';
+          var placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'フォルダを選択';
+          select.appendChild(placeholder);
+          (Array.isArray(FOLDERS) ? FOLDERS : []).forEach(function (folder) {
+            if (!folder || !folder.id || folder.isActive === false) return;
+            var option = document.createElement('option');
+            option.value = folder.id;
+            option.textContent = folder.name || folder.id;
+            select.appendChild(option);
+          });
+          var next = '';
+          if (
+            previous &&
+            Array.from(select.options).some(function (opt) {
+              return opt.value === previous;
+            })
+          ) {
+            next = previous;
+          } else {
+            var def = getDefaultFolderId();
+            if (
+              def &&
+              Array.from(select.options).some(function (opt) {
+                return opt.value === def;
+              })
+            ) {
+              next = def;
+            }
+          }
+          select.value = next;
+          state.folderId = next;
+          updateFolderHint();
+          renderTemplates();
+        }
+
+        function renderTemplates() {
+          var list = byId('adminTemplateList');
+          var empty = byId('adminTemplateEmpty');
+          if (!list || !empty) return;
+          if (!state.folderId) {
+            list.innerHTML = '';
+            empty.textContent = 'フォルダを選択すると定型文が表示されます。';
+            empty.removeAttribute('hidden');
+            return;
+          }
+          if (!state.templates.length) {
+            list.innerHTML = '';
+            empty.textContent = '定型文がまだありません。';
+            empty.removeAttribute('hidden');
+            return;
+          }
+          empty.setAttribute('hidden', 'hidden');
+          list.innerHTML = state.templates
+            .map(function (tpl) {
+              var updated =
+                tpl.updatedAt && Number.isFinite(tpl.updatedAt)
+                  ? new Date(tpl.updatedAt).toLocaleString()
+                  : '';
+              var titlePreview = esc(tpl.titleFormat || '件名なし');
+              var bodyPreview = esc((tpl.bodyFormat || '').slice(0, 120));
+              return (
+                '<div class="list-group-item">' +
+                '<div class="d-flex justify-content-between align-items-start gap-2">' +
+                '<div>' +
+                '<div class="fw-bold">' +
+                esc(tpl.name || '定型文') +
+                '</div>' +
+                '<div class="small text-muted">件名: ' +
+                titlePreview +
+                '</div>' +
+                '<div class="small text-muted text-wrap">本文: ' +
+                (bodyPreview || '—') +
+                '</div>' +
+                '</div>' +
+                '<div class="text-muted small text-end">' +
+                (updated || '') +
+                '</div>' +
+                '</div>' +
+                '</div>'
+              );
+            })
+            .join('');
+        }
+
+        async function loadTemplates(folderId) {
+          if (!folderId) {
+            state.templates = [];
+            renderTemplates();
+            return;
+          }
+          setStatus('読み込み中...');
+          setAlert('');
+          var list = byId('adminTemplateList');
+          if (list) {
+            list.innerHTML =
+              '<div class="list-group-item text-muted">読み込み中...</div>';
+          }
+          state.loading = true;
+          try {
+            const res = await apiRequest(
+              `${API_BASE_PATH}/templates?folderId=${encodeURIComponent(folderId)}`,
+              {
+                method: 'GET',
+              }
+            );
+            state.templates = Array.isArray(res) ? res : [];
+            renderTemplates();
+            setStatus('定型文 ' + state.templates.length + ' 件');
+          } catch (err) {
+            console.warn('Failed to load templates:', err);
+            setStatus('読み込みに失敗しました。');
+            setAlert(err && err.message ? err.message : '定型文の取得に失敗しました。');
+          } finally {
+            state.loading = false;
+          }
+        }
+
+        function handleFolderChange() {
+          var select = byId('adminTemplateFolder');
+          state.folderId = select ? select.value : '';
+          updateFolderHint();
+          setAlert('');
+          if (!state.folderId) {
+            state.templates = [];
+            setStatus('フォルダを選択してください。');
+            renderTemplates();
+            return;
+          }
+          loadTemplates(state.folderId);
+        }
+
+        async function handleSubmit(event) {
+          if (event) event.preventDefault();
+          if (!IS_MANAGER) {
+            notify('定型文の管理は管理者のみ可能です。', false);
+            return;
+          }
+          if (!state.folderId) {
+            setAlert('先にフォルダを選択してください。');
+            return;
+          }
+          var name = (byId('adminTemplateName') && byId('adminTemplateName').value.trim()) || '';
+          if (!name) {
+            setAlert('名称を入力してください。');
+            return;
+          }
+          var title =
+            (byId('adminTemplateTitle') && byId('adminTemplateTitle').value) || '';
+          var body = (byId('adminTemplateBody') && byId('adminTemplateBody').value) || '';
+          setSaving(true);
+          setAlert('');
+          try {
+            await apiRequest(`${API_BASE_PATH}/templates`, {
+              method: 'POST',
+              body: {
+                folderId: state.folderId,
+                name,
+                titleFormat: title,
+                bodyFormat: body,
+              },
+            });
+            if (byId('adminTemplateName')) byId('adminTemplateName').value = '';
+            if (byId('adminTemplateTitle')) byId('adminTemplateTitle').value = '';
+            if (byId('adminTemplateBody')) byId('adminTemplateBody').value = '';
+            TemplateController.clearCache();
+            await loadTemplates(state.folderId);
+            TemplateController.renderForFolder(state.folderId);
+            notify('定型文を保存しました。', true);
+          } catch (err) {
+            console.warn('Failed to save template:', err);
+            setAlert(err && err.message ? err.message : '定型文の保存に失敗しました。');
+          } finally {
+            setSaving(false);
+          }
+        }
+
+        function init() {
+          syncFolderOptions();
+          handleFolderChange();
+          var select = byId('adminTemplateFolder');
+          if (select) {
+            select.addEventListener('change', handleFolderChange);
+          }
+          var reloadBtn = byId('btnAdminTemplateReload');
+          if (reloadBtn) {
+            reloadBtn.addEventListener('click', function (event) {
+              event.preventDefault();
+              handleFolderChange();
+            });
+          }
+          var form = byId('adminTemplateForm');
+          if (form) {
+            form.addEventListener('submit', handleSubmit);
+          }
+          addAdminSectionListener(function (section) {
+            if (section === 'folders') {
+              syncFolderOptions();
+              if (!state.folderId) {
+                handleFolderChange();
+              } else {
+                loadTemplates(state.folderId);
+              }
+            }
+          });
+        }
+
+        return {
+          init,
+          refreshFolders: syncFolderOptions,
+          refreshTemplates: function () {
+            if (state.folderId) {
+              loadTemplates(state.folderId);
+            }
+          },
+        };
+      })();
+      globalThis.AdminTemplateController = AdminTemplateController;
+
+      const AdminFoldersController = (function () {
+        function init() {
+          addAdminSectionListener(function (section) {
+            if (section === 'folders') {
+              renderAdminFolderList();
+              AdminTemplateController.refreshFolders();
+            }
+          });
+        }
+        return { init };
+      })();
+      globalThis.AdminFoldersController = AdminFoldersController;
+
       const AdminDashboardController = (function () {
         const PENDING_LIMIT = 5;
         const AUDIT_LIMIT = 5;
@@ -13142,6 +13826,7 @@
         if (folderSelect) {
           var defaultFolder = getDefaultFolderId();
           folderSelect.value = defaultFolder || '';
+          MessageDraftController.handleFolderChange(folderSelect.value || '');
         }
         var prioritySelect = byId('messagePriority');
         if (prioritySelect) {
@@ -13187,6 +13872,8 @@
         MessageFormController.init();
         AdminDashboardController.init();
         AdminUsersController.init();
+        AdminFoldersController.init();
+        AdminTemplateController.init();
         AdminAuditController.init();
         AdminOrgController.init();
 
