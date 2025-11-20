@@ -1090,6 +1090,9 @@ async function fetchActiveFoldersFromD1(db) {
   return folders;
 }
 
+const MY_TASK_COMPLETED_WINDOW_DAYS = 14;
+const MY_TASK_COMPLETED_WINDOW_MS = MY_TASK_COMPLETED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
 async function buildMyTasksPayload(db, rawEmail) {
   const normalizedEmail = normalizeEmailValue(rawEmail);
   const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
@@ -1132,17 +1135,38 @@ async function buildMyTasksPayload(db, rawEmail) {
   const tasks = rows
     .map((row) => buildTaskRecordFromD1(row, assigneeMap.get(row.task_id) || []))
     .filter(Boolean);
+  const completionCutoff = Date.now() - MY_TASK_COMPLETED_WINDOW_MS;
+  const filteredTasks = tasks.filter((task) => {
+    if (!task) return false;
+    if (!task.isCompleted) return true;
+    const updatedValue =
+      typeof task.updatedAtValue === 'number' && Number.isFinite(task.updatedAtValue)
+        ? task.updatedAtValue
+        : typeof task.updatedAt === 'number' && Number.isFinite(task.updatedAt)
+        ? task.updatedAt
+        : null;
+    if (updatedValue == null) {
+      return true;
+    }
+    return updatedValue >= completionCutoff;
+  });
+  const droppedTasks = tasks.length - filteredTasks.length;
   const todayMs = startOfTodayMs();
-  tasks.sort((a, b) => compareTasksForList(a, b, todayMs));
+  filteredTasks.sort((a, b) => compareTasksForList(a, b, todayMs));
   return {
-    tasks,
+    tasks: filteredTasks,
     meta: {
       totalTasks,
-      matchedTasks: tasks.length,
+      matchedTasks: filteredTasks.length,
+      filteredOutTasks: droppedTasks > 0 ? droppedTasks : 0,
+      completionWindowDays: MY_TASK_COMPLETED_WINDOW_DAYS,
       rawEmail,
       normalizedEmail,
-      sampleTaskIds: tasks.slice(0, 5).map((task) => task.id),
-      note: '',
+      sampleTaskIds: filteredTasks.slice(0, 5).map((task) => task.id),
+      note:
+        droppedTasks > 0
+          ? `完了から ${MY_TASK_COMPLETED_WINDOW_DAYS} 日を超えたタスク (${droppedTasks} 件) は一覧から除外されています。`
+          : '',
     },
   };
 }

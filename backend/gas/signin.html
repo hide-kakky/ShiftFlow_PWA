@@ -78,6 +78,25 @@
         background: rgba(248, 113, 113, 0.18);
         color: rgba(254, 202, 202, 0.95);
       }
+      .request-id {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.4);
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: rgba(248, 250, 252, 0.9);
+      }
+      .request-id.hidden {
+        display: none;
+      }
+      .request-id code {
+        font-size: 0.95rem;
+        font-weight: 600;
+        background: rgba(15, 23, 42, 0.55);
+        padding: 2px 6px;
+        border-radius: 8px;
+      }
       .btn {
         border: none;
         border-radius: 16px;
@@ -162,6 +181,10 @@
       <span class="badge">Google Workspace 認証</span>
       <h1>ShiftFlow にサインイン</h1>
       <p id="status" class="status">Google アカウントの権限を確認しています…</p>
+      <p id="request-id" class="request-id hidden">
+        エラー ID: <code id="request-id-value">—</code><br />
+        管理者にこの ID を伝えてください。
+      </p>
       <div id="profile" class="profile hidden">
         <img id="profile-img" src="" alt="profile" />
         <div>
@@ -184,25 +207,51 @@
     </div>
     <script>
       (function () {
-        const statusEl = document.getElementById('status');
-        const btnAuth = document.getElementById('btn-auth');
-        const profileBox = document.getElementById('profile');
-        const profileName = document.getElementById('profile-name');
-        const profileEmail = document.getElementById('profile-email');
-        const profileImg = document.getElementById('profile-img');
+      const statusEl = document.getElementById('status');
+      const btnAuth = document.getElementById('btn-auth');
+      const profileBox = document.getElementById('profile');
+      const profileName = document.getElementById('profile-name');
+      const profileEmail = document.getElementById('profile-email');
+      const profileImg = document.getElementById('profile-img');
+      const requestIdBox = document.getElementById('request-id');
+      const requestIdValue = document.getElementById('request-id-value');
+      const params = new URLSearchParams(window.location.search);
+      const errorCode = params.get('e') || '';
+      const initialRequestId = params.get('req') || '';
+      const ERROR_MESSAGES = {
+        missing: 'リクエストに必要な情報が不足しています。もう一度ログインを開始してください。',
+        state: 'セッション情報が期限切れまたは無効です。ShiftFlow からログインをやり直してください。',
+        config: '環境変数 (GOOGLE_CLIENT_ID など) が未設定です。管理者に確認してください。',
+        token: 'Google OAuth からの応答に失敗しました。しばらく待って再試行してください。',
+        verify: 'Google の ID トークン検証に失敗しました。管理者に連絡してください。',
+        server: 'サーバー側処理でエラーが発生しました。管理者に連絡してください。',
+      };
 
-        function setStatus(message, variant) {
-          statusEl.textContent = message;
-          statusEl.className = 'status';
-          if (variant === 'success') statusEl.classList.add('is-success');
-          if (variant === 'error') statusEl.classList.add('is-error');
+      function setStatus(message, variant) {
+        statusEl.textContent = message;
+        statusEl.className = 'status';
+        if (variant === 'success') statusEl.classList.add('is-success');
+        if (variant === 'error') statusEl.classList.add('is-error');
+      }
+
+      function setRequestId(value) {
+        if (!requestIdBox || !requestIdValue) return;
+        var normalized = value && value.trim ? value.trim() : value;
+        normalized = typeof normalized === 'string' ? normalized.trim() : '';
+        if (normalized) {
+          requestIdValue.textContent = normalized;
+          requestIdBox.classList.remove('hidden');
+        } else {
+          requestIdValue.textContent = '';
+          requestIdBox.classList.add('hidden');
         }
+      }
 
-        function handleAuthorized(user) {
-          const email = user && user.email ? user.email : '';
-          const name = user && user.name ? user.name : '認証済みユーザー';
-          profileName.textContent = name;
-          profileEmail.textContent = email;
+      function handleAuthorized(user) {
+        const email = user && user.email ? user.email : '';
+        const name = user && user.name ? user.name : '認証済みユーザー';
+        profileName.textContent = name;
+        profileEmail.textContent = email;
           profileImg.src = (user && user.imageUrl) || 'https://placehold.jp/120x120.png';
           profileBox.classList.remove('hidden');
           setStatus(
@@ -221,6 +270,7 @@
 
         function triggerAuthCheck() {
           btnAuth.disabled = true;
+           setRequestId('');
           setStatus('Google アカウントの権限を確認しています…', 'info');
           try {
             google.script.run
@@ -244,7 +294,14 @@
           triggerAuthCheck();
         });
 
-        triggerAuthCheck();
+        if (errorCode) {
+          const message = ERROR_MESSAGES[errorCode] || '認証エラーが発生しました。';
+          setStatus(message, 'error');
+          setRequestId(initialRequestId);
+        } else {
+          setRequestId('');
+          triggerAuthCheck();
+        }
       })();
     </script>
   </body>

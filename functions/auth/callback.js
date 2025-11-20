@@ -44,11 +44,23 @@ function normalizeReturnPath(rawValue) {
   }
 }
 
+function buildSigninErrorPath(code, requestId) {
+  const params = new URLSearchParams();
+  if (code) params.set('e', code);
+  if (requestId) params.set('req', requestId);
+  const query = params.toString();
+  return query ? `/signin?${query}` : '/signin';
+}
+
 function redirect(path) {
   const headers = new Headers({ Location: path });
   headers.append('Set-Cookie', expireCookie('OAUTH_STATE'));
   headers.append('Set-Cookie', expireCookie('PKCE_CODE_VERIFIER'));
   return new Response(null, { status: 302, headers });
+}
+
+function redirectToSignin(code, requestId) {
+  return redirect(buildSigninErrorPath(code, requestId));
 }
 
 export async function onRequest({ request, env }) {
@@ -63,7 +75,7 @@ export async function onRequest({ request, env }) {
 
   console.info('[auth/callback] IN', { rid, hasCode: Boolean(code), hasState: Boolean(state) });
   if (!code || !state) {
-    return redirect('/signin?e=missing');
+    return redirectToSignin('missing', rid);
   }
 
   const rawCookies = request.headers.get('Cookie') || '';
@@ -73,7 +85,7 @@ export async function onRequest({ request, env }) {
 
   if (stateCookie && stateCookie !== state) {
     console.warn('[auth/callback] state cookie mismatch', { rid });
-    return redirect('/signin?e=state');
+    return redirectToSignin('state', rid);
   }
 
   let initPayload = null;
@@ -101,7 +113,7 @@ export async function onRequest({ request, env }) {
   });
 
   if (!codeVerifier) {
-    return redirect('/signin?e=state');
+    return redirectToSignin('state', requestId);
   }
 
   const config = loadConfig(env);
@@ -114,7 +126,7 @@ export async function onRequest({ request, env }) {
 
   if (!clientId) {
     console.error('[auth/callback] missing clientId', { rid });
-    return redirect('/signin?e=config');
+    return redirectToSignin('config', requestId);
   }
 
   console.info('[auth/callback] token exchange START', { rid });
@@ -138,7 +150,7 @@ export async function onRequest({ request, env }) {
       rid,
       message: err && err.message ? err.message : String(err),
     });
-    return redirect('/signin?e=token');
+    return redirectToSignin('token', requestId);
   }
 
   console.info('[auth/callback] token exchange DONE', { rid, status: tokenResponse.status });
@@ -151,7 +163,7 @@ export async function onRequest({ request, env }) {
       detail = '';
     }
     console.error('[auth/callback] token exchange error', { rid, status: tokenResponse.status, detail });
-    return redirect('/signin?e=token');
+    return redirectToSignin('token', requestId);
   }
 
   let tokenPayload;
@@ -162,13 +174,13 @@ export async function onRequest({ request, env }) {
       rid,
       message: err && err.message ? err.message : String(err),
     });
-    return redirect('/signin?e=token');
+    return redirectToSignin('token', requestId);
   }
 
   const idToken = tokenPayload.id_token;
   if (!idToken) {
     console.error('[auth/callback] missing id_token', { rid });
-    return redirect('/signin?e=token');
+    return redirectToSignin('token', requestId);
   }
 
   let tokenInfo;
@@ -179,7 +191,7 @@ export async function onRequest({ request, env }) {
       rid,
       message: err && err.message ? err.message : String(err),
     });
-    return redirect('/signin?e=verify');
+    return redirectToSignin('verify', requestId);
   }
 
   console.info('[auth/callback] id_token verify', {

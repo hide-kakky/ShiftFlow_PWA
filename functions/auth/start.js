@@ -45,6 +45,14 @@ function normalizeReturnPath(rawValue) {
   }
 }
 
+function buildSigninErrorPath(code, requestId) {
+  const params = new URLSearchParams();
+  if (code) params.set('e', code);
+  if (requestId) params.set('req', requestId);
+  const query = params.toString();
+  return query ? `/signin?${query}` : '/signin';
+}
+
 function cookie(name, value, { maxAge } = {}) {
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
@@ -64,12 +72,11 @@ export async function onRequest({ request, env }) {
   const requestUrl = new URL(request.url);
   const config = loadConfig(env);
   const clientId = config.googleClientId || env?.GOOGLE_OAUTH_CLIENT_ID || '';
+  const requestId = resolveRequestId(request);
   if (!clientId) {
-    const headers = new Headers({ Location: '/signin?e=config' });
+    const headers = new Headers({ Location: buildSigninErrorPath('config', requestId) });
     return new Response(null, { status: 302, headers });
   }
-
-  const requestId = resolveRequestId(request);
   const { verifier, challenge } = await createPkcePair();
   const state = crypto.randomUUID().replace(/-/g, '');
   let returnToInput =
@@ -98,7 +105,7 @@ export async function onRequest({ request, env }) {
       rid: requestId,
       message: err && err.message ? err.message : String(err),
     });
-    const headers = new Headers({ Location: '/signin?e=server' });
+    const headers = new Headers({ Location: buildSigninErrorPath('server', requestId) });
     return new Response(null, { status: 302, headers });
   }
 

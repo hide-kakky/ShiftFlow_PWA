@@ -3012,6 +3012,31 @@
       .auth-error.is-visible {
         display: block;
       }
+      .auth-request-id {
+        margin-top: 10px;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 0.9rem;
+        background: rgba(15, 23, 42, 0.05);
+        color: #0f172a;
+      }
+      .auth-request-id__label {
+        font-weight: 600;
+        margin-right: 8px;
+      }
+      .auth-request-id__hint {
+        display: block;
+        margin-top: 4px;
+        font-size: 0.8rem;
+        color: rgba(15, 23, 42, 0.6);
+      }
+      :root[data-theme='dark'] .auth-request-id {
+        background: rgba(226, 232, 240, 0.08);
+        color: rgba(248, 250, 252, 0.94);
+      }
+      :root[data-theme='dark'] .auth-request-id__hint {
+        color: rgba(226, 232, 240, 0.7);
+      }
       @media (max-width: 920px) {
         .auth-shell {
           min-height: auto;
@@ -3139,6 +3164,11 @@
             個人の Google アカウントで認証します。下のボタンから認証を行ってください。
           </p>
           <div class="auth-error" id="auth-error"></div>
+          <div class="auth-request-id" id="auth-request-id" hidden>
+            <span class="auth-request-id__label">エラー ID:</span>
+            <code id="auth-request-id-value">—</code>
+            <span class="auth-request-id__hint">問題が続く場合は管理者にこの ID を共有してください。</span>
+          </div>
           <div class="auth-card__actions">
             <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
               <span class="material-icons">login</span>
@@ -5804,7 +5834,11 @@
         }
 
         function deliverFailure(handler, error, userObject) {
+          var requestId = extractRequestIdFromError(error);
           if (typeof handler === 'function') {
+            if (requestId) {
+              announceRequestId(requestId);
+            }
             deliver(handler, error, userObject);
             return;
           }
@@ -5817,11 +5851,17 @@
             } else if (error && error.response && error.response.error) {
               overlayMessage = String(error.response.error);
             }
-            showAuthOverlay(overlayMessage);
+            showAuthOverlay({ message: overlayMessage, requestId: requestId });
+            if (requestId) {
+              announceRequestId(requestId, { duration: 8000 });
+            }
             syncAuthSession({ silent: true }).catch(function () {});
             return;
           }
           console.error('[ShiftFlow] backend request failed', error);
+          if (requestId) {
+            announceRequestId(requestId);
+          }
         }
 
         function createError(message, extra) {
@@ -5949,6 +5989,10 @@
                   requestId: body?.requestId,
                   response: body,
                 });
+                const extractedRequestId = extractRequestIdFromPayload(body);
+                if (extractedRequestId) {
+                  announceRequestId(extractedRequestId);
+                }
                 if (res.status === 403 && body?.code === 'shared_secret_mismatch') {
                   httpError.hint =
                     'Shared secret はブラウザではなく Functions→GAS 間で一致させてください。';
@@ -5967,6 +6011,10 @@
                   requestId: body?.requestId,
                   response: body,
                 });
+                const bodyRequestId = extractRequestIdFromPayload(body);
+                if (bodyRequestId) {
+                  announceRequestId(bodyRequestId);
+                }
                 deliverFailure(failureHandler, backendError, userObject);
                 return;
               }
@@ -6277,6 +6325,56 @@
         }
       }
 
+      var LAST_ERROR_REQUEST_ID = '';
+      var LAST_ERROR_REQUEST_AT = 0;
+
+      function normalizeRequestId(value) {
+        if (!value) return '';
+        var text = String(value).trim();
+        return text;
+      }
+
+      function extractRequestIdFromPayload(payload) {
+        if (!payload || typeof payload !== 'object') return '';
+        if (typeof payload.requestId === 'string' && payload.requestId.trim()) {
+          return payload.requestId.trim();
+        }
+        if (typeof payload.request_id === 'string' && payload.request_id.trim()) {
+          return payload.request_id.trim();
+        }
+        if (typeof payload.requestID === 'string' && payload.requestID.trim()) {
+          return payload.requestID.trim();
+        }
+        return '';
+      }
+
+      function extractRequestIdFromError(error) {
+        if (!error) return '';
+        if (typeof error.requestId === 'string' && error.requestId.trim()) {
+          return error.requestId.trim();
+        }
+        if (error.response && typeof error.response === 'object') {
+          var embedded = extractRequestIdFromPayload(error.response);
+          if (embedded) return embedded;
+        }
+        return '';
+      }
+
+      function announceRequestId(requestId, options) {
+        var normalized = normalizeRequestId(requestId);
+        if (!normalized) return;
+        var now = Date.now();
+        if (LAST_ERROR_REQUEST_ID === normalized && now - LAST_ERROR_REQUEST_AT < 2000) {
+          return;
+        }
+        LAST_ERROR_REQUEST_ID = normalized;
+        LAST_ERROR_REQUEST_AT = now;
+        var message = 'エラー ID: ' + normalized + '（管理者に共有してください）';
+        notify(message, false, {
+          duration: (options && options.duration) || 6000,
+        });
+      }
+
       function promptForAppUpdate(data) {
         if (APP_UPDATE_PROMPTED) return;
         APP_UPDATE_PROMPTED = true;
@@ -6567,9 +6665,37 @@
         }
       }
 
-      function showAuthOverlay(message) {
+      function setAuthOverlayRequestId(requestId) {
+        const wrap = byId('auth-request-id');
+        const valueEl = byId('auth-request-id-value');
+        if (!wrap || !valueEl) return;
+        const normalized =
+          typeof requestId === 'string' && requestId.trim() ? requestId.trim() : '';
+        if (normalized) {
+          valueEl.textContent = normalized;
+          wrap.removeAttribute('hidden');
+        } else {
+          valueEl.textContent = '';
+          wrap.setAttribute('hidden', 'hidden');
+        }
+      }
+
+      function showAuthOverlay(messageOrOptions, maybeOptions) {
+        var overlayOpts = {};
+        var resolvedMessage = messageOrOptions;
+        if (messageOrOptions && typeof messageOrOptions === 'object' && !Array.isArray(messageOrOptions)) {
+          overlayOpts = messageOrOptions;
+          resolvedMessage = overlayOpts.message;
+        } else if (maybeOptions && typeof maybeOptions === 'object') {
+          overlayOpts = maybeOptions;
+        }
+        const overlayRequestId =
+          typeof overlayOpts.requestId === 'string' && overlayOpts.requestId.trim()
+            ? overlayOpts.requestId.trim()
+            : '';
+        setAuthOverlayRequestId(overlayRequestId);
         const overlay = byId('auth-overlay');
-        var displayMessage = message;
+        var displayMessage = resolvedMessage;
         if (!displayMessage && IS_MOBILE) {
           displayMessage = 'ShiftFlow を利用するには Google アカウントでのサインインが必要です。';
         }
@@ -6605,6 +6731,7 @@
           errorEl.textContent = '';
           errorEl.classList.remove('is-visible');
         }
+        setAuthOverlayRequestId('');
         if (revealShell === false) {
           if (document.body) {
             document.body.classList.add('auth-screen');
