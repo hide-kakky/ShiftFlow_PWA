@@ -3849,6 +3849,14 @@
               <button
                 class="dropdown-item d-flex align-items-center gap-2"
                 type="button"
+                data-user-menu="settings"
+              >
+                <span class="material-icons-outlined">settings</span>
+                ユーザー設定
+              </button>
+              <button
+                class="dropdown-item d-flex align-items-center gap-2"
+                type="button"
                 data-user-menu="logout"
               >
                 <span class="material-icons-outlined">logout</span>
@@ -14309,6 +14317,8 @@
               }
               if (action === 'admin') {
                 activateAdminSection('dashboard');
+              } else if (action === 'settings') {
+                navigateTo('settings', { animate: true, skipScroll: false });
               } else if (action === 'logout') {
                 if (!confirmLogoutAction()) return;
                 performLogout();
