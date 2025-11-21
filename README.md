@@ -7,9 +7,10 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ## 運用メモ（Codex / Service Worker）
 
-- 現在の APP_VERSION: `1.0.27`（`frontend/public/sw.js` 内の定義）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- 現在の APP_VERSION: `1.0.28`（`frontend/public/sw.js` 内の定義）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
 - すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
 - 基本ルールは `CODEx_PROMPT.md` と `AGENTS.md` に従うこと。
+- Wrangler の `compatibility_date` は Pages Functions / Worker どちらも `2025-11-02` で統一。
 
 ---
 
@@ -19,7 +20,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 | --- | --- | --- | --- |
 | フロントエンド | PWA / UI / Service Worker | `frontend/public`（静的 HTML/CSS/JS） | Pages でそのままホスティング。ビルド工程なし。 |
 | 認証 / API | Cloudflare Pages Functions | `functions/auth/*`, `functions/api/[route].js`, `functions/config.js` | Google OAuth (PKCE) と `SESSION` Cookie でシングルサインオン。すべての業務 API を Functions 内で実装。 |
-| データストア | Cloudflare D1 (`DB` binding) | `migrations/*.sql` | ユーザー / 組織 / タスク / メッセージ / 監査ログ / 添付を保存。ULID 主キー。 |
+| データストア | Cloudflare D1 (`DB` binding) | `migrations/*.sql` | ユーザー / 組織 / タスク / メッセージ / 監査ログ / 添付を保存。ULID 主キー。組織のブランド / 通知設定、フォルダ / テンプレート、メッセージのピン留めに対応。 |
 | セッション / フラグ | Cloudflare KV (`APP_KV` binding) | `functions/utils/session.js` | セッションレコード、PKCE 初期データ、機能フラグ (`shiftflow:flags`) を保管。 |
 | ファイルストレージ | Cloudflare R2 (`R2` binding) | `functions/api/[route].js`, `infra/r2/lifecycle.json` | プロフィール画像・メッセージ添付を `/profiles`, `/attachments`, `/orgs/<id>/...` に保存。 |
 | バックアップ | 専用 Worker + R2 | `workers/r2-backup` | Cron で本番 R2 → バックアップ R2 へ差分コピー・フル検証。 |
@@ -32,6 +33,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 | パス | 目的 |
 | --- | --- |
 | `frontend/public/` | 静的 PWA 一式（`index.html`・`sw.js`・`app-config.js`・`_headers` 等）。 |
+| `frontend/public/_headers`, `_redirects` | Pages でのヘッダー / ルーティング設定。 |
 | `functions/api/[route].js` | `/api/<route>` を一括で処理するメイン API。D1・R2・KV を直接呼び出し、Apps Script には依存しない。 |
 | `functions/auth/` | `/auth/start` (Google OAuth), `/auth/callback`, `/auth/session`, `/auth/logout`。PKCE + SESSION Cookie を管理。 |
 | `functions/utils/` | セッション・Google ID トークン検証などの共通ロジック。 |
@@ -52,9 +54,9 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 | 変数 | 用途 |
 | --- | --- |
 | `CF_ORIGIN` | 許可するオリジンをカンマ区切りで指定。`https://shiftflow.pages.dev,https://shiftflow.example.com` など。 |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google Cloud で発行した OAuth クライアント ID。`functions/auth/*` と `/config` で使用。 |
+| `GOOGLE_OAUTH_CLIENT_ID` | Google Cloud で発行した OAuth クライアント ID（`GOOGLE_CLIENT_ID` エイリアスも可）。`functions/auth/*` と `/config` で使用。 |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth シークレット。`wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET` で登録し、token exchange に使用。 |
-| `GAS_EXEC_URL` | Apps Script `/exec` URL。診断ログ送信 (`captureDiagnostics`) で利用。未設定でも API 実行自体は可能。 |
+| `GAS_EXEC_URL` | Apps Script `/exec` URL（`GAS_WEB_APP_URL` でも可）。診断ログ送信 (`captureDiagnostics`) で利用。未設定でも API 実行自体は可能。 |
 | `SHIFT_FLOW_SHARED_SECRET` / `_NEXT` | Functions → GAS 通信用シークレット。ローテーション時は `_NEXT` に新値を入れておく。 |
 | `CFG_CF_AUTH`, `CFG_CACHE_BOOTSTRAP`, `CFG_CACHE_HOME`, `CFG_D1_READ`, `CFG_D1_WRITE`, `CFG_D1_PRIMARY`, `CFG_USE_JWKS` | 機能フラグ。未指定時は `readFeatureFlags` のデフォルトを採用。 |
 | `CFG_FLAG_KV_KEY`（任意） | KV 上のフラグキー。デフォルト `shiftflow:flags`。 |
@@ -65,6 +67,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
   `wrangler d1 migrations apply app_d1_dev` でスキーマ適用。
 - `APP_KV` : KV。セッション / PKCE 状態 / フラグを保存。
 - `R2` : 添付・プロフィール画像用 R2 バケット。
+- `compatibility_date` : `2025-11-02`（Pages Functions, Worker 共通）。
 
 Preview / Production でそれぞれ正しい ID / バケット名に更新すること。
 
@@ -99,6 +102,7 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
    - **タスク**: `addNewTask`, `updateTask`, `completeTask`, `deleteTaskById`, `listMyTasks`, `listCreatedTasks`, `listAllTasks`, `getTaskById`
    - **メッセージ/メモ**: `getMessages`, `getMessageById`, `addNewMessage`, `deleteMessageById`, `toggleMemoRead`, `markMemosReadBulk`
    - **添付 / 設定**: `downloadAttachment`, `getUserSettings`, `saveUserSettings`
+   - **フォルダ / テンプレート**: `listActiveFolders` に加え、フォルダ作成・更新・アーカイブ、フォルダ紐付きテンプレートの取得 / 作成（管理者権限のみ）。
 5. 添付データは base64 Data URI を `storeDataUriInR2` 経由で R2 へ保存。  
    - プロフィール画像: 2MB, `profiles/` プレフィックス。  
    - メッセージ添付: 4MB × 最大 3 件, `attachments/` または `orgs/<org_id>/attachments/`。
@@ -116,6 +120,8 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
 - `000_init.sql`: `organizations`, `users`, `memberships`, `messages`, `message_reads`.
 - `001_extend_users.sql`: GAS シート互換のユーザーメタ列（`status`, `theme`, `approved_at_ms` 等）。
 - `002_add_tasks_attachments_audit.sql`: `tasks`, `task_assignees`, `attachments`, `task_attachments`, `message_attachments`, `audit_logs`, `login_audits`, `auth_proxy_logs`.
+- `003_extend_organizations.sql`: `organizations` に短縮名・ブランドカラー・タイムゾーン・通知先メール・メタ情報列を追加。
+- `004_add_folders_features.sql`: `folders` / `folder_members` / `templates` を追加し、メッセージのフォルダ紐付けとピン留めをサポート。
 - `qc_checks.sql`: テーブル間の参照整合性・NULL チェック用。
 
 ### 運用コマンド
@@ -129,7 +135,7 @@ npm run qc:dev
 npm run seed:dev
 ```
 
-`npm run seed:*` は `scripts/etl/to-sql.js` が生成した `seeds/090_organizations.sql` などを順番に実行する想定。  
+`npm run seed:*` は `scripts/etl/to-sql.js` が生成した `seeds/090_organizations.sql` などを順番に実行する想定（リポジトリには seeds は含まれないため必要に応じて生成）。  
 CSV からの変換手順例:
 
 ```bash
