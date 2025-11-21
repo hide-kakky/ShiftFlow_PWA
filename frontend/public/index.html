@@ -3679,15 +3679,7 @@
             </button>
             <button id="btn-auth-demo" class="auth-button auth-button--ghost" type="button">
               <span class="material-icons-outlined">play_circle</span>
-              <span>テストログイン（メンバー）</span>
-            </button>
-            <button
-              id="btn-auth-demo-manager"
-              class="auth-button auth-button--ghost"
-              type="button"
-            >
-              <span class="material-icons-outlined">shield</span>
-              <span>管理者テストログイン</span>
+              <span>テストログイン</span>
             </button>
           </div>
         </section>
@@ -3854,6 +3846,16 @@
               >
                 <span class="material-icons-outlined">admin_panel_settings</span>
                 管理メニュー
+              </button>
+              <button
+                class="dropdown-item d-flex align-items-center gap-2 d-none"
+                type="button"
+                data-user-menu="admin-demo"
+                id="btn-user-menu-admin-demo"
+                hidden
+              >
+                <span class="material-icons-outlined">shield</span>
+                管理者テストに切替
               </button>
               <button
                 class="dropdown-item d-flex align-items-center gap-2"
@@ -5976,8 +5978,18 @@
         var users = [
           { email: testEmail, name: testName, role: profile, imageUrl: testAvatar },
           teamManager,
-          { email: 'kitchen.lead@shiftflow.dev', name: '厨房リード', role: 'manager', imageUrl: TEST_THUMB_URL },
-          { email: 'guest.temp@shiftflow.dev', name: 'スポットワーカー', role: 'guest', imageUrl: TEST_AVATAR_URL },
+          {
+            email: 'kitchen.lead@shiftflow.dev',
+            name: '厨房リード',
+            role: 'manager',
+            imageUrl: TEST_THUMB_URL,
+          },
+          {
+            email: 'guest.temp@shiftflow.dev',
+            name: 'スポットワーカー',
+            role: 'guest',
+            imageUrl: TEST_AVATAR_URL,
+          },
         ];
 
         var tasks = [
@@ -6256,7 +6268,9 @@
             severity: 'success',
             summary: '役割を Manager に変更しました。',
             occurredAt: now - 45 * 60 * 1000,
-            occurredLabel: new Date(now - 45 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            occurredLabel: new Date(now - 45 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
             userLabel: testName,
             userEmail: testEmail,
             meta: { route: 'adminUpdateUser', requestId: 'TEST-AUD-1' },
@@ -6270,7 +6284,9 @@
             severity: 'info',
             summary: 'ShiftFlow へサインインしました。',
             occurredAt: now - 2 * 60 * 60 * 1000,
-            occurredLabel: new Date(now - 2 * 60 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            occurredLabel: new Date(now - 2 * 60 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
             userLabel: teamManager.name,
             userEmail: teamManager.email,
             meta: { route: 'getBootstrapData', requestId: 'TEST-AUD-2' },
@@ -6284,7 +6300,9 @@
             severity: 'info',
             summary: '掲示板に連絡事項を投稿しました。',
             occurredAt: now - 6 * 60 * 60 * 1000,
-            occurredLabel: new Date(now - 6 * 60 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            occurredLabel: new Date(now - 6 * 60 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
             userLabel: testName,
             userEmail: testEmail,
             meta: { route: 'addNewMessage', requestId: 'TEST-AUD-3' },
@@ -6344,7 +6362,9 @@
             meta: {
               totalTasks: tasks.length,
               matchedTasks: tasks.length,
-              note: isManagerProfile ? 'テストデータ (管理モード / 永続化なし)' : 'テストデータ (ローカルのみ)',
+              note: isManagerProfile
+                ? 'テストデータ (管理モード / 永続化なし)'
+                : 'テストデータ (ローカルのみ)',
             },
           },
           isManager: isManagerProfile,
@@ -6393,6 +6413,16 @@
         return TEST_MODE_STATE && TEST_MODE_STATE.active ? TEST_MODE_STATE : null;
       }
 
+      function updateTestMenuShortcut() {
+        var btn = byId('btn-user-menu-admin-demo');
+        if (!btn) return;
+        var state = getTestModeState();
+        var show = !!(state && state.profile === 'member');
+        btn.classList.toggle('d-none', !show);
+        if (show) btn.removeAttribute('hidden');
+        else btn.setAttribute('hidden', 'hidden');
+      }
+
       function syncTestMyTasks(state) {
         if (!state || !state.data) return;
         var tasks = state.data.tasks || [];
@@ -6430,10 +6460,12 @@
 
       function ensureTestModeController(options) {
         var requestedProfile =
-          (options && options.profile) ||
-          (TEST_MODE_STATE && TEST_MODE_STATE.profile) ||
-          'member';
-        if (TEST_MODE_STATE && TEST_MODE_STATE.active && TEST_MODE_STATE.profile === requestedProfile) {
+          (options && options.profile) || (TEST_MODE_STATE && TEST_MODE_STATE.profile) || 'member';
+        if (
+          TEST_MODE_STATE &&
+          TEST_MODE_STATE.active &&
+          TEST_MODE_STATE.profile === requestedProfile
+        ) {
           return TEST_MODE_STATE;
         }
         TEST_MODE_STATE = createTestModeController({ profile: requestedProfile });
@@ -6808,7 +6840,11 @@
           }
           case 'adminGetOrganization': {
             if (!data.bootstrap.isManager) {
-              return { org: null, stats: null, meta: { managerOnly: true, reason: '管理者権限が必要です。' } };
+              return {
+                org: null,
+                stats: null,
+                meta: { managerOnly: true, reason: '管理者権限が必要です。' },
+              };
             }
             var orgArgs = Array.isArray(args) && args[0] ? args[0] : {};
             var orgId = orgArgs.orgId || TEST_DEMO_ORG_ID;
@@ -6837,7 +6873,8 @@
             if (orgPayload.shortName) targetOrg.shortName = orgPayload.shortName;
             if (orgPayload.displayColor) targetOrg.displayColor = orgPayload.displayColor;
             if (orgPayload.timezone) targetOrg.timezone = orgPayload.timezone;
-            if (orgPayload.notificationEmail) targetOrg.notificationEmail = orgPayload.notificationEmail;
+            if (orgPayload.notificationEmail)
+              targetOrg.notificationEmail = orgPayload.notificationEmail;
             targetOrg.updatedAt = new Date().toLocaleString('ja-JP', { hour12: false });
             return {
               success: true,
@@ -7833,6 +7870,7 @@
         updateThemeStatus(themeValue);
 
         toggleManagerUI();
+        updateTestMenuShortcut();
         if (typeof TASK_STATE !== 'undefined' && TASK_STATE.all) {
           TASK_STATE.all.restricted = !IS_MANAGER;
         }
@@ -9065,8 +9103,7 @@
           }
           if (folderMatch && method === 'PATCH') {
             var folderId = decodeURIComponent(folderMatch[1]);
-            var patchPayload =
-              init && init.body && typeof init.body === 'object' ? init.body : {};
+            var patchPayload = init && init.body && typeof init.body === 'object' ? init.body : {};
             var target = data.folders.find(function (entry) {
               return entry.id === folderId;
             });
@@ -9083,9 +9120,9 @@
             return Promise.resolve(cloneDeep(target));
           }
           if (pathname === API_BASE_PATH + '/folders' && method === 'POST') {
-            var folderPayload =
-              init && init.body && typeof init.body === 'object' ? init.body : {};
-            if (typeof data.counters.folder !== 'number') data.counters.folder = data.folders.length;
+            var folderPayload = init && init.body && typeof init.body === 'object' ? init.body : {};
+            if (typeof data.counters.folder !== 'number')
+              data.counters.folder = data.folders.length;
             var newFolderId =
               folderPayload.id || 'FOLDER-' + ++data.counters.folder || 'FOLDER-NEW';
             var entry = {
@@ -9107,9 +9144,7 @@
           }
         }
 
-        var pinMatch = pathname.match(
-          new RegExp('^' + API_BASE_PATH + '/messages/([^/]+)/pin$')
-        );
+        var pinMatch = pathname.match(new RegExp('^' + API_BASE_PATH + '/messages/([^/]+)/pin$'));
         if (pinMatch) {
           var memoIdForPin = decodeURIComponent(pinMatch[1]);
           var targetMsg = findTestMessage(state, memoIdForPin);
@@ -9326,8 +9361,11 @@
         hideAuthOverlay();
         setAppShellHidden(false);
         setBootstrapLoading(false);
+        updateTestMenuShortcut();
         notify(
-          profile === 'manager' ? 'テストマネージャーでログインしました。' : 'テストユーザーでログインしました。',
+          profile === 'manager'
+            ? 'テストマネージャーでログインしました。'
+            : 'テストユーザーでログインしました。',
           true
         );
         refreshDataAfterBootstrap();
@@ -9351,6 +9389,7 @@
         updateAuthSessionUI(null);
         clearAuthPendingFlag();
         showAuthOverlay('サインアウトしました。もう一度 Google でログインしてください。');
+        updateTestMenuShortcut();
       }
 
       function confirmLogoutAction() {
@@ -9378,10 +9417,6 @@
         on('btn-auth-demo', 'click', function (event) {
           event.preventDefault();
           activateTestUserLogin({ profile: 'member' });
-        });
-        on('btn-auth-demo-manager', 'click', function (event) {
-          event.preventDefault();
-          activateTestUserLogin({ profile: 'manager' });
         });
       }
 
@@ -15202,6 +15237,8 @@
               }
               if (action === 'admin') {
                 activateAdminSection('dashboard');
+              } else if (action === 'admin-demo') {
+                activateTestUserLogin({ profile: 'manager' });
               } else if (action === 'settings') {
                 navigateTo('settings', { animate: true, skipScroll: false });
               } else if (action === 'logout') {
