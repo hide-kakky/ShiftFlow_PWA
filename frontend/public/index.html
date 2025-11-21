@@ -3679,7 +3679,15 @@
             </button>
             <button id="btn-auth-demo" class="auth-button auth-button--ghost" type="button">
               <span class="material-icons-outlined">play_circle</span>
-              <span>テストログイン</span>
+              <span>テストログイン（メンバー）</span>
+            </button>
+            <button
+              id="btn-auth-demo-manager"
+              class="auth-button auth-button--ghost"
+              type="button"
+            >
+              <span class="material-icons-outlined">shield</span>
+              <span>管理者テストログイン</span>
             </button>
           </div>
         </section>
@@ -5951,7 +5959,27 @@
         return summary;
       }
 
-      function buildTestModeDataset() {
+      function buildTestModeDataset(options) {
+        options = options || {};
+        var profile = options.profile === 'manager' ? 'manager' : 'member';
+        var isManagerProfile = profile === 'manager';
+        var testEmail = isManagerProfile ? TEST_MANAGER_EMAIL : TEST_USER_EMAIL;
+        var testName = isManagerProfile ? TEST_MANAGER_NAME : 'テストユーザー';
+        var testAvatar = isManagerProfile ? TEST_THUMB_URL : TEST_AVATAR_URL;
+        var now = Date.now();
+        var teamManager = {
+          email: 'manager@shiftflow.dev',
+          name: '山田マネージャー',
+          role: 'manager',
+          imageUrl: TEST_THUMB_URL,
+        };
+        var users = [
+          { email: testEmail, name: testName, role: profile, imageUrl: testAvatar },
+          teamManager,
+          { email: 'kitchen.lead@shiftflow.dev', name: '厨房リード', role: 'manager', imageUrl: TEST_THUMB_URL },
+          { email: 'guest.temp@shiftflow.dev', name: 'スポットワーカー', role: 'guest', imageUrl: TEST_AVATAR_URL },
+        ];
+
         var tasks = [
           createTestTask({
             id: 'TASK-101',
@@ -5959,8 +5987,9 @@
             priority: '高',
             status: '対応中',
             dueOffsetDays: 0,
-            assignees: [TEST_USER_EMAIL, 'manager@shiftflow.dev'],
+            assignees: [testEmail, 'kitchen.lead@shiftflow.dev'],
             description: 'ホール・厨房の温度と備品を確認してください。',
+            createdBy: teamManager.email,
           }),
           createTestTask({
             id: 'TASK-102',
@@ -5968,7 +5997,8 @@
             priority: '中',
             status: '未着手',
             dueOffsetDays: 1,
-            assignees: [TEST_USER_EMAIL],
+            assignees: [testEmail],
+            createdBy: teamManager.email,
           }),
           createTestTask({
             id: 'TASK-103',
@@ -5977,14 +6007,29 @@
             status: '完了',
             dueOffsetDays: -1,
             assignees: ['kitchen.lead@shiftflow.dev'],
-            createdBy: TEST_USER_EMAIL,
+            createdBy: testEmail,
           }),
         ];
+        if (isManagerProfile) {
+          tasks.push(
+            createTestTask({
+              id: 'TASK-201',
+              title: '【管理】承認待ちユーザー確認',
+              priority: '高',
+              status: '対応中',
+              dueOffsetDays: 0,
+              assignees: [testEmail],
+              createdBy: testEmail,
+              description: '管理画面で承認待ち 2 件を確認してください。',
+            })
+          );
+        }
+
         var baseComments = [
           {
             id: 'CMT-1',
             body: 'テストコメント: 進捗を確認しました。',
-            authorEmail: 'manager@shiftflow.dev',
+            authorEmail: teamManager.email,
             createdAt: '2024/06/30 09:10',
           },
         ];
@@ -5994,6 +6039,7 @@
             title: '【テスト】7/1 ホール連絡事項',
             priority: '高',
             isRead: false,
+            isPinned: isManagerProfile,
             attachments: [
               {
                 name: 'ホール配置図.jpg',
@@ -6003,8 +6049,8 @@
               },
             ],
             comments: baseComments,
-            readUsers: [{ email: 'manager@shiftflow.dev', label: '山田マネージャー' }],
-            unreadUsers: [{ email: TEST_USER_EMAIL, label: 'テストユーザー' }],
+            readUsers: [{ email: teamManager.email, label: teamManager.name }],
+            unreadUsers: [{ email: testEmail, label: testName }],
           }),
           createTestMessage({
             id: 'MSG-202',
@@ -6022,74 +6068,319 @@
             ],
             comments: [],
           }),
+          createTestMessage({
+            id: 'MSG-203',
+            title: '【管理】承認待ちの確認と通知設定',
+            priority: '中',
+            folderId: '全体',
+            isRead: isManagerProfile,
+            isPinned: isManagerProfile,
+            body: '管理者向けのテスト通知です。ユーザー承認とフォルダ管理のテストにご利用ください。',
+            comments: [],
+          }),
         ];
         var folders = [
-          { id: '全体', name: '全体' },
-          { id: 'ホール', name: 'ホール' },
-          { id: 'キッチン', name: 'キッチン' },
-          { id: 'バックヤード', name: 'バックヤード' },
+          {
+            id: '全体',
+            name: '全体共有',
+            color: '#517cb2',
+            isPublic: true,
+            isActive: true,
+            isSystem: true,
+            memberUserIds: [],
+            memberCount: users.length,
+            updatedAt: now - 60 * 60 * 1000,
+          },
+          {
+            id: 'ホール',
+            name: 'ホール',
+            color: '#f59e0b',
+            isPublic: false,
+            isActive: true,
+            memberUserIds: [testEmail, teamManager.email],
+            memberCount: 2,
+            updatedAt: now - 2 * 60 * 60 * 1000,
+          },
+          {
+            id: 'キッチン',
+            name: 'キッチン',
+            color: '#06b6d4',
+            isPublic: false,
+            isActive: true,
+            memberUserIds: ['kitchen.lead@shiftflow.dev'],
+            memberCount: 1,
+            updatedAt: now - 3 * 60 * 60 * 1000,
+          },
+          {
+            id: 'バックヤード',
+            name: 'バックヤード',
+            color: '#8b5cf6',
+            isPublic: false,
+            isActive: true,
+            memberUserIds: [testEmail],
+            memberCount: 2,
+            updatedAt: now - 24 * 60 * 60 * 1000,
+          },
         ];
-        var users = [
+        var templates = {
+          全体: [
+            {
+              id: 'TPL-1',
+              name: '朝会アジェンダ',
+              titleFormat: '【共有】本日の朝会',
+              bodyFormat: '・新人共有\n・安全確認\n・今日の重点',
+              updatedAt: now - 30 * 60 * 1000,
+            },
+          ],
+          ホール: [
+            {
+              id: 'TPL-2',
+              name: 'ヘルプ依頼',
+              titleFormat: '【ヘルプ】ピーク対応お願い',
+              bodyFormat: '◯◯席で応援お願いします。完了したらメモに記録してください。',
+              updatedAt: now - 2 * 60 * 60 * 1000,
+            },
+          ],
+        };
+        var adminUsers = [
           {
-            email: TEST_USER_EMAIL,
-            name: 'テストユーザー',
-            role: 'member',
-            imageUrl: TEST_AVATAR_URL,
+            userId: 'user-test',
+            email: testEmail,
+            name: testName,
+            role: profile,
+            status: 'active',
+            avatarUrl: testAvatar,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '今日 09:15',
+            membershipStatus: 'active',
+            userStatus: 'active',
+            approvedBy: teamManager.name,
+            approvedAtLabel: '今日 09:10',
+            notes: isManagerProfile ? 'マネージャーモード（テスト）' : 'メンバーモード（テスト）',
+            isActive: true,
           },
           {
-            email: 'manager@shiftflow.dev',
-            name: '山田マネージャー',
+            userId: 'user-001',
+            email: teamManager.email,
+            name: teamManager.name,
             role: 'manager',
-            imageUrl: TEST_THUMB_URL,
+            status: 'active',
+            avatarUrl: TEST_THUMB_URL,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '昨日 18:20',
+            membershipStatus: 'active',
+            userStatus: 'active',
+            approvedBy: 'system',
+            approvedAtLabel: '昨日',
+            notes: '店舗責任者',
+            isActive: true,
           },
           {
+            userId: 'user-002',
+            email: 'crew.one@shiftflow.dev',
+            name: 'ホール担当A',
+            role: 'member',
+            status: 'pending',
+            avatarUrl: TEST_AVATAR_URL,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '—',
+            membershipStatus: 'pending',
+            userStatus: 'pending',
+            approvedBy: '',
+            approvedAtLabel: '',
+            notes: '入社手続き待ち',
+            isActive: false,
+          },
+          {
+            userId: 'user-003',
             email: 'kitchen.lead@shiftflow.dev',
             name: '厨房リード',
-            role: 'member',
-            imageUrl: TEST_THUMB_URL,
+            role: 'manager',
+            status: 'active',
+            avatarUrl: TEST_THUMB_URL,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '今日 08:45',
+            membershipStatus: 'active',
+            userStatus: 'active',
+            approvedBy: teamManager.name,
+            approvedAtLabel: '1日前',
+            notes: '厨房の安全担当',
+            isActive: true,
+          },
+          {
+            userId: 'user-004',
+            email: 'guest.temp@shiftflow.dev',
+            name: 'スポットワーク',
+            role: 'guest',
+            status: 'revoked',
+            avatarUrl: TEST_AVATAR_URL,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '先週',
+            membershipStatus: 'revoked',
+            userStatus: 'revoked',
+            approvedBy: '',
+            approvedAtLabel: '',
+            notes: '一時停止中',
+            isActive: false,
+          },
+          {
+            userId: 'user-005',
+            email: 'hq.admin@shiftflow.dev',
+            name: '本部管理',
+            role: 'admin',
+            status: 'active',
+            avatarUrl: TEST_THUMB_URL,
+            orgName: '本部',
+            orgId: 'hq',
+            lastLoginLabel: '今日 07:30',
+            membershipStatus: 'active',
+            userStatus: 'active',
+            approvedBy: 'system',
+            approvedAtLabel: '先月',
+            notes: '本部アカウント',
+            isActive: true,
           },
         ];
-        var userInfo = {
-          email: TEST_USER_EMAIL,
-          name: 'テストユーザー',
-          imageUrl: TEST_AVATAR_URL,
-          theme: 'light',
-          role: 'member',
+        var auditLogs = [
+          {
+            id: 'AUD-1',
+            type: 'admin',
+            typeLabel: '管理操作',
+            eventLabel: 'ユーザー更新',
+            statusLabel: '成功',
+            severity: 'success',
+            summary: '役割を Manager に変更しました。',
+            occurredAt: now - 45 * 60 * 1000,
+            occurredLabel: new Date(now - 45 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            userLabel: testName,
+            userEmail: testEmail,
+            meta: { route: 'adminUpdateUser', requestId: 'TEST-AUD-1' },
+          },
+          {
+            id: 'AUD-2',
+            type: 'login',
+            typeLabel: 'ログイン',
+            eventLabel: 'Google Sign-In',
+            statusLabel: '成功',
+            severity: 'info',
+            summary: 'ShiftFlow へサインインしました。',
+            occurredAt: now - 2 * 60 * 60 * 1000,
+            occurredLabel: new Date(now - 2 * 60 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            userLabel: teamManager.name,
+            userEmail: teamManager.email,
+            meta: { route: 'getBootstrapData', requestId: 'TEST-AUD-2' },
+          },
+          {
+            id: 'AUD-3',
+            type: 'api',
+            typeLabel: 'API',
+            eventLabel: 'メッセージ作成',
+            statusLabel: '成功',
+            severity: 'info',
+            summary: '掲示板に連絡事項を投稿しました。',
+            occurredAt: now - 6 * 60 * 60 * 1000,
+            occurredLabel: new Date(now - 6 * 60 * 60 * 1000).toLocaleString('ja-JP', { hour12: false }),
+            userLabel: testName,
+            userEmail: testEmail,
+            meta: { route: 'addNewMessage', requestId: 'TEST-AUD-3' },
+          },
+        ];
+        var orgs = [
+          {
+            orgId: TEST_DEMO_ORG_ID,
+            name: TEST_DEMO_ORG_LABEL,
+            shortName: 'SFDemo',
+            displayColor: '#517CB2',
+            notificationEmail: 'alerts@shiftflow.dev',
+            timezone: 'Asia/Tokyo',
+            updatedAt: '2024/07/01 09:00',
+          },
+          {
+            orgId: 'east-cafe',
+            name: 'East Cafe',
+            shortName: 'East',
+            displayColor: '#16a34a',
+            notificationEmail: 'east@shiftflow.dev',
+            timezone: 'Asia/Tokyo',
+            updatedAt: '2024/07/01 08:45',
+          },
+        ];
+        var orgStats = {};
+        orgStats[TEST_DEMO_ORG_ID] = {
+          totalMembers: adminUsers.length,
+          statusCounts: { pending: 1, active: 3, suspended: 0, revoked: 1 },
+          roleCounts: { admin: 1, manager: 2, member: 1, guest: 1 },
         };
+        orgStats['east-cafe'] = {
+          totalMembers: 12,
+          statusCounts: { pending: 1, active: 9, suspended: 1, revoked: 1 },
+          roleCounts: { admin: 1, manager: 2, member: 7, guest: 2 },
+        };
+        var userInfo = {
+          email: testEmail,
+          name: testName,
+          imageUrl: testAvatar,
+          theme: 'light',
+          role: profile,
+        };
+        var pinnedMap = {};
+        messages.forEach(function (msg) {
+          if (msg && msg.isPinned) {
+            pinnedMap[msg.id] = { pinnedAt: new Date().toISOString(), title: msg.title };
+          }
+        });
         var bootstrap = {
           userInfo: cloneDeep(userInfo),
           users: cloneDeep(users),
           folders: cloneDeep(folders),
+          pinnedMessages: pinnedMap,
           myTasks: {
             tasks: cloneDeep(tasks),
             meta: {
               totalTasks: tasks.length,
               matchedTasks: tasks.length,
-              note: 'テストデータ (ローカルのみ)',
+              note: isManagerProfile ? 'テストデータ (管理モード / 永続化なし)' : 'テストデータ (ローカルのみ)',
             },
           },
-          isManager: false,
+          isManager: isManagerProfile,
           theme: 'light',
         };
         return {
+          profile,
           userInfo,
           users,
           folders,
           tasks,
           messages,
+          templates,
+          adminUsers,
+          auditLogs,
+          orgs,
+          orgStats,
           bootstrap,
           settings: {
-            name: 'テストユーザー',
-            imageUrl: TEST_AVATAR_URL,
+            name: testName,
+            imageUrl: testAvatar,
             imageName: 'test-avatar.png',
-            role: 'member',
-            email: TEST_USER_EMAIL,
+            role: profile,
+            email: testEmail,
             theme: 'light',
           },
           counters: {
             task: 1000 + tasks.length,
             message: 200 + messages.length,
             comment: 10,
+            folder: folders.length,
+            template: Object.keys(templates).reduce(function (sum, key) {
+              var arr = templates[key];
+              return sum + (Array.isArray(arr) ? arr.length : 0);
+            }, 0),
+            audit: 50 + auditLogs.length,
           },
         };
       }
@@ -6105,20 +6396,28 @@
       function syncTestMyTasks(state) {
         if (!state || !state.data) return;
         var tasks = state.data.tasks || [];
+        var note =
+          state.data.bootstrap &&
+          state.data.bootstrap.myTasks &&
+          state.data.bootstrap.myTasks.meta &&
+          state.data.bootstrap.myTasks.meta.note
+            ? state.data.bootstrap.myTasks.meta.note
+            : 'テストデータ (永続化されません)';
         state.data.bootstrap.myTasks = {
           tasks: cloneDeep(tasks),
           meta: {
             totalTasks: tasks.length,
             matchedTasks: tasks.length,
-            note: 'テストデータ (永続化されません)',
+            note: note,
           },
         };
       }
 
-      function createTestModeController() {
-        var dataset = buildTestModeDataset();
+      function createTestModeController(options) {
+        var dataset = buildTestModeDataset(options || {});
         var controller = {
           active: true,
+          profile: dataset.profile,
           networkDelayMs: 240,
           data: dataset,
           handleRoute: function (route, args) {
@@ -6129,11 +6428,15 @@
         return controller;
       }
 
-      function ensureTestModeController() {
-        if (TEST_MODE_STATE && TEST_MODE_STATE.active) {
+      function ensureTestModeController(options) {
+        var requestedProfile =
+          (options && options.profile) ||
+          (TEST_MODE_STATE && TEST_MODE_STATE.profile) ||
+          'member';
+        if (TEST_MODE_STATE && TEST_MODE_STATE.active && TEST_MODE_STATE.profile === requestedProfile) {
           return TEST_MODE_STATE;
         }
-        TEST_MODE_STATE = createTestModeController();
+        TEST_MODE_STATE = createTestModeController({ profile: requestedProfile });
         window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
         return TEST_MODE_STATE;
       }
@@ -6365,6 +6668,181 @@
               imageUrl: data.settings.imageUrl,
               imageName: data.settings.imageName,
               theme: data.settings.theme,
+            };
+          }
+          case 'adminListUsers': {
+            if (!data.bootstrap.isManager) {
+              return { rows: [], meta: { managerOnly: true, reason: '管理者権限が必要です。' } };
+            }
+            var filters = Array.isArray(args) && args[0] ? args[0] : {};
+            var keyword = (filters.search || '').toLowerCase();
+            var statusFilter = (filters.status || '').toLowerCase();
+            var roleFilter = (filters.role || '').toLowerCase();
+            var rows = Array.isArray(data.adminUsers) ? data.adminUsers.slice() : [];
+            if (keyword) {
+              rows = rows.filter(function (row) {
+                return (
+                  String(row.name || '')
+                    .toLowerCase()
+                    .indexOf(keyword) !== -1 ||
+                  String(row.email || '')
+                    .toLowerCase()
+                    .indexOf(keyword) !== -1
+                );
+              });
+            }
+            if (statusFilter) {
+              rows = rows.filter(function (row) {
+                return String(row.status || '').toLowerCase() === statusFilter;
+              });
+            }
+            if (roleFilter) {
+              rows = rows.filter(function (row) {
+                return String(row.role || '').toLowerCase() === roleFilter;
+              });
+            }
+            var stats = (data.adminUsers || []).reduce(
+              function (acc, row) {
+                var status = String(row.status || '').toLowerCase();
+                if (status === 'pending') acc.pending += 1;
+                else if (status === 'active') acc.active += 1;
+                else acc.suspended += 1;
+                acc.total += 1;
+                return acc;
+              },
+              { total: 0, pending: 0, active: 0, suspended: 0 }
+            );
+            return {
+              rows: cloneDeep(rows),
+              meta: {
+                refreshedAt: new Date().toLocaleString('ja-JP', { hour12: false }),
+                stats: stats,
+                managerOnly: false,
+              },
+            };
+          }
+          case 'adminUpdateUser': {
+            if (!data.bootstrap.isManager) {
+              return { success: false, message: '管理者権限が必要です。' };
+            }
+            var update = Array.isArray(args) && args[0] ? args[0] : {};
+            var targetId = update.userId || update.email;
+            var targetUser = (data.adminUsers || []).find(function (row) {
+              return row.userId === targetId || row.email === targetId;
+            });
+            if (!targetUser) throw new Error('対象ユーザーが見つかりません。');
+            if (update.role) targetUser.role = update.role;
+            if (update.status) {
+              targetUser.status = update.status;
+              targetUser.membershipStatus = update.status;
+              targetUser.userStatus = update.status;
+              targetUser.isActive = update.status === 'active';
+            }
+            if (update.action) {
+              if (update.action === 'activate') targetUser.status = 'active';
+              if (update.action === 'suspend') targetUser.status = 'suspended';
+              if (update.action === 'resume') targetUser.status = 'active';
+              targetUser.membershipStatus = targetUser.status;
+              targetUser.userStatus = targetUser.status;
+              targetUser.isActive = targetUser.status === 'active';
+            }
+            var auditId = 'AUD-' + ++state.data.counters.audit;
+            data.auditLogs.unshift({
+              id: auditId,
+              type: 'admin',
+              typeLabel: '管理操作',
+              eventLabel: 'ユーザー更新',
+              statusLabel: '成功',
+              severity: 'success',
+              summary: 'ユーザー情報を更新しました。',
+              occurredAt: Date.now(),
+              occurredLabel: new Date().toLocaleString('ja-JP', { hour12: false }),
+              userLabel: data.userInfo.name,
+              userEmail: data.userInfo.email,
+              meta: { route: 'adminUpdateUser', targetId: targetId, requestId: auditId },
+            });
+            return toTestPayloadSuccess('ユーザーを更新しました (テスト)');
+          }
+          case 'getAuditLogs': {
+            if (!data.bootstrap.isManager) {
+              return { rows: [], meta: { managerOnly: true, reason: '管理者権限が必要です。' } };
+            }
+            var limit = Array.isArray(args) && typeof args[0] === 'number' ? args[0] : 150;
+            var auditFilter = Array.isArray(args) && args[1] ? args[1] : {};
+            var eventType = (auditFilter.eventType || '').toLowerCase();
+            var rows = Array.isArray(data.auditLogs) ? data.auditLogs.slice() : [];
+            if (eventType && eventType !== 'all') {
+              rows = rows.filter(function (row) {
+                return String(row.type || '').toLowerCase() === eventType;
+              });
+            }
+            var trimmed = rows.slice(0, limit);
+            var stats = rows.reduce(function (acc, row) {
+              var typeKey = String(row.type || 'admin').toLowerCase();
+              acc[typeKey] = (acc[typeKey] || 0) + 1;
+              return acc;
+            }, {});
+            return {
+              rows: cloneDeep(trimmed),
+              meta: {
+                refreshedAt: new Date().toLocaleString('ja-JP', { hour12: false }),
+                rangeLabel: auditFilter.range ? '期間: ' + auditFilter.range : '',
+                availableRows: rows.length,
+                filters: { limit: limit },
+                stats: stats,
+                managerOnly: false,
+                truncated: rows.length > trimmed.length,
+              },
+            };
+          }
+          case 'adminListOrganizations': {
+            if (!data.bootstrap.isManager) {
+              return { orgs: [], meta: { managerOnly: true, reason: '管理者権限が必要です。' } };
+            }
+            var defaultOrgId =
+              (data.orgs && data.orgs[0] && data.orgs[0].orgId) || TEST_DEMO_ORG_ID;
+            return {
+              orgs: cloneDeep(data.orgs),
+              meta: { defaultOrgId: defaultOrgId, managerOnly: false },
+            };
+          }
+          case 'adminGetOrganization': {
+            if (!data.bootstrap.isManager) {
+              return { org: null, stats: null, meta: { managerOnly: true, reason: '管理者権限が必要です。' } };
+            }
+            var orgArgs = Array.isArray(args) && args[0] ? args[0] : {};
+            var orgId = orgArgs.orgId || TEST_DEMO_ORG_ID;
+            var org = (data.orgs || []).find(function (entry) {
+              return entry.orgId === orgId;
+            });
+            if (!org && data.orgs && data.orgs.length) org = data.orgs[0];
+            if (!org) throw new Error('組織情報が見つかりません。');
+            var stats = data.orgStats && data.orgStats[org.orgId] ? data.orgStats[org.orgId] : null;
+            return {
+              org: cloneDeep(org),
+              stats: stats ? cloneDeep(stats) : null,
+              refreshedAt: new Date().toLocaleString('ja-JP', { hour12: false }),
+            };
+          }
+          case 'adminUpdateOrganization': {
+            if (!data.bootstrap.isManager) {
+              return { success: false, message: '管理者権限が必要です。' };
+            }
+            var orgPayload = Array.isArray(args) && args[0] ? args[0] : {};
+            var targetOrg = (data.orgs || []).find(function (entry) {
+              return entry.orgId === orgPayload.orgId;
+            });
+            if (!targetOrg) throw new Error('組織が見つかりません。');
+            if (orgPayload.name) targetOrg.name = orgPayload.name;
+            if (orgPayload.shortName) targetOrg.shortName = orgPayload.shortName;
+            if (orgPayload.displayColor) targetOrg.displayColor = orgPayload.displayColor;
+            if (orgPayload.timezone) targetOrg.timezone = orgPayload.timezone;
+            if (orgPayload.notificationEmail) targetOrg.notificationEmail = orgPayload.notificationEmail;
+            targetOrg.updatedAt = new Date().toLocaleString('ja-JP', { hour12: false });
+            return {
+              success: true,
+              message: '組織情報を更新しました (テスト)',
+              org: cloneDeep(targetOrg),
             };
           }
           default:
@@ -8538,7 +9016,156 @@
         return data;
       }
 
+      function handleTestApiRequest(path, init) {
+        var state = getTestModeState();
+        if (!state || !state.data) return null;
+        var url = null;
+        try {
+          url = new URL(path, window.location.origin);
+        } catch (_err) {
+          return null;
+        }
+        var pathname = url.pathname;
+        var method = (init && init.method ? String(init.method) : 'GET').toUpperCase();
+        var data = state.data;
+        if (!data) return null;
+        if (!data.counters) data.counters = {};
+
+        if (pathname.indexOf(API_BASE_PATH + '/templates') === 0) {
+          if (!data.templates) data.templates = {};
+          if (method === 'GET') {
+            var folderIdForTpl = url.searchParams.get('folderId') || '';
+            var list =
+              (folderIdForTpl && data.templates[folderIdForTpl]) || data.templates[''] || [];
+            return Promise.resolve(cloneDeep(list));
+          }
+          if (method === 'POST') {
+            var tplPayload =
+              init && init.body && typeof init.body === 'object' ? init.body : { folderId: '' };
+            var targetFolder = tplPayload.folderId || url.searchParams.get('folderId') || '全体';
+            data.templates[targetFolder] = data.templates[targetFolder] || [];
+            if (typeof data.counters.template !== 'number') data.counters.template = 0;
+            var newTplId = 'TPL-' + ++data.counters.template;
+            data.templates[targetFolder].unshift({
+              id: newTplId,
+              name: tplPayload.name || '新規定型文',
+              titleFormat: tplPayload.titleFormat || '',
+              bodyFormat: tplPayload.bodyFormat || '',
+              updatedAt: Date.now(),
+            });
+            return Promise.resolve({ success: true, id: newTplId });
+          }
+        }
+
+        if (pathname.indexOf(API_BASE_PATH + '/folders') === 0) {
+          if (!Array.isArray(data.folders)) data.folders = [];
+          var folderMatch = pathname.match(new RegExp('^' + API_BASE_PATH + '/folders/([^/]+)$'));
+          if (method === 'GET') {
+            return Promise.resolve(cloneDeep(data.folders));
+          }
+          if (folderMatch && method === 'PATCH') {
+            var folderId = decodeURIComponent(folderMatch[1]);
+            var patchPayload =
+              init && init.body && typeof init.body === 'object' ? init.body : {};
+            var target = data.folders.find(function (entry) {
+              return entry.id === folderId;
+            });
+            if (!target) return Promise.reject(new Error('フォルダが見つかりません。'));
+            if (patchPayload.name) target.name = patchPayload.name;
+            if (patchPayload.color) target.color = patchPayload.color;
+            if (typeof patchPayload.isPublic === 'boolean') target.isPublic = patchPayload.isPublic;
+            if (Array.isArray(patchPayload.memberUserIds))
+              target.memberUserIds = patchPayload.memberUserIds.slice();
+            target.memberCount = Array.isArray(target.memberUserIds)
+              ? target.memberUserIds.length
+              : target.memberCount;
+            target.updatedAt = Date.now();
+            return Promise.resolve(cloneDeep(target));
+          }
+          if (pathname === API_BASE_PATH + '/folders' && method === 'POST') {
+            var folderPayload =
+              init && init.body && typeof init.body === 'object' ? init.body : {};
+            if (typeof data.counters.folder !== 'number') data.counters.folder = data.folders.length;
+            var newFolderId =
+              folderPayload.id || 'FOLDER-' + ++data.counters.folder || 'FOLDER-NEW';
+            var entry = {
+              id: newFolderId,
+              name: folderPayload.name || '新規フォルダ',
+              color: folderPayload.color || '#517cb2',
+              isPublic: !!folderPayload.isPublic,
+              isActive: true,
+              memberUserIds: Array.isArray(folderPayload.memberUserIds)
+                ? folderPayload.memberUserIds.slice()
+                : [],
+              memberCount: Array.isArray(folderPayload.memberUserIds)
+                ? folderPayload.memberUserIds.length
+                : 0,
+              updatedAt: Date.now(),
+            };
+            data.folders.push(entry);
+            return Promise.resolve(cloneDeep(entry));
+          }
+        }
+
+        var pinMatch = pathname.match(
+          new RegExp('^' + API_BASE_PATH + '/messages/([^/]+)/pin$')
+        );
+        if (pinMatch) {
+          var memoIdForPin = decodeURIComponent(pinMatch[1]);
+          var targetMsg = findTestMessage(state, memoIdForPin);
+          if (!targetMsg) return Promise.reject(new Error('メッセージが見つかりません。'));
+          var desiredPin =
+            init &&
+            init.body &&
+            typeof init.body === 'object' &&
+            Object.prototype.hasOwnProperty.call(init.body, 'pin')
+              ? !!init.body.pin
+              : !targetMsg.isPinned;
+          targetMsg.isPinned = desiredPin;
+          if (targetMsg.detail) targetMsg.detail.isPinned = desiredPin;
+          if (data.bootstrap && data.bootstrap.pinnedMessages) {
+            if (desiredPin) {
+              data.bootstrap.pinnedMessages[targetMsg.id] = {
+                pinnedAt: new Date().toISOString(),
+                title: targetMsg.title,
+              };
+            } else {
+              delete data.bootstrap.pinnedMessages[targetMsg.id];
+            }
+          }
+          return Promise.resolve({ success: true, pinned: desiredPin });
+        }
+
+        var readMatch = pathname.match(
+          new RegExp('^' + API_BASE_PATH + '/messages/([^/]+)/read_status$')
+        );
+        if (readMatch) {
+          var memoIdForStatus = decodeURIComponent(readMatch[1]);
+          var memo = findTestMessage(state, memoIdForStatus);
+          if (!memo) return Promise.reject(new Error('メッセージが見つかりません。'));
+          memo.detail = memo.detail || {};
+          memo.detail.readUsers = memo.detail.readUsers || [];
+          memo.detail.unreadUsers = memo.detail.unreadUsers || [];
+          var unreadList = (memo.detail.unreadUsers || []).map(function (entry) {
+            return {
+              name: entry.label || entry.name || entry.email,
+              email: entry.email,
+            };
+          });
+          var totalCandidates = (memo.detail.readUsers || []).length + unreadList.length;
+          return Promise.resolve({ unread: unreadList, totalCandidates: totalCandidates });
+        }
+
+        return null;
+      }
+
       async function apiRequest(path, init) {
+        if (isTestModeActive()) {
+          var simulated = handleTestApiRequest(path, init);
+          if (simulated) {
+            return simulated;
+          }
+        }
         await syncAuthSession({ silent: true }).catch(function () {});
         const options = init || {};
         const headers = Object.assign(
@@ -8672,8 +9299,10 @@
         window.location.assign(startUrl);
       }
 
-      function activateTestUserLogin() {
-        var controller = ensureTestModeController();
+      function activateTestUserLogin(options) {
+        options = options || {};
+        var profile = options.profile === 'manager' ? 'manager' : 'member';
+        var controller = ensureTestModeController({ profile: profile });
         if (!controller || !controller.data) {
           notify('テストユーザーを初期化できませんでした。', false);
           return;
@@ -8681,7 +9310,7 @@
         controller.active = true;
         TEST_MODE_STATE = controller;
         window.__SHIFT_FLOW_TEST_MODE__ = controller;
-        setAuthToken('TEST');
+        setAuthToken(profile === 'manager' ? 'TEST-MANAGER' : 'TEST');
         clearAuthPendingFlag();
         var session = {
           authenticated: true,
@@ -8697,7 +9326,10 @@
         hideAuthOverlay();
         setAppShellHidden(false);
         setBootstrapLoading(false);
-        notify('テストユーザーでログインしました。', true);
+        notify(
+          profile === 'manager' ? 'テストマネージャーでログインしました。' : 'テストユーザーでログインしました。',
+          true
+        );
         refreshDataAfterBootstrap();
       }
 
@@ -8745,7 +9377,11 @@
         });
         on('btn-auth-demo', 'click', function (event) {
           event.preventDefault();
-          activateTestUserLogin();
+          activateTestUserLogin({ profile: 'member' });
+        });
+        on('btn-auth-demo-manager', 'click', function (event) {
+          event.preventDefault();
+          activateTestUserLogin({ profile: 'manager' });
         });
       }
 
@@ -14103,6 +14739,12 @@
 
         function callOrgApi(route, args) {
           var payloadArgs = Array.isArray(args) ? args : typeof args === 'undefined' ? [] : [args];
+          var testState = getTestModeState();
+          if (testState && typeof testState.handleRoute === 'function') {
+            return Promise.resolve().then(function () {
+              return testState.handleRoute(route, payloadArgs);
+            });
+          }
           function viaFetch() {
             if (typeof fetch !== 'function') {
               return Promise.reject(new Error('fetch_unavailable'));
