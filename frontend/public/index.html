@@ -1165,6 +1165,211 @@
         align-items: center;
         justify-content: center;
       }
+      /* Home view */
+      .home-hero {
+        position: relative;
+        overflow: hidden;
+        margin: 4px 0 18px;
+        padding: 20px 20px 18px;
+        border-radius: 22px;
+        background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.16), transparent 45%),
+          linear-gradient(120deg, rgba(81, 124, 178, 0.96), rgba(53, 86, 127, 0.92));
+        color: #f8fbff;
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        isolation: isolate;
+      }
+      :root[data-theme='dark'] .home-hero {
+        background: radial-gradient(circle at 22% 16%, rgba(255, 255, 255, 0.08), transparent 42%),
+          linear-gradient(130deg, rgba(75, 118, 195, 0.85), rgba(10, 18, 40, 0.9));
+        border-color: rgba(157, 182, 255, 0.25);
+        box-shadow: 0 28px 64px rgba(3, 9, 24, 0.6);
+      }
+      .home-hero::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 78% 10%, rgba(255, 255, 255, 0.18), transparent 42%);
+        opacity: 0.8;
+        z-index: -1;
+      }
+      .home-hero__grid {
+        display: grid;
+        gap: 16px;
+      }
+      @media (min-width: 992px) {
+        .home-hero__grid {
+          grid-template-columns: 1.2fr 1fr;
+          align-items: center;
+        }
+      }
+      .home-hero__intro {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .home-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        color: #f8fbff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        width: fit-content;
+      }
+      .home-hero__badge .material-icons-outlined {
+        font-size: 18px;
+      }
+      .home-hero__title {
+        margin: 0;
+        font-size: clamp(1.5rem, 2.2vw, 1.9rem);
+        line-height: 1.4;
+        font-weight: 800;
+      }
+      .home-hero__lead {
+        margin: 0;
+        opacity: 0.9;
+      }
+      .home-hero__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .pill-soft {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: inherit;
+        font-weight: 600;
+      }
+      .pill-soft .material-icons-outlined {
+        font-size: 18px;
+      }
+      .home-hero__timestamp {
+        font-size: 0.9rem;
+        opacity: 0.86;
+      }
+      .home-hero__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 4px;
+      }
+      .home-hero__action {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        background: rgba(255, 255, 255, 0.12);
+        color: #f8fbff;
+        font-weight: 700;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+      }
+      .home-hero__action .material-icons-outlined,
+      .home-hero__action .material-icons {
+        font-size: 20px;
+      }
+      .home-hero__action--primary {
+        background: #f8fbff;
+        color: #1c2c4a;
+        border-color: #f8fbff;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
+      }
+      .home-hero__action:hover,
+      .home-hero__action:focus-visible {
+        text-decoration: none;
+        filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.2));
+        outline: none;
+      }
+      .home-hero__stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .home-stat-card {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: #f8fbff;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
+      }
+      :root[data-theme='dark'] .home-stat-card {
+        background: rgba(7, 16, 36, 0.45);
+        border-color: rgba(157, 182, 255, 0.32);
+      }
+      .home-stat-card__label {
+        margin: 0 0 4px;
+        font-size: 0.95rem;
+        opacity: 0.88;
+      }
+      .home-stat-card__value {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        font-size: 1.6rem;
+        font-weight: 800;
+      }
+      .home-stat-card__value small {
+        font-size: 0.9rem;
+        opacity: 0.82;
+      }
+      .home-stat-card__hint {
+        margin: 4px 0 0;
+        font-size: 0.85rem;
+        opacity: 0.8;
+      }
+      .home-panel-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      @media (min-width: 992px) {
+        .home-panel-grid {
+          grid-template-columns: 1.15fr 1fr;
+        }
+      }
+      .home-panel {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 18px;
+        box-shadow: var(--card-shadow);
+        padding: 16px;
+      }
+      .home-panel__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      .link-soft {
+        color: var(--primary);
+        font-weight: 700;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .link-soft .material-icons-outlined {
+        font-size: 18px;
+      }
+      .link-soft:hover,
+      .link-soft:focus-visible {
+        color: var(--primary-700);
+        text-decoration: underline;
+      }
 
       /* Task / Message */
       .card.app-card.task-card {
@@ -3615,29 +3820,106 @@
         <div class="views-track" id="viewsTrack">
           <!-- ----- Home view panel ----- -->
           <section class="view-panel fade-container show" id="view-home">
-            <div class="d-flex justify-content-between align-items-center mt-0">
-              <div class="section-head">
-                <span class="section-head-icon material-icons-outlined" aria-hidden="true"
-                  >calendar_month</span
-                >
-                <h3 class="m-0">直近のタスク</h3>
+            <section class="home-hero" aria-label="ホームのハイライト">
+              <div class="home-hero__grid">
+                <div class="home-hero__intro">
+                  <span class="home-hero__badge">
+                    <span class="material-icons-outlined" aria-hidden="true">auto_awesome</span>
+                    ブラウザUIを最適化
+                  </span>
+                  <h2 class="home-hero__title">
+                    <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
+                  </h2>
+                  <p class="home-hero__lead">
+                    ブラウザ版のダッシュボードを整理し、タスクとメッセージの状況をひと目で把握できるようにしました。
+                  </p>
+                  <div class="home-hero__meta">
+                    <span class="pill-soft">
+                      <span class="material-icons-outlined" aria-hidden="true">workspace_premium</span>
+                      デスクトップに最適化
+                    </span>
+                    <span class="pill-soft">
+                      <span class="material-icons-outlined" aria-hidden="true">offline_bolt</span>
+                      即時同期
+                    </span>
+                    <span class="home-hero__timestamp" id="home-last-updated">更新: —</span>
+                  </div>
+                  <div class="home-hero__actions">
+                    <button class="home-hero__action home-hero__action--primary" type="button" data-view="tasks">
+                      <span class="material-icons" aria-hidden="true">checklist</span>
+                      タスクを開く
+                    </button>
+                    <button class="home-hero__action" type="button" id="home-quick-new-task">
+                      <span class="material-icons-outlined" aria-hidden="true">add_task</span>
+                      新規タスク
+                    </button>
+                    <button class="home-hero__action" type="button" id="home-quick-new-msg">
+                      <span class="material-icons-outlined" aria-hidden="true">mail</span>
+                      新規メッセージ
+                    </button>
+                  </div>
+                </div>
+                <div class="home-hero__stats" aria-live="polite">
+                  <div class="home-stat-card">
+                    <p class="home-stat-card__label">今日のタスク</p>
+                    <div class="home-stat-card__value">
+                      <span id="home-stat-today">0</span><small>件</small>
+                    </div>
+                    <p class="home-stat-card__hint">直近のカードがここに並びます</p>
+                  </div>
+                  <div class="home-stat-card">
+                    <p class="home-stat-card__label">未読</p>
+                    <div class="home-stat-card__value">
+                      <span id="home-stat-unread">0</span><small>件</small>
+                    </div>
+                    <p class="home-stat-card__hint">未読メッセージの合計</p>
+                  </div>
+                  <div class="home-stat-card">
+                    <p class="home-stat-card__label">期限超過リスク</p>
+                    <div class="home-stat-card__value">
+                      <span id="home-stat-overdue">0</span><small>件</small>
+                    </div>
+                    <p class="home-stat-card__hint">今日時点での見逃せない件数</p>
+                  </div>
+                </div>
               </div>
-              <a href="#" class="link-soft" data-view="tasks">タスク一覧</a>
-            </div>
-            <!-- Mount point for the "today's tasks" card list -->
-            <div id="home-today-tasks" class="mt-2"></div>
+            </section>
 
-            <div class="d-flex justify-content-between align-items-center mt-3">
-              <div class="section-head">
-                <span class="section-head-icon material-icons-outlined" aria-hidden="true"
-                  >mark_email_unread</span
-                >
-                <h3 class="m-0">新着メッセージ</h3>
-              </div>
-              <a href="#" class="link-soft" data-view="messages">メッセージ一覧</a>
+            <div class="home-panel-grid">
+              <article class="home-panel">
+                <div class="home-panel__head">
+                  <div class="section-head">
+                    <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                      >calendar_month</span
+                    >
+                    <h3 class="m-0">直近のタスク</h3>
+                  </div>
+                  <a href="#" class="link-soft" data-view="tasks">
+                    <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                    タスク一覧
+                  </a>
+                </div>
+                <!-- Mount point for the "today's tasks" card list -->
+                <div id="home-today-tasks" class="mt-2"></div>
+              </article>
+
+              <article class="home-panel">
+                <div class="home-panel__head">
+                  <div class="section-head">
+                    <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                      >mark_email_unread</span
+                    >
+                    <h3 class="m-0">新着メッセージ</h3>
+                  </div>
+                  <a href="#" class="link-soft" data-view="messages">
+                    <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                    メッセージ一覧
+                  </a>
+                </div>
+                <!-- Mount point for unread message cards -->
+                <div id="home-unread" class="mt-2"></div>
+              </article>
             </div>
-            <!-- Mount point for unread message cards -->
-            <div id="home-unread" class="mt-2"></div>
           </section>
 
           <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
@@ -9364,7 +9646,28 @@
           TASK_STATE.my.rows.length
             ? TASK_STATE.my.rows
             : tasks;
-        updateTaskOverdueBadge(sourceRows);
+        var overdueCount = updateTaskOverdueBadge(sourceRows);
+        var statPairs = [
+          ['home-stat-overdue', overdueCount],
+          ['home-stat-today', tasks.length],
+          ['home-stat-unread', unread.length],
+        ];
+        statPairs.forEach(function (pair) {
+          var el = byId(pair[0]);
+          if (el) {
+            el.textContent = pair[1];
+          }
+        });
+        var ts = byId('home-last-updated');
+        if (ts) {
+          var now = new Date();
+          ts.textContent =
+            '更新: ' +
+            now.toLocaleTimeString('ja-JP', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+        }
       }
 
       function collectActiveTaskRows() {
@@ -9423,6 +9726,7 @@
           el.textContent = count;
           el.classList.toggle('d-none', count === 0);
         });
+        return count;
       }
 
       function loadHomeFromCache() {
@@ -13871,6 +14175,11 @@
           on('btn-open-new-msg', 'click', openNewMessageModal);
         }
 
+        function attachHomeHeroActions() {
+          on('home-quick-new-task', 'click', openNewTaskModal);
+          on('home-quick-new-msg', 'click', openNewMessageModal);
+        }
+
         function activateAdminSection(section) {
           if (!IS_MANAGER) {
             notify('管理者メニューへアクセスする権限がありません。', false);
@@ -13930,6 +14239,7 @@
         function init() {
           attachViewLinks();
           attachFabHandlers();
+          attachHomeHeroActions();
           attachAdminMenuHandler();
           attachUserMenuHandlers();
         }
