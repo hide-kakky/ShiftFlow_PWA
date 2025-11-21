@@ -7218,7 +7218,12 @@ export async function onRequest(context) {
   flags.d1Write = true;
   flags.d1Primary = true;
   config.flags = flags;
-  const route = params.route ? String(params.route) : '';
+  const routeParam = params ? params.route : '';
+  const route = Array.isArray(routeParam)
+    ? routeParam.join('/')
+    : routeParam
+    ? String(routeParam)
+    : '';
   const requestId = createRequestId();
   const originHeader = request.headers.get('Origin') || '';
   const allowedOrigin = pickAllowedOrigin(config.allowedOrigins, originHeader);
