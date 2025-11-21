@@ -180,11 +180,11 @@
         --primary-700: #35567f;
         --surface: #f2f4f9;
         --card: #ffffff;
-        --card-border: #e8edf5;
-        --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        --card-border: #dfe6f2;
+        --card-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
         --text-900: #0f172a;
         --text-700: #1e293b;
-        --muted: #64748b;
+        --muted: #475569;
         --on-primary: #ffffff;
         --warn: #f5a524;
         --fab: #e85d6a;
@@ -254,13 +254,13 @@
         color-scheme: dark;
         --primary: #4b67b3;
         --primary-700: #394f8f;
-        --surface: #081326;
-        --card: #111d36;
-        --card-border: rgba(90, 122, 196, 0.32);
-        --card-shadow: 0 28px 46px rgba(5, 12, 28, 0.68);
-        --text-900: #e6edff;
-        --text-700: #c6d4ff;
-        --muted: #8fa2cf;
+        --surface: #0b1224;
+        --card: #0f1a32;
+        --card-border: rgba(122, 162, 255, 0.25);
+        --card-shadow: 0 24px 48px rgba(5, 12, 28, 0.6);
+        --text-900: #f2f6ff;
+        --text-700: #d5deff;
+        --muted: #cdd8ff;
         --on-primary: #f6f8ff;
         --warn: #f5a524;
         --fab: #f16fa2;
@@ -1158,22 +1158,22 @@
       .card.app-card {
         position: relative;
         border-radius: 20px;
-        border: 1px solid rgba(81, 124, 178, 0.18);
+        border: 1px solid rgba(81, 124, 178, 0.22);
         background: linear-gradient(
             135deg,
             rgba(81, 124, 178, 0.12) 0%,
             rgba(81, 124, 178, 0.02) 80%
           ),
           var(--card);
-        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
+        box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
         transition: transform var(--fade) ease, box-shadow var(--fade) ease,
           border-color var(--fade) ease;
       }
       :root[data-theme='dark'] .card.app-card {
-        border-color: rgba(90, 122, 196, 0.46);
-        background: linear-gradient(135deg, rgba(75, 118, 195, 0.22) 0%, rgba(17, 29, 54, 0.92) 68%),
+        border-color: rgba(122, 162, 255, 0.42);
+        background: linear-gradient(135deg, rgba(90, 130, 210, 0.18) 0%, rgba(17, 29, 54, 0.92) 68%),
           var(--card);
-        box-shadow: 0 20px 48px rgba(4, 10, 26, 0.68);
+        box-shadow: 0 22px 52px rgba(4, 10, 26, 0.7);
       }
       .card.app-card:hover,
       .card.app-card:focus-within {
@@ -1241,18 +1241,17 @@
         margin: 4px 0 18px;
         padding: 20px 20px 18px;
         border-radius: 22px;
-        background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.16), transparent 45%),
-          linear-gradient(120deg, rgba(81, 124, 178, 0.96), rgba(53, 86, 127, 0.92));
+        background: linear-gradient(135deg, rgba(81, 124, 178, 0.94), rgba(53, 86, 127, 0.88));
         color: #f8fbff;
-        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.24);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 30px 54px rgba(15, 23, 42, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         isolation: isolate;
       }
       :root[data-theme='dark'] .home-hero {
         background: radial-gradient(circle at 22% 16%, rgba(255, 255, 255, 0.08), transparent 42%),
-          linear-gradient(130deg, rgba(75, 118, 195, 0.85), rgba(10, 18, 40, 0.9));
-        border-color: rgba(157, 182, 255, 0.25);
-        box-shadow: 0 28px 64px rgba(3, 9, 24, 0.6);
+          linear-gradient(130deg, rgba(75, 118, 195, 0.8), rgba(10, 18, 40, 0.88));
+        border-color: rgba(157, 182, 255, 0.32);
+        box-shadow: 0 32px 68px rgba(3, 9, 24, 0.65);
       }
       .home-hero::after {
         content: '';
@@ -1277,54 +1276,16 @@
         flex-direction: column;
         gap: 10px;
       }
-      .home-hero__badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 12px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.16);
-        color: #f8fbff;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        width: fit-content;
-      }
-      .home-hero__badge .material-icons-outlined {
-        font-size: 18px;
-      }
       .home-hero__title {
         margin: 0;
-        font-size: clamp(1.5rem, 2.2vw, 1.9rem);
-        line-height: 1.4;
+        font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+        line-height: 1.3;
         font-weight: 800;
       }
       .home-hero__lead {
         margin: 0;
-        opacity: 0.9;
-      }
-      .home-hero__meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-      }
-      .pill-soft {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
-        color: inherit;
-        font-weight: 600;
-      }
-      .pill-soft .material-icons-outlined {
-        font-size: 18px;
-      }
-      .home-hero__timestamp {
-        font-size: 0.9rem;
-        opacity: 0.86;
+        opacity: 0.96;
+        font-size: 1rem;
       }
       .home-hero__actions {
         display: flex;
@@ -1342,7 +1303,7 @@
         background: rgba(255, 255, 255, 0.12);
         color: #f8fbff;
         font-weight: 700;
-        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
       }
       .home-hero__action .material-icons-outlined,
       .home-hero__action .material-icons {
@@ -1367,15 +1328,15 @@
       }
       .home-stat-card {
         background: rgba(255, 255, 255, 0.14);
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.22);
         border-radius: 14px;
         padding: 12px 14px;
         color: #f8fbff;
-        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
       }
       :root[data-theme='dark'] .home-stat-card {
         background: rgba(7, 16, 36, 0.45);
-        border-color: rgba(157, 182, 255, 0.32);
+        border-color: rgba(157, 182, 255, 0.4);
       }
       .home-stat-card__label {
         margin: 0 0 4px;
@@ -1412,8 +1373,14 @@
         background: var(--card);
         border: 1px solid var(--card-border);
         border-radius: 18px;
-        box-shadow: var(--card-shadow);
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
         padding: 16px;
+      }
+      .home-panel .text-muted,
+      .home-panel .form-text,
+      .home-panel small {
+        color: var(--text-700) !important;
+        opacity: 0.9;
       }
       .home-panel__head {
         display: flex;
@@ -1444,11 +1411,11 @@
       .card.app-card.task-card {
         border-left: 4px solid rgba(81, 124, 178, 0.4);
         background: var(--card);
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
       }
       :root[data-theme='dark'] .card.app-card.task-card {
         border-left-color: rgba(102, 135, 214, 0.6);
-        box-shadow: 0 12px 32px rgba(3, 9, 24, 0.54);
+        box-shadow: 0 16px 34px rgba(3, 9, 24, 0.58);
       }
       .card.app-card.task-card .app-card-body {
         align-items: center;
@@ -1472,6 +1439,14 @@
         background: linear-gradient(135deg, rgba(92, 118, 255, 0.32) 0%, rgba(14, 22, 40, 0.92) 76%),
           var(--card);
         box-shadow: 0 30px 60px rgba(3, 7, 18, 0.78);
+      }
+      .task-card .card-body,
+      .msg-card .card-body {
+        color: var(--text-900);
+      }
+      :root[data-theme='dark'] .task-card .card-body,
+      :root[data-theme='dark'] .msg-card .card-body {
+        color: var(--text-700);
       }
       .card.app-card.task-card.task-card-attention::after {
         content: '';
@@ -2758,6 +2733,11 @@
         flex: 0 0 100%;
         min-width: 0;
         padding: 20px 0 40px;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 16px;
+        box-shadow: var(--card-shadow);
+        margin-bottom: 14px;
       }
       .admin-panel.is-active .admin-panel-body {
         animation: fadeUp 0.35s ease;
@@ -2776,7 +2756,7 @@
         display: none;
       }
       .admin-panel-body {
-        padding: 0 4px;
+        padding: 10px 12px 6px;
       }
       .admin-card-grid {
         display: grid;
@@ -2788,7 +2768,7 @@
         border-radius: 18px;
         padding: 18px;
         background: var(--card);
-        box-shadow: var(--card-shadow);
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
         min-height: 120px;
         display: flex;
         flex-direction: column;
@@ -3916,27 +3896,12 @@
             <section class="home-hero" aria-label="ホームのハイライト">
               <div class="home-hero__grid">
                 <div class="home-hero__intro">
-                  <span class="home-hero__badge">
-                    <span class="material-icons-outlined" aria-hidden="true">auto_awesome</span>
-                    ブラウザUIを最適化
-                  </span>
                   <h2 class="home-hero__title">
                     <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
                   </h2>
                   <p class="home-hero__lead">
-                    ブラウザ版のダッシュボードを整理し、タスクとメッセージの状況をひと目で把握できるようにしました。
+                    いま必要な情報だけに絞りました。タスクとメッセージの最新状況を確認しましょう。
                   </p>
-                  <div class="home-hero__meta">
-                    <span class="pill-soft">
-                      <span class="material-icons-outlined" aria-hidden="true">workspace_premium</span>
-                      デスクトップに最適化
-                    </span>
-                    <span class="pill-soft">
-                      <span class="material-icons-outlined" aria-hidden="true">offline_bolt</span>
-                      即時同期
-                    </span>
-                    <span class="home-hero__timestamp" id="home-last-updated">更新: —</span>
-                  </div>
                   <div class="home-hero__actions">
                     <button class="home-hero__action home-hero__action--primary" type="button" data-view="tasks">
                       <span class="material-icons" aria-hidden="true">checklist</span>
