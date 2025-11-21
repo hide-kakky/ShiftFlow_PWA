@@ -887,6 +887,11 @@
       body.admin-view-active nav.footer-nav:not(.admin-footer-nav) {
         display: none !important;
       }
+      @media (min-width: 992px) {
+        .admin-footer-nav {
+          display: none !important;
+        }
+      }
       @keyframes navFloat {
         0% {
           transform: translateY(-3px);
@@ -1977,9 +1982,6 @@
         }
       }
       body.admin-view-active .fab {
-        display: none !important;
-      }
-      body.admin-view-active nav.topbar {
         display: none !important;
       }
 
@@ -3269,6 +3271,10 @@
       }
       .admin-bottom-meta {
         margin-top: 20px;
+      }
+      .admin-shell .container-xl {
+        max-width: 1760px;
+        width: 100%;
       }
 
       .modal-content {
