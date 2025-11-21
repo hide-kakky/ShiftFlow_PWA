@@ -2,11 +2,10 @@ self.importScripts('/app-config.js');
 const swConfig = self.SHIFT_FLOW_CONFIG || {};
 
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
-const APP_VERSION = '1.0.23';
+const APP_VERSION = '1.0.24';
 
 const CACHE_PREFIX = swConfig.CACHE_PREFIX || 'shiftflow-';
-const APP_SHELL_CACHE =
-  swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
+const APP_SHELL_CACHE = swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
 const API_CACHE = swConfig.API_CACHE_KEY || `${CACHE_PREFIX}api-v1`;
 const APP_SHELL = Array.isArray(swConfig.APP_SHELL_PATHS)
   ? swConfig.APP_SHELL_PATHS
@@ -38,8 +37,7 @@ self.addEventListener('activate', (event) => {
       await Promise.all(
         keys
           .filter(
-            (key) =>
-              key.startsWith(CACHE_PREFIX) && key !== APP_SHELL_CACHE && key !== API_CACHE
+            (key) => key.startsWith(CACHE_PREFIX) && key !== APP_SHELL_CACHE && key !== API_CACHE
           )
           .map((key) => caches.delete(key))
       );
@@ -149,7 +147,11 @@ async function staleWhileRevalidateApi(event) {
 }
 
 function isCacheableResponse(response) {
-  return response && response.status === 200 && (response.type === 'basic' || response.type === 'default');
+  return (
+    response &&
+    response.status === 200 &&
+    (response.type === 'basic' || response.type === 'default')
+  );
 }
 
 function shouldHandleAsApi(pathname) {
