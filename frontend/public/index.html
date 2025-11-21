@@ -1520,8 +1520,7 @@
       .card.app-card.msg-card {
         border-left: 6px solid rgba(81, 124, 178, 0.45);
         background: linear-gradient(135deg, rgba(122, 157, 231, 0.18), rgba(81, 124, 178, 0.06) 72%),
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 255, 0.94)),
-          var(--card);
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 255, 0.94)), var(--card);
         box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
       }
       .card.app-card.msg-card.msg-card--pinned {
@@ -1532,8 +1531,7 @@
       :root[data-theme='dark'] .card.app-card.msg-card {
         border-left-color: rgba(153, 187, 255, 0.7);
         background: linear-gradient(135deg, rgba(122, 157, 231, 0.34), rgba(68, 103, 177, 0.2) 72%),
-          linear-gradient(180deg, rgba(24, 38, 78, 0.92), rgba(17, 29, 54, 0.88)),
-          var(--card);
+          linear-gradient(180deg, rgba(24, 38, 78, 0.92), rgba(17, 29, 54, 0.88)), var(--card);
         box-shadow: 0 20px 46px rgba(4, 10, 26, 0.6);
       }
       :root[data-theme='dark'] .card.app-card.msg-card.msg-card--pinned {
@@ -1542,16 +1540,18 @@
       }
       .card.app-card.msg-card.unread {
         border-left-color: rgba(255, 111, 97, 0.85);
-        background: linear-gradient(135deg, rgba(255, 139, 120, 0.28), rgba(255, 188, 141, 0.14) 70%),
-          linear-gradient(180deg, rgba(255, 247, 241, 0.78), rgba(255, 252, 246, 0.72)),
-          var(--card);
+        background: linear-gradient(
+            135deg,
+            rgba(255, 139, 120, 0.28),
+            rgba(255, 188, 141, 0.14) 70%
+          ),
+          linear-gradient(180deg, rgba(255, 247, 241, 0.78), rgba(255, 252, 246, 0.72)), var(--card);
         box-shadow: 0 26px 58px rgba(255, 139, 120, 0.26);
         position: relative;
       }
       :root[data-theme='dark'] .card.app-card.msg-card.unread {
         background: linear-gradient(135deg, rgba(255, 149, 128, 0.52), rgba(114, 156, 233, 0.2) 70%),
-          linear-gradient(180deg, rgba(26, 42, 82, 0.94), rgba(17, 29, 54, 0.9)),
-          var(--card);
+          linear-gradient(180deg, rgba(26, 42, 82, 0.94), rgba(17, 29, 54, 0.9)), var(--card);
         box-shadow: 0 28px 62px rgba(255, 149, 128, 0.32);
       }
       .card.app-card.msg-card.unread::after {
@@ -3660,7 +3660,9 @@
           <div class="auth-request-id" id="auth-request-id" hidden>
             <span class="auth-request-id__label">エラー ID:</span>
             <code id="auth-request-id-value">—</code>
-            <span class="auth-request-id__hint">問題が続く場合は管理者にこの ID を共有してください。</span>
+            <span class="auth-request-id__hint"
+              >問題が続く場合は管理者にこの ID を共有してください。</span
+            >
           </div>
           <div class="auth-card__actions">
             <button id="btn-auth-google" class="auth-button auth-button--primary" type="button">
@@ -3677,7 +3679,7 @@
             </button>
             <button id="btn-auth-demo" class="auth-button auth-button--ghost" type="button">
               <span class="material-icons-outlined">play_circle</span>
-              <span>テストユーザーでログイン</span>
+              <span>テストログイン</span>
             </button>
           </div>
         </section>
@@ -3685,11 +3687,7 @@
     </div>
 
     <!-- COMPONENT: 通知エリア（トースト表示） -->
-    <div
-      id="notification-area"
-      data-app-shell
-      hidden
-    ></div>
+    <div id="notification-area" data-app-shell hidden></div>
     <!-- /COMPONENT: 通知エリア -->
 
     <!-- ===== Pull-to-refresh indicator ===== -->
@@ -3831,7 +3829,10 @@
               </span>
               <span class="material-icons-outlined">expand_more</span>
             </button>
-            <div class="dropdown-menu dropdown-menu-end user-menu shadow" aria-labelledby="btn-user-menu">
+            <div
+              class="dropdown-menu dropdown-menu-end user-menu shadow"
+              aria-labelledby="btn-user-menu"
+            >
               <div class="user-menu-meta">
                 <strong data-bind-user-name>ゲストユーザー</strong>
                 <small class="d-block text-muted" data-bind-user-email>guest@example.com</small>
@@ -3896,7 +3897,10 @@
               <a class="nav-link nav-icon" href="#" data-view="messages" title="Messages">
                 <span class="material-icons-outlined" aria-hidden="true">mail</span>
                 <span class="nav-label">メッセージ</span>
-                <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-top" aria-label="未読件数"
+                <span
+                  class="badge badge-unread nav-icon-badge d-none"
+                  id="badge-unread-top"
+                  aria-label="未読件数"
                   >0</span
                 >
               </a>
@@ -3922,920 +3926,1066 @@
 
       <!-- ===== Main application view panels ===== -->
       <main class="page-body" data-app-shell hidden>
-      <div class="views-wrapper container-xl" id="viewsWrapper">
-        <div class="views-track" id="viewsTrack">
-          <!-- ----- Home view panel ----- -->
-          <section class="view-panel fade-container show" id="view-home">
-            <section class="home-hero" aria-label="ホームのハイライト">
-              <div class="home-hero__grid">
-                <div class="home-hero__intro">
-                  <h2 class="home-hero__title">
-                    <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
-                  </h2>
-                  <div class="home-hero__actions">
-                    <button class="home-hero__action home-hero__action--primary" type="button" data-view="tasks">
-                      <span class="material-icons" aria-hidden="true">checklist</span>
-                      タスクを開く
-                    </button>
-                    <button class="home-hero__action" type="button" id="home-quick-new-task">
-                      <span class="material-icons-outlined" aria-hidden="true">add_task</span>
-                      新規タスク
-                    </button>
-                    <button class="home-hero__action" type="button" id="home-quick-new-msg">
-                      <span class="material-icons-outlined" aria-hidden="true">mail</span>
-                      新規メッセージ
-                    </button>
+        <div class="views-wrapper container-xl" id="viewsWrapper">
+          <div class="views-track" id="viewsTrack">
+            <!-- ----- Home view panel ----- -->
+            <section class="view-panel fade-container show" id="view-home">
+              <section class="home-hero" aria-label="ホームのハイライト">
+                <div class="home-hero__grid">
+                  <div class="home-hero__intro">
+                    <h2 class="home-hero__title">
+                      <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
+                    </h2>
+                    <div class="home-hero__actions">
+                      <button
+                        class="home-hero__action home-hero__action--primary"
+                        type="button"
+                        data-view="tasks"
+                      >
+                        <span class="material-icons" aria-hidden="true">checklist</span>
+                        タスクを開く
+                      </button>
+                      <button class="home-hero__action" type="button" id="home-quick-new-task">
+                        <span class="material-icons-outlined" aria-hidden="true">add_task</span>
+                        新規タスク
+                      </button>
+                      <button class="home-hero__action" type="button" id="home-quick-new-msg">
+                        <span class="material-icons-outlined" aria-hidden="true">mail</span>
+                        新規メッセージ
+                      </button>
+                    </div>
+                  </div>
+                  <div class="home-hero__stats" aria-live="polite">
+                    <div class="home-stat-card">
+                      <p class="home-stat-card__label">今日のタスク</p>
+                      <div class="home-stat-card__value">
+                        <span id="home-stat-today">0</span><small>件</small>
+                      </div>
+                      <p class="home-stat-card__hint">直近のカードがここに並びます</p>
+                    </div>
+                    <div class="home-stat-card">
+                      <p class="home-stat-card__label">未読</p>
+                      <div class="home-stat-card__value">
+                        <span id="home-stat-unread">0</span><small>件</small>
+                      </div>
+                      <p class="home-stat-card__hint">未読メッセージの合計</p>
+                    </div>
+                    <div class="home-stat-card">
+                      <p class="home-stat-card__label">期限超過リスク</p>
+                      <div class="home-stat-card__value">
+                        <span id="home-stat-overdue">0</span><small>件</small>
+                      </div>
+                      <p class="home-stat-card__hint">今日時点での見逃せない件数</p>
+                    </div>
                   </div>
                 </div>
-                <div class="home-hero__stats" aria-live="polite">
-                  <div class="home-stat-card">
-                    <p class="home-stat-card__label">今日のタスク</p>
-                    <div class="home-stat-card__value">
-                      <span id="home-stat-today">0</span><small>件</small>
+              </section>
+
+              <div class="home-panel-grid">
+                <article class="home-panel">
+                  <div class="home-panel__head">
+                    <div class="section-head">
+                      <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                        >calendar_month</span
+                      >
+                      <h3 class="m-0">直近のタスク</h3>
                     </div>
-                    <p class="home-stat-card__hint">直近のカードがここに並びます</p>
+                    <a href="#" class="link-soft" data-view="tasks">
+                      <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                      タスク一覧
+                    </a>
                   </div>
-                  <div class="home-stat-card">
-                    <p class="home-stat-card__label">未読</p>
-                    <div class="home-stat-card__value">
-                      <span id="home-stat-unread">0</span><small>件</small>
+                  <!-- Mount point for the "today's tasks" card list -->
+                  <div id="home-today-tasks" class="mt-2"></div>
+                </article>
+
+                <article class="home-panel">
+                  <div class="home-panel__head">
+                    <div class="section-head">
+                      <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                        >mark_email_unread</span
+                      >
+                      <h3 class="m-0">新着メッセージ</h3>
                     </div>
-                    <p class="home-stat-card__hint">未読メッセージの合計</p>
+                    <a href="#" class="link-soft" data-view="messages">
+                      <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                      メッセージ一覧
+                    </a>
                   </div>
-                  <div class="home-stat-card">
-                    <p class="home-stat-card__label">期限超過リスク</p>
-                    <div class="home-stat-card__value">
-                      <span id="home-stat-overdue">0</span><small>件</small>
-                    </div>
-                    <p class="home-stat-card__hint">今日時点での見逃せない件数</p>
-                  </div>
-                </div>
+                  <!-- Mount point for unread message cards -->
+                  <div id="home-unread" class="mt-2"></div>
+                </article>
               </div>
             </section>
 
-            <div class="home-panel-grid">
-              <article class="home-panel">
-                <div class="home-panel__head">
-                  <div class="section-head">
-                    <span class="section-head-icon material-icons-outlined" aria-hidden="true"
-                      >calendar_month</span
-                    >
-                    <h3 class="m-0">直近のタスク</h3>
-                  </div>
-                  <a href="#" class="link-soft" data-view="tasks">
-                    <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                    タスク一覧
-                  </a>
+            <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
+            <section class="view-panel fade-container is-hidden" id="view-tasks">
+              <div class="task-header mt-0">
+                <div class="task-title-wrap">
+                  <span class="material-icons-outlined task-title-icon">send</span>
+                  <h3 class="view-title">タスク</h3>
                 </div>
-                <!-- Mount point for the "today's tasks" card list -->
-                <div id="home-today-tasks" class="mt-2"></div>
-              </article>
-
-              <article class="home-panel">
-                <div class="home-panel__head">
-                  <div class="section-head">
-                    <span class="section-head-icon material-icons-outlined" aria-hidden="true"
-                      >mark_email_unread</span
-                    >
-                    <h3 class="m-0">新着メッセージ</h3>
-                  </div>
-                  <a href="#" class="link-soft" data-view="messages">
-                    <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                    メッセージ一覧
-                  </a>
-                </div>
-                <!-- Mount point for unread message cards -->
-                <div id="home-unread" class="mt-2"></div>
-              </article>
-            </div>
-          </section>
-
-          <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
-          <section class="view-panel fade-container is-hidden" id="view-tasks">
-            <div class="task-header mt-0">
-              <div class="task-title-wrap">
-                <span class="material-icons-outlined task-title-icon">send</span>
-                <h3 class="view-title">タスク</h3>
-              </div>
-              <button
-                class="btn btn-outline-primary d-flex align-items-center gap-1"
-                id="task-reload"
-                type="button"
-              >
-                <span class="material-icons align-middle">refresh</span>再読込
-              </button>
-            </div>
-
-            <div class="task-tabs" id="taskTabs">
-              <button class="task-tab-btn active" data-task-tab="my" type="button">あなたのタスク</button>
-              <button class="task-tab-btn" data-task-tab="from" type="button">依頼したタスク</button>
-              <button
-                class="task-tab-btn d-none"
-                data-task-tab="all"
-                data-manager-only="true"
-                type="button"
-              >
-                <span class="material-icons-outlined">admin_panel_settings</span>全タスク
-              </button>
-            </div>
-
-            <div class="task-panels">
-              <div class="task-panel active" data-task-panel="my">
-                <div class="task-controls">
-                  <div class="task-search">
-                    <span class="material-icons-outlined">search</span>
-                    <input
-                      type="search"
-                      id="task-search-my"
-                      placeholder="キーワード検索"
-                      aria-label="自分のタスクを検索"
-                    />
-                  </div>
-                </div>
-                <!-- Results container for "My Tasks" -->
-                <div class="task-list mt-3" id="task-list-my"></div>
-              </div>
-
-              <div class="task-panel" data-task-panel="from">
-                <div class="task-controls">
-                  <div class="task-search">
-                    <span class="material-icons-outlined">search</span>
-                    <input
-                      type="search"
-                      id="task-search-from"
-                      placeholder="キーワード検索"
-                      aria-label="自分が依頼したタスクを検索"
-                    />
-                  </div>
-                  <div class="task-filter-row">
-                    <select class="task-filter-select" id="task-filter-from-assignee">
-                      <option value="">担当者で絞り込み</option>
-                    </select>
-                  </div>
-                </div>
-                <!-- Results container for "From Me" tasks -->
-                <div class="task-list mt-3" id="task-list-from"></div>
-              </div>
-
-              <div class="task-panel d-none" data-task-panel="all" data-manager-only="true">
-                <div class="task-controls">
-                  <div class="task-search">
-                    <span class="material-icons-outlined">search</span>
-                    <input
-                      type="search"
-                      id="task-search-all"
-                      placeholder="キーワード検索"
-                      aria-label="すべてのタスクを検索"
-                    />
-                  </div>
-                  <div class="task-filter-row">
-                    <select class="task-filter-select" id="task-filter-all-assignee">
-                      <option value="">担当者で絞り込み</option>
-                    </select>
-                  </div>
-                </div>
-                <!-- Results container for "All Tasks" (manager only) -->
-                <div class="task-list mt-3" id="task-list-all"></div>
-              </div>
-            </div>
-          </section>
-          <!-- /COMPONENT: シフト一覧 -->
-
-          <!-- ----- Messages view panel ----- -->
-          <section class="view-panel fade-container is-hidden" id="view-messages">
-            <div class="task-header mt-0">
-              <div class="task-title-wrap">
-                <span class="material-icons-outlined task-title-icon">mail</span>
-                <h3 class="view-title">メッセージ</h3>
-              </div>
-            </div>
-            <div class="subhead-bar mt-2">
-              <div class="input-group">
-                <span class="input-group-text material-icons-outlined">search</span>
-                <input
-                  type="text"
-                  class="form-control"
-                  id="msg-search-box"
-                  placeholder="キーワード検索"
-                />
-              </div>
-            </div>
-            <div class="row g-2 align-items-end mt-2">
-              <div class="col-auto">
-                <label class="form-label">フォルダ</label>
-                <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
-                  <option value="">全て</option>
-                </select>
-              </div>
-              <div class="col-auto">
-                <label class="form-label d-block">&nbsp;</label>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                  <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
-                </div>
-              </div>
-              <div class="col-auto">
-                <label class="form-label d-block">&nbsp;</label>
                 <button
-                  class="btn btn-outline-success"
-                  id="btn-msg-markall"
+                  class="btn btn-outline-primary d-flex align-items-center gap-1"
+                  id="task-reload"
                   type="button"
-                  aria-label="未読をすべて既読にする"
                 >
-                  <span class="material-icons align-middle me-1">done_all</span>全て既読にする
+                  <span class="material-icons align-middle">refresh</span>再読込
                 </button>
               </div>
-            </div>
-            <!-- Message card list mount point -->
-            <div id="msg-list" class="mt-2"></div>
-          </section>
 
-          <!-- ----- Settings view panel ----- -->
-          <section class="view-panel fade-container is-hidden" id="view-settings">
-            <h3 class="mt-0"><span class="material-icons align-middle me-1">settings</span>設定</h3>
-            <!-- Settings form wrapper (profile, appearance, etc.) -->
-            <form class="settings-layout" id="form-settings">
-              <div class="form-section settings-block">
-                <div class="settings-block-header">
-                  <div class="settings-block-icon">
-                    <span class="material-icons-outlined">badge</span>
-                  </div>
-                  <div>
-                    <h5>プロフィール</h5>
-                    <p>メンバーに表示される名前とプロフィール画像を管理します。</p>
-                  </div>
-                </div>
-                <div class="settings-profile-body">
-                  <div class="settings-avatar-shell">
-                    <img
-                      class="settings-avatar js-user-avatar"
-                      id="setting-avatar-preview"
-                      src="/icons/icon-192.png"
-                      data-avatar-url="/icons/icon-192.png"
-                      data-placeholder="https://placehold.jp/150x150.png"
-                      data-bind-user-avatar
-                      alt="プロフィール画像のプレビュー"
-                    />
-                    <button
-                      class="btn btn-outline-secondary w-100"
-                      type="button"
-                      id="btn-setting-image"
-                    >
-                      <span class="material-icons-outlined align-middle me-1">image</span>画像を選択
-                    </button>
-                    <div class="settings-image-meta" id="setting-image-name">未設定</div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      class="d-none"
-                      id="setting-image-file"
-                      aria-label="プロフィール画像を選択"
-                    />
-                  </div>
-                  <div>
-                    <label class="form-label" for="setting-name">表示名</label>
-                    <input
-                      class="form-control"
-                      id="setting-name"
-                      placeholder="チームで表示される名前"
-                    />
-                    <div class="settings-upload-note">
-                      <span class="material-icons-outlined align-middle">info</span>
-                      <span
-                        >最大8MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span
-                      >
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-section settings-block">
-                <div class="settings-block-header">
-                  <div class="settings-block-icon">
-                    <span class="material-icons-outlined">dark_mode</span>
-                  </div>
-                  <div>
-                    <h5>外観設定</h5>
-                    <p>アプリの配色テーマを切り替えて見やすさを調整します。</p>
-                  </div>
-                </div>
-                <div class="settings-theme-grid">
-                  <div>
-                    <label class="form-label" for="setting-theme">テーマ</label>
-                    <select class="form-select" id="setting-theme">
-                      <option value="light">ライト</option>
-                      <option value="dark">ダーク</option>
-                      <option value="system">システムに合わせる</option>
-                    </select>
-                    <div class="theme-status" id="setting-theme-display">
-                      <span class="material-icons-outlined align-middle">light_mode</span
-                      >ライトテーマを適用中
-                    </div>
-                  </div>
-                  <div class="settings-theme-guide">
-                    <p class="mb-2">選択したテーマはすぐに反映されます。</p>
-                    <ul class="mb-0">
-                      <li><strong>ライト:</strong> 明るく爽やかなトーンで日中の作業に最適。</li>
-                      <li><strong>ダーク:</strong> 暗い環境や長時間の閲覧で目を保護。</li>
-                      <li><strong>システム:</strong> ご利用端末のテーマ設定に自動追従します。</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div class="settings-actions">
-                <button class="btn btn-primary" type="button" id="btn-settings-save">
-                  <span class="label">
-                    <span class="material-icons align-middle me-1">save</span>変更を保存
-                  </span>
-                  <span
-                    class="spinner-border spinner-border-sm d-none"
-                    role="status"
-                    aria-hidden="true"
-                  ></span>
+              <div class="task-tabs" id="taskTabs">
+                <button class="task-tab-btn active" data-task-tab="my" type="button">
+                  あなたのタスク
+                </button>
+                <button class="task-tab-btn" data-task-tab="from" type="button">
+                  依頼したタスク
+                </button>
+                <button
+                  class="task-tab-btn d-none"
+                  data-task-tab="all"
+                  data-manager-only="true"
+                  type="button"
+                >
+                  <span class="material-icons-outlined">admin_panel_settings</span>全タスク
                 </button>
               </div>
-            </form>
-          </section>
-        </div>
-      </div>
-      <section class="admin-shell" id="view-admin" hidden aria-labelledby="adminViewTitle">
-          <div class="container-xl">
-          <div class="admin-top-actions">
-            <button class="btn btn-outline-secondary btn-sm admin-exit-btn" type="button" id="btn-exit-admin">
-              <span class="material-icons-outlined align-middle me-1">arrow_back</span>一般画面へ戻る
-            </button>
-            <div class="dropdown admin-org-dropdown" id="adminOrgDropdown">
-              <button
-                class="btn btn-sm btn-outline-light admin-org-trigger"
-                type="button"
-                id="btn-admin-org"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <span class="material-icons-outlined align-middle me-1">apartment</span>
-                <span id="adminOrgLabel">現在の組織</span>
-                <span class="material-icons-outlined ms-1">expand_more</span>
-              </button>
-              <div class="dropdown-menu dropdown-menu-end admin-org-menu shadow" aria-labelledby="btn-admin-org">
-                <div class="admin-org-menu-header">
-                  <strong>管理対象の組織</strong>
-                </div>
-                <div class="admin-org-list" id="adminOrgList">
-                  <div class="px-3 py-2 text-muted small">読み込み中...</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="admin-view-title">
-            <div class="admin-view-title-icon" aria-hidden="true">
-              <span class="material-icons-outlined" id="adminSectionIcon">dashboard</span>
-            </div>
-            <div>
-              <h2 class="admin-view-heading" id="admin-section-label">管理トップ</h2>
-              <p class="admin-view-desc" id="admin-section-desc">現在の状況を一覧で把握し、アクションにつなげます。</p>
-            </div>
-          </div>
-          <div class="admin-panels-wrapper" id="adminPanelsWrapper">
-            <div class="admin-track" id="adminTrack">
-              <section class="admin-panel is-active" data-admin-panel="dashboard" aria-labelledby="adminDashboardTitle">
-                <div class="admin-panel-header">
-                  <h3 id="adminDashboardTitle">管理トップ</h3>
-                  <p>組織の承認状況と直近の操作ログをダッシュボードで把握します。</p>
-                </div>
-                <div class="admin-panel-body">
-                  <div class="admin-placeholder" id="adminDashboardNotice" hidden></div>
-                  <div class="admin-dashboard-kpi-grid">
-                    <article class="admin-dashboard-kpi">
-                      <p class="admin-dashboard-kpi-label">承認待ち</p>
-                      <div class="admin-dashboard-kpi-value" id="adminDashboardPendingCount">—</div>
-                      <div class="admin-dashboard-kpi-meta">
-                        最終更新: <span id="adminDashboardKpiUpdated">—</span>
-                      </div>
-                    </article>
-                    <article class="admin-dashboard-kpi">
-                      <p class="admin-dashboard-kpi-label">有効ユーザー</p>
-                      <div class="admin-dashboard-kpi-value" id="adminDashboardActiveCount">—</div>
-                      <div class="admin-dashboard-kpi-meta">停止中 <span id="adminDashboardSuspendedMeta">—</span></div>
-                    </article>
-                    <article class="admin-dashboard-kpi">
-                      <p class="admin-dashboard-kpi-label">停止中 / 剥奪</p>
-                      <div class="admin-dashboard-kpi-value" id="adminDashboardSuspendedCount">—</div>
-                      <div class="admin-dashboard-kpi-meta">差分を確認し、復帰判断に活用してください</div>
-                    </article>
-                    <article class="admin-dashboard-kpi">
-                      <p class="admin-dashboard-kpi-label">監査イベント (24h)</p>
-                      <div class="admin-dashboard-kpi-value" id="adminDashboardAuditCount">—</div>
-                      <div class="admin-dashboard-kpi-meta">ダッシュボードは最新 5 件を表示します</div>
-                    </article>
-                  </div>
-                  <div class="admin-dashboard-grid">
-                    <article class="admin-dashboard-card" aria-live="polite">
-                      <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h4 class="mb-0">承認待ちユーザー</h4>
-                        <button class="btn btn-sm btn-outline-primary" type="button" data-admin-target="users">
-                          一覧を見る
-                        </button>
-                      </div>
-                      <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
-                      <ul class="admin-dashboard-list" id="adminDashboardPendingList">
-                        <li class="admin-dashboard-empty">読み込み中...</li>
-                      </ul>
-                    </article>
-                    <article class="admin-dashboard-card" aria-live="polite">
-                      <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h4 class="mb-0">最近の操作ログ</h4>
-                        <button class="btn btn-sm btn-outline-secondary" type="button" data-admin-target="audit">
-                          ログを見る
-                        </button>
-                      </div>
-                      <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
-                      <ul class="admin-dashboard-list" id="adminDashboardAuditList">
-                        <li class="admin-dashboard-empty">読み込み中...</li>
-                      </ul>
-                    </article>
-                  </div>
-                  <article class="admin-dashboard-card">
-                    <h4 class="mb-2">管理メニュー</h4>
-                    <p class="text-muted small">主要な管理機能へすぐに移動できます。</p>
-                    <div class="list-group admin-menu-quick">
-                      <button
-                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                        type="button"
-                        data-admin-target="folders"
-                      >
-                        <span><span class="material-icons-outlined align-middle me-2">folder_shared</span>フォルダ管理</span>
-                        <span class="material-icons-outlined text-muted">chevron_right</span>
-                      </button>
-                      <button
-                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                        type="button"
-                        data-admin-target="folders"
-                      >
-                        <span><span class="material-icons-outlined align-middle me-2">note_alt</span>定型文設定</span>
-                        <span class="material-icons-outlined text-muted">chevron_right</span>
-                      </button>
-                      <button
-                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                        type="button"
-                        data-admin-target="users"
-                      >
-                        <span><span class="material-icons-outlined align-middle me-2">verified_user</span>ユーザー承認・管理</span>
-                        <span class="material-icons-outlined text-muted">chevron_right</span>
-                      </button>
-                      <button
-                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                        type="button"
-                        data-admin-target="audit"
-                      >
-                        <span><span class="material-icons-outlined align-middle me-2">fact_check</span>監査ログ</span>
-                        <span class="material-icons-outlined text-muted">chevron_right</span>
-                      </button>
-                    </div>
-                  </article>
-                  <article class="admin-dashboard-card">
-                    <h4 class="mb-3">システムメモ</h4>
-                    <dl class="row small mb-0">
-                      <dt class="col-4 col-md-3">対象組織</dt>
-                      <dd class="col-8 col-md-9" id="adminDashboardOrgLabel">現在の組織</dd>
-                      <dt class="col-4 col-md-3">組織 ID</dt>
-                      <dd class="col-8 col-md-9" id="adminDashboardOrgId">—</dd>
-                      <dt class="col-4 col-md-3">更新</dt>
-                      <dd class="col-8 col-md-9" id="adminDashboardUpdatedAt">—</dd>
-                    </dl>
-                  </article>
-                </div>
-              </section>
-              <section class="admin-panel" data-admin-panel="users" aria-labelledby="adminUsersTitle">
-                <div class="admin-panel-header">
-                  <h3 id="adminUsersTitle">ユーザー管理</h3>
-                  <p>ステータス・ロール・組織を横断して管理します。</p>
-                </div>
-                <div class="admin-panel-body">
-                  <div class="admin-filter-bar" id="adminUsersFilters">
-                    <div class="admin-filter-item">
-                      <label class="form-label" for="adminUsersSearch">キーワード</label>
+
+              <div class="task-panels">
+                <div class="task-panel active" data-task-panel="my">
+                  <div class="task-controls">
+                    <div class="task-search">
+                      <span class="material-icons-outlined">search</span>
                       <input
                         type="search"
-                        class="form-control"
-                        id="adminUsersSearch"
-                        placeholder="名前・メールで検索"
+                        id="task-search-my"
+                        placeholder="キーワード検索"
+                        aria-label="自分のタスクを検索"
                       />
                     </div>
-                    <div class="admin-filter-item">
-                      <label class="form-label" for="adminUsersStatus">ステータス</label>
-                      <select class="form-select" id="adminUsersStatus">
-                        <option value="">すべて</option>
-                        <option value="pending">承認待ち</option>
-                        <option value="active">有効</option>
-                        <option value="suspended">停止中</option>
-                        <option value="revoked">剥奪</option>
+                  </div>
+                  <!-- Results container for "My Tasks" -->
+                  <div class="task-list mt-3" id="task-list-my"></div>
+                </div>
+
+                <div class="task-panel" data-task-panel="from">
+                  <div class="task-controls">
+                    <div class="task-search">
+                      <span class="material-icons-outlined">search</span>
+                      <input
+                        type="search"
+                        id="task-search-from"
+                        placeholder="キーワード検索"
+                        aria-label="自分が依頼したタスクを検索"
+                      />
+                    </div>
+                    <div class="task-filter-row">
+                      <select class="task-filter-select" id="task-filter-from-assignee">
+                        <option value="">担当者で絞り込み</option>
                       </select>
                     </div>
-                    <div class="admin-filter-item">
-                      <label class="form-label" for="adminUsersRole">ロール</label>
-                      <select class="form-select" id="adminUsersRole">
-                        <option value="">すべて</option>
-                        <option value="admin">管理者</option>
-                        <option value="manager">マネージャー</option>
-                        <option value="member">一般</option>
-                        <option value="guest">ゲスト</option>
+                  </div>
+                  <!-- Results container for "From Me" tasks -->
+                  <div class="task-list mt-3" id="task-list-from"></div>
+                </div>
+
+                <div class="task-panel d-none" data-task-panel="all" data-manager-only="true">
+                  <div class="task-controls">
+                    <div class="task-search">
+                      <span class="material-icons-outlined">search</span>
+                      <input
+                        type="search"
+                        id="task-search-all"
+                        placeholder="キーワード検索"
+                        aria-label="すべてのタスクを検索"
+                      />
+                    </div>
+                    <div class="task-filter-row">
+                      <select class="task-filter-select" id="task-filter-all-assignee">
+                        <option value="">担当者で絞り込み</option>
                       </select>
                     </div>
-                    <div class="admin-filter-item admin-filter-actions">
-                      <label class="form-label d-none d-md-block">&nbsp;</label>
-                      <button class="btn btn-outline-secondary w-100" type="button" id="btnAdminUsersReload">
-                        <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                  </div>
+                  <!-- Results container for "All Tasks" (manager only) -->
+                  <div class="task-list mt-3" id="task-list-all"></div>
+                </div>
+              </div>
+            </section>
+            <!-- /COMPONENT: シフト一覧 -->
+
+            <!-- ----- Messages view panel ----- -->
+            <section class="view-panel fade-container is-hidden" id="view-messages">
+              <div class="task-header mt-0">
+                <div class="task-title-wrap">
+                  <span class="material-icons-outlined task-title-icon">mail</span>
+                  <h3 class="view-title">メッセージ</h3>
+                </div>
+              </div>
+              <div class="subhead-bar mt-2">
+                <div class="input-group">
+                  <span class="input-group-text material-icons-outlined">search</span>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="msg-search-box"
+                    placeholder="キーワード検索"
+                  />
+                </div>
+              </div>
+              <div class="row g-2 align-items-end mt-2">
+                <div class="col-auto">
+                  <label class="form-label">フォルダ</label>
+                  <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
+                    <option value="">全て</option>
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label d-block">&nbsp;</label>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
+                    <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
+                  </div>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label d-block">&nbsp;</label>
+                  <button
+                    class="btn btn-outline-success"
+                    id="btn-msg-markall"
+                    type="button"
+                    aria-label="未読をすべて既読にする"
+                  >
+                    <span class="material-icons align-middle me-1">done_all</span>全て既読にする
+                  </button>
+                </div>
+              </div>
+              <!-- Message card list mount point -->
+              <div id="msg-list" class="mt-2"></div>
+            </section>
+
+            <!-- ----- Settings view panel ----- -->
+            <section class="view-panel fade-container is-hidden" id="view-settings">
+              <h3 class="mt-0">
+                <span class="material-icons align-middle me-1">settings</span>設定
+              </h3>
+              <!-- Settings form wrapper (profile, appearance, etc.) -->
+              <form class="settings-layout" id="form-settings">
+                <div class="form-section settings-block">
+                  <div class="settings-block-header">
+                    <div class="settings-block-icon">
+                      <span class="material-icons-outlined">badge</span>
+                    </div>
+                    <div>
+                      <h5>プロフィール</h5>
+                      <p>メンバーに表示される名前とプロフィール画像を管理します。</p>
+                    </div>
+                  </div>
+                  <div class="settings-profile-body">
+                    <div class="settings-avatar-shell">
+                      <img
+                        class="settings-avatar js-user-avatar"
+                        id="setting-avatar-preview"
+                        src="/icons/icon-192.png"
+                        data-avatar-url="/icons/icon-192.png"
+                        data-placeholder="https://placehold.jp/150x150.png"
+                        data-bind-user-avatar
+                        alt="プロフィール画像のプレビュー"
+                      />
+                      <button
+                        class="btn btn-outline-secondary w-100"
+                        type="button"
+                        id="btn-setting-image"
+                      >
+                        <span class="material-icons-outlined align-middle me-1">image</span
+                        >画像を選択
                       </button>
+                      <div class="settings-image-meta" id="setting-image-name">未設定</div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        class="d-none"
+                        id="setting-image-file"
+                        aria-label="プロフィール画像を選択"
+                      />
+                    </div>
+                    <div>
+                      <label class="form-label" for="setting-name">表示名</label>
+                      <input
+                        class="form-control"
+                        id="setting-name"
+                        placeholder="チームで表示される名前"
+                      />
+                      <div class="settings-upload-note">
+                        <span class="material-icons-outlined align-middle">info</span>
+                        <span
+                          >最大8MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span
+                        >
+                      </div>
                     </div>
                   </div>
-                  <div class="admin-users-meta">
-                    <div class="admin-users-summary" id="adminUsersSummary"></div>
-                    <div class="small text-muted" id="adminUsersUpdatedAt"></div>
-                  </div>
-                  <div class="admin-placeholder" id="adminUsersNotice" hidden></div>
-                  <div class="table-responsive" id="adminUsersTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
-                    <table class="table admin-users-table admin-table-light">
-                      <thead>
-                        <tr>
-                          <th scope="col">ユーザー</th>
-                          <th scope="col">メール</th>
-                          <th scope="col">ロール</th>
-                          <th scope="col">ステータス</th>
-                          <th scope="col">最終ログイン</th>
-                          <th scope="col" class="text-end">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody id="adminUsersTableBody">
-                        <tr>
-                          <td colspan="6">
-                            <div class="admin-users-loading">
-                              <span class="material-icons-outlined align-middle">hourglass_top</span>
-                              読み込み中...
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div class="admin-placeholder text-center" id="adminUsersEmpty" hidden>
-                    条件に一致するユーザーがいません。
-                  </div>
                 </div>
-              </section>
-              <section class="admin-panel" data-admin-panel="folders" aria-labelledby="adminFoldersTitle">
-                <div class="admin-panel-header">
-                  <h3 id="adminFoldersTitle">フォルダ管理</h3>
-                  <p>公開設定や限定メンバー、定型文をまとめて管理します。</p>
-                </div>
-                <div class="admin-panel-body">
-                  <article class="admin-card">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-                      <div>
-                        <h4 class="mb-1">フォルダ一覧</h4>
-                        <p class="text-muted small mb-0">名称・公開設定・メンバー数を確認します。</p>
+
+                <div class="form-section settings-block">
+                  <div class="settings-block-header">
+                    <div class="settings-block-icon">
+                      <span class="material-icons-outlined">dark_mode</span>
+                    </div>
+                    <div>
+                      <h5>外観設定</h5>
+                      <p>アプリの配色テーマを切り替えて見やすさを調整します。</p>
+                    </div>
+                  </div>
+                  <div class="settings-theme-grid">
+                    <div>
+                      <label class="form-label" for="setting-theme">テーマ</label>
+                      <select class="form-select" id="setting-theme">
+                        <option value="light">ライト</option>
+                        <option value="dark">ダーク</option>
+                        <option value="system">システムに合わせる</option>
+                      </select>
+                      <div class="theme-status" id="setting-theme-display">
+                        <span class="material-icons-outlined align-middle">light_mode</span
+                        >ライトテーマを適用中
                       </div>
-                      <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAdminFolderReload">
-                          <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                    </div>
+                    <div class="settings-theme-guide">
+                      <p class="mb-2">選択したテーマはすぐに反映されます。</p>
+                      <ul class="mb-0">
+                        <li><strong>ライト:</strong> 明るく爽やかなトーンで日中の作業に最適。</li>
+                        <li><strong>ダーク:</strong> 暗い環境や長時間の閲覧で目を保護。</li>
+                        <li><strong>システム:</strong> ご利用端末のテーマ設定に自動追従します。</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-actions">
+                  <button class="btn btn-primary" type="button" id="btn-settings-save">
+                    <span class="label">
+                      <span class="material-icons align-middle me-1">save</span>変更を保存
+                    </span>
+                    <span
+                      class="spinner-border spinner-border-sm d-none"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+        <section class="admin-shell" id="view-admin" hidden aria-labelledby="adminViewTitle">
+          <div class="container-xl">
+            <div class="admin-top-actions">
+              <button
+                class="btn btn-outline-secondary btn-sm admin-exit-btn"
+                type="button"
+                id="btn-exit-admin"
+              >
+                <span class="material-icons-outlined align-middle me-1">arrow_back</span
+                >一般画面へ戻る
+              </button>
+              <div class="dropdown admin-org-dropdown" id="adminOrgDropdown">
+                <button
+                  class="btn btn-sm btn-outline-light admin-org-trigger"
+                  type="button"
+                  id="btn-admin-org"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                >
+                  <span class="material-icons-outlined align-middle me-1">apartment</span>
+                  <span id="adminOrgLabel">現在の組織</span>
+                  <span class="material-icons-outlined ms-1">expand_more</span>
+                </button>
+                <div
+                  class="dropdown-menu dropdown-menu-end admin-org-menu shadow"
+                  aria-labelledby="btn-admin-org"
+                >
+                  <div class="admin-org-menu-header">
+                    <strong>管理対象の組織</strong>
+                  </div>
+                  <div class="admin-org-list" id="adminOrgList">
+                    <div class="px-3 py-2 text-muted small">読み込み中...</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="admin-view-title">
+              <div class="admin-view-title-icon" aria-hidden="true">
+                <span class="material-icons-outlined" id="adminSectionIcon">dashboard</span>
+              </div>
+              <div>
+                <h2 class="admin-view-heading" id="admin-section-label">管理トップ</h2>
+                <p class="admin-view-desc" id="admin-section-desc">
+                  現在の状況を一覧で把握し、アクションにつなげます。
+                </p>
+              </div>
+            </div>
+            <div class="admin-panels-wrapper" id="adminPanelsWrapper">
+              <div class="admin-track" id="adminTrack">
+                <section
+                  class="admin-panel is-active"
+                  data-admin-panel="dashboard"
+                  aria-labelledby="adminDashboardTitle"
+                >
+                  <div class="admin-panel-header">
+                    <h3 id="adminDashboardTitle">管理トップ</h3>
+                    <p>組織の承認状況と直近の操作ログをダッシュボードで把握します。</p>
+                  </div>
+                  <div class="admin-panel-body">
+                    <div class="admin-placeholder" id="adminDashboardNotice" hidden></div>
+                    <div class="admin-dashboard-kpi-grid">
+                      <article class="admin-dashboard-kpi">
+                        <p class="admin-dashboard-kpi-label">承認待ち</p>
+                        <div class="admin-dashboard-kpi-value" id="adminDashboardPendingCount">
+                          —
+                        </div>
+                        <div class="admin-dashboard-kpi-meta">
+                          最終更新: <span id="adminDashboardKpiUpdated">—</span>
+                        </div>
+                      </article>
+                      <article class="admin-dashboard-kpi">
+                        <p class="admin-dashboard-kpi-label">有効ユーザー</p>
+                        <div class="admin-dashboard-kpi-value" id="adminDashboardActiveCount">
+                          —
+                        </div>
+                        <div class="admin-dashboard-kpi-meta">
+                          停止中 <span id="adminDashboardSuspendedMeta">—</span>
+                        </div>
+                      </article>
+                      <article class="admin-dashboard-kpi">
+                        <p class="admin-dashboard-kpi-label">停止中 / 剥奪</p>
+                        <div class="admin-dashboard-kpi-value" id="adminDashboardSuspendedCount">
+                          —
+                        </div>
+                        <div class="admin-dashboard-kpi-meta">
+                          差分を確認し、復帰判断に活用してください
+                        </div>
+                      </article>
+                      <article class="admin-dashboard-kpi">
+                        <p class="admin-dashboard-kpi-label">監査イベント (24h)</p>
+                        <div class="admin-dashboard-kpi-value" id="adminDashboardAuditCount">—</div>
+                        <div class="admin-dashboard-kpi-meta">
+                          ダッシュボードは最新 5 件を表示します
+                        </div>
+                      </article>
+                    </div>
+                    <div class="admin-dashboard-grid">
+                      <article class="admin-dashboard-card" aria-live="polite">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <h4 class="mb-0">承認待ちユーザー</h4>
+                          <button
+                            class="btn btn-sm btn-outline-primary"
+                            type="button"
+                            data-admin-target="users"
+                          >
+                            一覧を見る
+                          </button>
+                        </div>
+                        <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
+                        <ul class="admin-dashboard-list" id="adminDashboardPendingList">
+                          <li class="admin-dashboard-empty">読み込み中...</li>
+                        </ul>
+                      </article>
+                      <article class="admin-dashboard-card" aria-live="polite">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <h4 class="mb-0">最近の操作ログ</h4>
+                          <button
+                            class="btn btn-sm btn-outline-secondary"
+                            type="button"
+                            data-admin-target="audit"
+                          >
+                            ログを見る
+                          </button>
+                        </div>
+                        <p class="text-muted small mb-2">最新 5 件を表示しています。</p>
+                        <ul class="admin-dashboard-list" id="adminDashboardAuditList">
+                          <li class="admin-dashboard-empty">読み込み中...</li>
+                        </ul>
+                      </article>
+                    </div>
+                    <article class="admin-dashboard-card">
+                      <h4 class="mb-2">管理メニュー</h4>
+                      <p class="text-muted small">主要な管理機能へすぐに移動できます。</p>
+                      <div class="list-group admin-menu-quick">
+                        <button
+                          class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                          type="button"
+                          data-admin-target="folders"
+                        >
+                          <span
+                            ><span class="material-icons-outlined align-middle me-2"
+                              >folder_shared</span
+                            >フォルダ管理</span
+                          >
+                          <span class="material-icons-outlined text-muted">chevron_right</span>
                         </button>
                         <button
-                          class="btn btn-sm btn-outline-primary"
+                          class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
                           type="button"
-                          id="btnAdminNewFolder"
-                          data-manager-only
+                          data-admin-target="folders"
                         >
-                          <span class="material-icons-outlined align-middle me-1">add</span>フォルダ作成
+                          <span
+                            ><span class="material-icons-outlined align-middle me-2">note_alt</span
+                            >定型文設定</span
+                          >
+                          <span class="material-icons-outlined text-muted">chevron_right</span>
+                        </button>
+                        <button
+                          class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                          type="button"
+                          data-admin-target="users"
+                        >
+                          <span
+                            ><span class="material-icons-outlined align-middle me-2"
+                              >verified_user</span
+                            >ユーザー承認・管理</span
+                          >
+                          <span class="material-icons-outlined text-muted">chevron_right</span>
+                        </button>
+                        <button
+                          class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                          type="button"
+                          data-admin-target="audit"
+                        >
+                          <span
+                            ><span class="material-icons-outlined align-middle me-2"
+                              >fact_check</span
+                            >監査ログ</span
+                          >
+                          <span class="material-icons-outlined text-muted">chevron_right</span>
+                        </button>
+                      </div>
+                    </article>
+                    <article class="admin-dashboard-card">
+                      <h4 class="mb-3">システムメモ</h4>
+                      <dl class="row small mb-0">
+                        <dt class="col-4 col-md-3">対象組織</dt>
+                        <dd class="col-8 col-md-9" id="adminDashboardOrgLabel">現在の組織</dd>
+                        <dt class="col-4 col-md-3">組織 ID</dt>
+                        <dd class="col-8 col-md-9" id="adminDashboardOrgId">—</dd>
+                        <dt class="col-4 col-md-3">更新</dt>
+                        <dd class="col-8 col-md-9" id="adminDashboardUpdatedAt">—</dd>
+                      </dl>
+                    </article>
+                  </div>
+                </section>
+                <section
+                  class="admin-panel"
+                  data-admin-panel="users"
+                  aria-labelledby="adminUsersTitle"
+                >
+                  <div class="admin-panel-header">
+                    <h3 id="adminUsersTitle">ユーザー管理</h3>
+                    <p>ステータス・ロール・組織を横断して管理します。</p>
+                  </div>
+                  <div class="admin-panel-body">
+                    <div class="admin-filter-bar" id="adminUsersFilters">
+                      <div class="admin-filter-item">
+                        <label class="form-label" for="adminUsersSearch">キーワード</label>
+                        <input
+                          type="search"
+                          class="form-control"
+                          id="adminUsersSearch"
+                          placeholder="名前・メールで検索"
+                        />
+                      </div>
+                      <div class="admin-filter-item">
+                        <label class="form-label" for="adminUsersStatus">ステータス</label>
+                        <select class="form-select" id="adminUsersStatus">
+                          <option value="">すべて</option>
+                          <option value="pending">承認待ち</option>
+                          <option value="active">有効</option>
+                          <option value="suspended">停止中</option>
+                          <option value="revoked">剥奪</option>
+                        </select>
+                      </div>
+                      <div class="admin-filter-item">
+                        <label class="form-label" for="adminUsersRole">ロール</label>
+                        <select class="form-select" id="adminUsersRole">
+                          <option value="">すべて</option>
+                          <option value="admin">管理者</option>
+                          <option value="manager">マネージャー</option>
+                          <option value="member">一般</option>
+                          <option value="guest">ゲスト</option>
+                        </select>
+                      </div>
+                      <div class="admin-filter-item admin-filter-actions">
+                        <label class="form-label d-none d-md-block">&nbsp;</label>
+                        <button
+                          class="btn btn-outline-secondary w-100"
+                          type="button"
+                          id="btnAdminUsersReload"
+                        >
+                          <span class="material-icons-outlined align-middle me-1">refresh</span
+                          >再読込
                         </button>
                       </div>
                     </div>
-                    <div class="table-responsive" data-prevent-admin-swipe="true">
-                      <table class="table table-sm align-middle admin-folder-table">
+                    <div class="admin-users-meta">
+                      <div class="admin-users-summary" id="adminUsersSummary"></div>
+                      <div class="small text-muted" id="adminUsersUpdatedAt"></div>
+                    </div>
+                    <div class="admin-placeholder" id="adminUsersNotice" hidden></div>
+                    <div
+                      class="table-responsive"
+                      id="adminUsersTableWrap"
+                      aria-live="polite"
+                      data-prevent-admin-swipe="true"
+                    >
+                      <table class="table admin-users-table admin-table-light">
                         <thead>
                           <tr>
-                            <th scope="col">名称</th>
-                            <th scope="col">公開</th>
-                            <th scope="col">メンバー数</th>
-                            <th scope="col">更新</th>
+                            <th scope="col">ユーザー</th>
+                            <th scope="col">メール</th>
+                            <th scope="col">ロール</th>
+                            <th scope="col">ステータス</th>
+                            <th scope="col">最終ログイン</th>
                             <th scope="col" class="text-end">操作</th>
                           </tr>
                         </thead>
-                        <tbody id="adminFolderList">
+                        <tbody id="adminUsersTableBody">
                           <tr>
-                            <td colspan="5" class="text-muted">フォルダ情報を読み込み中...</td>
+                            <td colspan="6">
+                              <div class="admin-users-loading">
+                                <span class="material-icons-outlined align-middle"
+                                  >hourglass_top</span
+                                >
+                                読み込み中...
+                              </div>
+                            </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-                  </article>
-                  <article class="admin-card mt-3">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
-                      <div>
-                        <h4 class="mb-1">定型文設定</h4>
-                        <p class="text-muted small mb-0">フォルダごとの件名・本文の雛形を管理します。</p>
+                    <div class="admin-placeholder text-center" id="adminUsersEmpty" hidden>
+                      条件に一致するユーザーがいません。
+                    </div>
+                  </div>
+                </section>
+                <section
+                  class="admin-panel"
+                  data-admin-panel="folders"
+                  aria-labelledby="adminFoldersTitle"
+                >
+                  <div class="admin-panel-header">
+                    <h3 id="adminFoldersTitle">フォルダ管理</h3>
+                    <p>公開設定や限定メンバー、定型文をまとめて管理します。</p>
+                  </div>
+                  <div class="admin-panel-body">
+                    <article class="admin-card">
+                      <div
+                        class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2"
+                      >
+                        <div>
+                          <h4 class="mb-1">フォルダ一覧</h4>
+                          <p class="text-muted small mb-0">
+                            名称・公開設定・メンバー数を確認します。
+                          </p>
+                        </div>
+                        <div class="d-flex gap-2">
+                          <button
+                            class="btn btn-sm btn-outline-secondary"
+                            type="button"
+                            id="btnAdminFolderReload"
+                          >
+                            <span class="material-icons-outlined align-middle me-1">refresh</span
+                            >再読込
+                          </button>
+                          <button
+                            class="btn btn-sm btn-outline-primary"
+                            type="button"
+                            id="btnAdminNewFolder"
+                            data-manager-only
+                          >
+                            <span class="material-icons-outlined align-middle me-1">add</span
+                            >フォルダ作成
+                          </button>
+                        </div>
                       </div>
-                      <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAdminTemplateReload">
-                          <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
+                      <div class="table-responsive" data-prevent-admin-swipe="true">
+                        <table class="table table-sm align-middle admin-folder-table">
+                          <thead>
+                            <tr>
+                              <th scope="col">名称</th>
+                              <th scope="col">公開</th>
+                              <th scope="col">メンバー数</th>
+                              <th scope="col">更新</th>
+                              <th scope="col" class="text-end">操作</th>
+                            </tr>
+                          </thead>
+                          <tbody id="adminFolderList">
+                            <tr>
+                              <td colspan="5" class="text-muted">フォルダ情報を読み込み中...</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </article>
+                    <article class="admin-card mt-3">
+                      <div
+                        class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2"
+                      >
+                        <div>
+                          <h4 class="mb-1">定型文設定</h4>
+                          <p class="text-muted small mb-0">
+                            フォルダごとの件名・本文の雛形を管理します。
+                          </p>
+                        </div>
+                        <div class="d-flex gap-2">
+                          <button
+                            class="btn btn-sm btn-outline-secondary"
+                            type="button"
+                            id="btnAdminTemplateReload"
+                          >
+                            <span class="material-icons-outlined align-middle me-1">refresh</span
+                            >再読込
+                          </button>
+                        </div>
+                      </div>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-12 col-lg-4">
+                          <label class="form-label" for="adminTemplateFolder">対象フォルダ</label>
+                          <select class="form-select" id="adminTemplateFolder">
+                            <option value="">フォルダを選択</option>
+                          </select>
+                          <div class="form-text">限定公開フォルダは管理者のみ表示されます。</div>
+                        </div>
+                        <div class="col-12 col-lg-8">
+                          <form class="card border-0 shadow-sm h-100" id="adminTemplateForm">
+                            <div class="card-body">
+                              <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0">新規定型文</h6>
+                                <span class="badge bg-light text-dark" id="adminTemplateFolderHint"
+                                  >フォルダ未選択</span
+                                >
+                              </div>
+                              <div class="alert alert-danger d-none" id="adminTemplateAlert"></div>
+                              <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                  <label class="form-label" for="adminTemplateName">名称</label>
+                                  <input
+                                    type="text"
+                                    class="form-control"
+                                    id="adminTemplateName"
+                                    placeholder="例: 早番共有"
+                                  />
+                                </div>
+                                <div class="col-12 col-md-6">
+                                  <label class="form-label" for="adminTemplateTitle"
+                                    >件名雛形</label
+                                  >
+                                  <input
+                                    type="text"
+                                    class="form-control"
+                                    id="adminTemplateTitle"
+                                    placeholder="例: 【共有】"
+                                  />
+                                </div>
+                                <div class="col-12">
+                                  <label class="form-label" for="adminTemplateBody">本文雛形</label>
+                                  <textarea
+                                    class="form-control"
+                                    id="adminTemplateBody"
+                                    rows="3"
+                                    placeholder="本文のひな形を入力"
+                                  ></textarea>
+                                </div>
+                              </div>
+                              <div class="d-flex align-items-center gap-2 mt-3">
+                                <button
+                                  class="btn btn-primary"
+                                  type="submit"
+                                  id="btnAdminTemplateSave"
+                                >
+                                  <span class="label">
+                                    <span class="material-icons-outlined align-middle me-1"
+                                      >save</span
+                                    >保存
+                                  </span>
+                                  <span
+                                    class="spinner-border spinner-border-sm d-none"
+                                    role="status"
+                                    aria-hidden="true"
+                                  ></span>
+                                </button>
+                                <span class="small text-muted" id="adminTemplateStatus"
+                                  >フォルダを選択してください。</span
+                                >
+                              </div>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                      <div class="mt-3">
+                        <div class="admin-placeholder" id="adminTemplateEmpty">
+                          フォルダを選択すると定型文が表示されます。
+                        </div>
+                        <div class="list-group" id="adminTemplateList"></div>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+                <section
+                  class="admin-panel"
+                  data-admin-panel="orgs"
+                  aria-labelledby="adminOrgsTitle"
+                >
+                  <div class="admin-panel-header">
+                    <h3 id="adminOrgsTitle">組織管理</h3>
+                    <p>名称・テーマ・メンバー構成を編集します。</p>
+                  </div>
+                  <div class="admin-panel-body">
+                    <div class="admin-placeholder" id="adminOrgNotice" hidden></div>
+                    <p class="small text-muted mb-3" id="adminOrgRefreshedAt">最終更新: —</p>
+                    <form id="adminOrgForm">
+                      <div class="admin-card-grid">
+                        <article class="admin-card">
+                          <h4>組織基本情報</h4>
+                          <p>正式名称・略称・カラーを編集します。</p>
+                          <div class="admin-org-meta">
+                            <div class="admin-org-meta-item">
+                              <small>組織名</small>
+                              <strong id="adminOrgNameDisplay">—</strong>
+                            </div>
+                            <div class="admin-org-meta-item">
+                              <small>略称</small>
+                              <strong id="adminOrgShortDisplay">—</strong>
+                            </div>
+                            <div class="admin-org-meta-item">
+                              <small>ブランドカラー</small>
+                              <strong class="admin-org-color-chip">
+                                <span id="adminOrgColorPreview"></span>
+                                <span id="adminOrgColorDisplay">#517CB2</span>
+                              </strong>
+                            </div>
+                          </div>
+                          <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                              <label class="form-label" for="adminOrgName">組織名</label>
+                              <input
+                                class="form-control"
+                                id="adminOrgName"
+                                placeholder="例: ShiftFlow Café"
+                              />
+                            </div>
+                            <div class="col-12 col-md-6">
+                              <label class="form-label" for="adminOrgShortName">略称</label>
+                              <input
+                                class="form-control"
+                                id="adminOrgShortName"
+                                placeholder="例: SFC"
+                              />
+                            </div>
+                            <div class="col-12 col-md-6">
+                              <label class="form-label" for="adminOrgColor">表示カラー</label>
+                              <div class="input-group">
+                                <input
+                                  type="color"
+                                  class="form-control form-control-color"
+                                  id="adminOrgColor"
+                                  value="#517cb2"
+                                  title="ブランドカラーを選択"
+                                />
+                                <span class="input-group-text" id="adminOrgColorText">#517CB2</span>
+                              </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                              <label class="form-label" for="adminOrgTimezone">タイムゾーン</label>
+                              <select class="form-select" id="adminOrgTimezone"></select>
+                            </div>
+                          </div>
+                        </article>
+                        <article class="admin-card">
+                          <h4>通知・ラベル</h4>
+                          <p>Slack / メール通知や印刷物に使う識別情報をここで調整します。</p>
+                          <div class="mb-3">
+                            <label class="form-label" for="adminOrgNotifyEmail">通知メール</label>
+                            <input
+                              type="email"
+                              class="form-control"
+                              id="adminOrgNotifyEmail"
+                              placeholder="ops@example.com"
+                            />
+                            <div class="form-text">
+                              システム通知や Slack
+                              リレーをメールで受け取る場合に利用します（任意）。
+                            </div>
+                          </div>
+                          <div class="admin-org-meta">
+                            <div class="admin-org-meta-item">
+                              <small>通知メール</small>
+                              <strong id="adminOrgNotifyDisplay">—</strong>
+                            </div>
+                            <div class="admin-org-meta-item">
+                              <small>組織 ID</small>
+                              <strong id="adminOrgIdDisplay">—</strong>
+                            </div>
+                          </div>
+                        </article>
+                      </div>
+                      <div class="admin-bottom-meta flex-column flex-md-row gap-3">
+                        <div>
+                          <small class="text-muted d-block">最終更新</small>
+                          <span id="adminOrgUpdatedAt">—</span>
+                        </div>
+                        <button
+                          class="btn btn-primary ms-md-auto"
+                          type="button"
+                          id="btnAdminOrgSave"
+                        >
+                          <span class="label">
+                            <span class="material-icons-outlined align-middle me-1">save</span
+                            >更新を保存
+                          </span>
+                          <span
+                            class="spinner-border spinner-border-sm d-none"
+                            role="status"
+                            aria-hidden="true"
+                          ></span>
+                        </button>
+                      </div>
+                    </form>
+                    <article class="admin-card mt-3">
+                      <h4>メンバー概要</h4>
+                      <p>この組織に所属するユーザーのロール・ステータスを把握できます。</p>
+                      <div class="admin-org-stats mb-3">
+                        <div class="admin-org-stats-item">
+                          <small>総メンバー</small>
+                          <strong id="adminOrgStatsTotal">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>承認待ち</small>
+                          <strong id="adminOrgStatsPending">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>有効</small>
+                          <strong id="adminOrgStatsActive">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>停止中</small>
+                          <strong id="adminOrgStatsSuspended">0</strong>
+                        </div>
+                      </div>
+                      <div class="admin-org-stats mb-3">
+                        <div class="admin-org-stats-item">
+                          <small>Admin</small>
+                          <strong id="adminOrgStatsAdmins">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>Manager</small>
+                          <strong id="adminOrgStatsManagers">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>Member</small>
+                          <strong id="adminOrgStatsMembers">0</strong>
+                        </div>
+                        <div class="admin-org-stats-item">
+                          <small>Guest</small>
+                          <strong id="adminOrgStatsGuests">0</strong>
+                        </div>
+                      </div>
+                      <button
+                        class="btn btn-sm btn-outline-primary align-self-start mt-auto"
+                        type="button"
+                        data-admin-target="users"
+                      >
+                        <span class="material-icons-outlined align-middle me-1">groups</span
+                        >ユーザー一覧を開く
+                      </button>
+                    </article>
+                  </div>
+                </section>
+                <section
+                  class="admin-panel"
+                  data-admin-panel="audit"
+                  aria-labelledby="adminAuditTitle"
+                >
+                  <div class="admin-panel-header">
+                    <h3 id="adminAuditTitle">監査ログ</h3>
+                    <p>ログインや管理操作の履歴を確認します。</p>
+                  </div>
+                  <div class="admin-panel-body">
+                    <div class="admin-filter-bar">
+                      <div class="admin-filter-item">
+                        <label class="form-label" for="adminAuditRange">期間</label>
+                        <select class="form-select" id="adminAuditRange">
+                          <option value="24h" selected>24時間</option>
+                          <option value="7d">7日間</option>
+                          <option value="30d">30日間</option>
+                        </select>
+                      </div>
+                      <div class="admin-filter-item">
+                        <label class="form-label" for="adminAuditType">イベント種別</label>
+                        <select class="form-select" id="adminAuditType">
+                          <option value="all" selected>全て</option>
+                          <option value="admin">管理操作</option>
+                          <option value="login">ログイン</option>
+                          <option value="api">API</option>
+                        </select>
+                      </div>
+                      <div class="admin-filter-item admin-filter-actions">
+                        <label class="form-label d-none d-md-block">&nbsp;</label>
+                        <button
+                          class="btn btn-outline-secondary w-100"
+                          type="button"
+                          id="btnAdminAuditReload"
+                        >
+                          <span class="material-icons-outlined align-middle me-1">refresh</span
+                          >再読込
                         </button>
                       </div>
                     </div>
-                    <div class="row g-3 align-items-end">
-                      <div class="col-12 col-lg-4">
-                        <label class="form-label" for="adminTemplateFolder">対象フォルダ</label>
-                        <select class="form-select" id="adminTemplateFolder">
-                          <option value="">フォルダを選択</option>
-                        </select>
-                        <div class="form-text">限定公開フォルダは管理者のみ表示されます。</div>
-                      </div>
-                      <div class="col-12 col-lg-8">
-                        <form class="card border-0 shadow-sm h-100" id="adminTemplateForm">
-                          <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                              <h6 class="mb-0">新規定型文</h6>
-                              <span class="badge bg-light text-dark" id="adminTemplateFolderHint">フォルダ未選択</span>
-                            </div>
-                            <div class="alert alert-danger d-none" id="adminTemplateAlert"></div>
-                            <div class="row g-3">
-                              <div class="col-12 col-md-6">
-                                <label class="form-label" for="adminTemplateName">名称</label>
-                                <input
-                                  type="text"
-                                  class="form-control"
-                                  id="adminTemplateName"
-                                  placeholder="例: 早番共有"
-                                />
-                              </div>
-                              <div class="col-12 col-md-6">
-                                <label class="form-label" for="adminTemplateTitle">件名雛形</label>
-                                <input
-                                  type="text"
-                                  class="form-control"
-                                  id="adminTemplateTitle"
-                                  placeholder="例: 【共有】"
-                                />
-                              </div>
-                              <div class="col-12">
-                                <label class="form-label" for="adminTemplateBody">本文雛形</label>
-                                <textarea
-                                  class="form-control"
-                                  id="adminTemplateBody"
-                                  rows="3"
-                                  placeholder="本文のひな形を入力"
-                                ></textarea>
-                              </div>
-                            </div>
-                            <div class="d-flex align-items-center gap-2 mt-3">
-                              <button class="btn btn-primary" type="submit" id="btnAdminTemplateSave">
-                                <span class="label">
-                                  <span class="material-icons-outlined align-middle me-1">save</span>保存
-                                </span>
-                                <span
-                                  class="spinner-border spinner-border-sm d-none"
-                                  role="status"
-                                  aria-hidden="true"
-                                ></span>
-                              </button>
-                              <span class="small text-muted" id="adminTemplateStatus"
-                                >フォルダを選択してください。</span
-                              >
-                            </div>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-                    <div class="mt-3">
-                      <div class="admin-placeholder" id="adminTemplateEmpty">
-                        フォルダを選択すると定型文が表示されます。
-                      </div>
-                      <div class="list-group" id="adminTemplateList"></div>
-                    </div>
-                  </article>
-                </div>
-              </section>
-              <section class="admin-panel" data-admin-panel="orgs" aria-labelledby="adminOrgsTitle">
-                <div class="admin-panel-header">
-                  <h3 id="adminOrgsTitle">組織管理</h3>
-                  <p>名称・テーマ・メンバー構成を編集します。</p>
-                </div>
-                <div class="admin-panel-body">
-                  <div class="admin-placeholder" id="adminOrgNotice" hidden></div>
-                  <p class="small text-muted mb-3" id="adminOrgRefreshedAt">最終更新: —</p>
-                  <form id="adminOrgForm">
-                    <div class="admin-card-grid">
-                      <article class="admin-card">
-                        <h4>組織基本情報</h4>
-                        <p>正式名称・略称・カラーを編集します。</p>
-                        <div class="admin-org-meta">
-                          <div class="admin-org-meta-item">
-                            <small>組織名</small>
-                            <strong id="adminOrgNameDisplay">—</strong>
-                          </div>
-                          <div class="admin-org-meta-item">
-                            <small>略称</small>
-                            <strong id="adminOrgShortDisplay">—</strong>
-                          </div>
-                          <div class="admin-org-meta-item">
-                            <small>ブランドカラー</small>
-                            <strong class="admin-org-color-chip">
-                              <span id="adminOrgColorPreview"></span>
-                              <span id="adminOrgColorDisplay">#517CB2</span>
-                            </strong>
-                          </div>
-                        </div>
-                        <div class="row g-3">
-                          <div class="col-12 col-md-6">
-                            <label class="form-label" for="adminOrgName">組織名</label>
-                            <input class="form-control" id="adminOrgName" placeholder="例: ShiftFlow Café" />
-                          </div>
-                          <div class="col-12 col-md-6">
-                            <label class="form-label" for="adminOrgShortName">略称</label>
-                            <input class="form-control" id="adminOrgShortName" placeholder="例: SFC" />
-                          </div>
-                          <div class="col-12 col-md-6">
-                            <label class="form-label" for="adminOrgColor">表示カラー</label>
-                            <div class="input-group">
-                              <input
-                                type="color"
-                                class="form-control form-control-color"
-                                id="adminOrgColor"
-                                value="#517cb2"
-                                title="ブランドカラーを選択"
-                              />
-                              <span class="input-group-text" id="adminOrgColorText">#517CB2</span>
-                            </div>
-                          </div>
-                          <div class="col-12 col-md-6">
-                            <label class="form-label" for="adminOrgTimezone">タイムゾーン</label>
-                            <select class="form-select" id="adminOrgTimezone"></select>
-                          </div>
-                        </div>
-                      </article>
-                      <article class="admin-card">
-                        <h4>通知・ラベル</h4>
-                        <p>Slack / メール通知や印刷物に使う識別情報をここで調整します。</p>
-                        <div class="mb-3">
-                          <label class="form-label" for="adminOrgNotifyEmail">通知メール</label>
-                          <input
-                            type="email"
-                            class="form-control"
-                            id="adminOrgNotifyEmail"
-                            placeholder="ops@example.com"
-                          />
-                          <div class="form-text">
-                            システム通知や Slack リレーをメールで受け取る場合に利用します（任意）。
-                          </div>
-                        </div>
-                        <div class="admin-org-meta">
-                          <div class="admin-org-meta-item">
-                            <small>通知メール</small>
-                            <strong id="adminOrgNotifyDisplay">—</strong>
-                          </div>
-                          <div class="admin-org-meta-item">
-                            <small>組織 ID</small>
-                            <strong id="adminOrgIdDisplay">—</strong>
-                          </div>
-                        </div>
-                      </article>
-                    </div>
-                    <div class="admin-bottom-meta flex-column flex-md-row gap-3">
-                      <div>
-                        <small class="text-muted d-block">最終更新</small>
-                        <span id="adminOrgUpdatedAt">—</span>
-                      </div>
-                      <button class="btn btn-primary ms-md-auto" type="button" id="btnAdminOrgSave">
-                        <span class="label">
-                          <span class="material-icons-outlined align-middle me-1">save</span>更新を保存
-                        </span>
-                        <span
-                          class="spinner-border spinner-border-sm d-none"
-                          role="status"
-                          aria-hidden="true"
-                        ></span>
-                      </button>
-                    </div>
-                  </form>
-                  <article class="admin-card mt-3">
-                    <h4>メンバー概要</h4>
-                    <p>この組織に所属するユーザーのロール・ステータスを把握できます。</p>
-                    <div class="admin-org-stats mb-3">
-                      <div class="admin-org-stats-item">
-                        <small>総メンバー</small>
-                        <strong id="adminOrgStatsTotal">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>承認待ち</small>
-                        <strong id="adminOrgStatsPending">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>有効</small>
-                        <strong id="adminOrgStatsActive">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>停止中</small>
-                        <strong id="adminOrgStatsSuspended">0</strong>
-                      </div>
-                    </div>
-                    <div class="admin-org-stats mb-3">
-                      <div class="admin-org-stats-item">
-                        <small>Admin</small>
-                        <strong id="adminOrgStatsAdmins">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>Manager</small>
-                        <strong id="adminOrgStatsManagers">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>Member</small>
-                        <strong id="adminOrgStatsMembers">0</strong>
-                      </div>
-                      <div class="admin-org-stats-item">
-                        <small>Guest</small>
-                        <strong id="adminOrgStatsGuests">0</strong>
-                      </div>
-                    </div>
-                    <button
-                      class="btn btn-sm btn-outline-primary align-self-start mt-auto"
-                      type="button"
-                      data-admin-target="users"
+                    <div
+                      class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3 admin-audit-meta"
                     >
-                      <span class="material-icons-outlined align-middle me-1">groups</span>ユーザー一覧を開く
-                    </button>
-                  </article>
-                </div>
-              </section>
-              <section class="admin-panel" data-admin-panel="audit" aria-labelledby="adminAuditTitle">
-                <div class="admin-panel-header">
-                  <h3 id="adminAuditTitle">監査ログ</h3>
-                  <p>ログインや管理操作の履歴を確認します。</p>
-                </div>
-                <div class="admin-panel-body">
-                  <div class="admin-filter-bar">
-                    <div class="admin-filter-item">
-                      <label class="form-label" for="adminAuditRange">期間</label>
-                      <select class="form-select" id="adminAuditRange">
-                        <option value="24h" selected>24時間</option>
-                        <option value="7d">7日間</option>
-                        <option value="30d">30日間</option>
-                      </select>
+                      <div class="small text-muted" id="adminAuditSummary">—</div>
+                      <div class="small text-muted" id="adminAuditUpdatedAt">最終更新: —</div>
                     </div>
-                    <div class="admin-filter-item">
-                      <label class="form-label" for="adminAuditType">イベント種別</label>
-                      <select class="form-select" id="adminAuditType">
-                        <option value="all" selected>全て</option>
-                        <option value="admin">管理操作</option>
-                        <option value="login">ログイン</option>
-                        <option value="api">API</option>
-                      </select>
+                    <div class="admin-placeholder" id="adminAuditNotice" hidden></div>
+                    <div
+                      class="table-responsive"
+                      id="adminAuditTableWrap"
+                      aria-live="polite"
+                      data-prevent-admin-swipe="true"
+                    >
+                      <table class="table admin-audit-table admin-table-light">
+                        <thead>
+                          <tr>
+                            <th scope="col">時刻</th>
+                            <th scope="col">ユーザー</th>
+                            <th scope="col">イベント</th>
+                            <th scope="col">概要</th>
+                          </tr>
+                        </thead>
+                        <tbody id="adminAuditTableBody">
+                          <tr>
+                            <td colspan="4">
+                              <div class="admin-users-loading">
+                                <span class="material-icons-outlined align-middle"
+                                  >hourglass_top</span
+                                >
+                                読み込み中...
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-                    <div class="admin-filter-item admin-filter-actions">
-                      <label class="form-label d-none d-md-block">&nbsp;</label>
-                      <button class="btn btn-outline-secondary w-100" type="button" id="btnAdminAuditReload">
-                        <span class="material-icons-outlined align-middle me-1">refresh</span>再読込
-                      </button>
+                    <div class="admin-placeholder text-center" id="adminAuditEmpty" hidden>
+                      条件に一致するログがありません。
                     </div>
                   </div>
-                  <div class="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3 admin-audit-meta">
-                    <div class="small text-muted" id="adminAuditSummary">—</div>
-                    <div class="small text-muted" id="adminAuditUpdatedAt">最終更新: —</div>
-                  </div>
-                  <div class="admin-placeholder" id="adminAuditNotice" hidden></div>
-                  <div class="table-responsive" id="adminAuditTableWrap" aria-live="polite" data-prevent-admin-swipe="true">
-                    <table class="table admin-audit-table admin-table-light">
-                      <thead>
-                        <tr>
-                          <th scope="col">時刻</th>
-                          <th scope="col">ユーザー</th>
-                          <th scope="col">イベント</th>
-                          <th scope="col">概要</th>
-                        </tr>
-                      </thead>
-                      <tbody id="adminAuditTableBody">
-                        <tr>
-                          <td colspan="4">
-                            <div class="admin-users-loading">
-                              <span class="material-icons-outlined align-middle">hourglass_top</span>
-                              読み込み中...
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div class="admin-placeholder text-center" id="adminAuditEmpty" hidden>
-                    条件に一致するログがありません。
-                  </div>
-                </div>
-              </section>
+                </section>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="admin-bottom-meta text-center">
-          <p class="text-muted small mb-0">UI 全体は順次ブラッシュアップ予定です</p>
-          <small class="text-muted">スワイプまたは下部ナビでセクションを切り替えられます</small>
-        </div>
-      </section>
-    </main>
+          <div class="admin-bottom-meta text-center">
+            <p class="text-muted small mb-0">UI 全体は順次ブラッシュアップ予定です</p>
+            <small class="text-muted">スワイプまたは下部ナビでセクションを切り替えられます</small>
+          </div>
+        </section>
+      </main>
     </div>
 
     <div
@@ -4849,7 +4999,12 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="adminAuditDetailTitle">ログ詳細</h5>
-            <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="閉じる"></button>
+            <button
+              class="btn-close"
+              type="button"
+              data-bs-dismiss="modal"
+              aria-label="閉じる"
+            ></button>
           </div>
           <div class="modal-body">
             <dl class="row small mb-3">
@@ -4889,7 +5044,12 @@
           <h5 class="offcanvas-title" id="adminUserDrawerTitle">ユーザー管理</h5>
           <p class="small text-muted mb-0" id="adminUserDrawerEmail">—</p>
         </div>
-        <button class="btn-close" type="button" data-bs-dismiss="offcanvas" aria-label="閉じる"></button>
+        <button
+          class="btn-close"
+          type="button"
+          data-bs-dismiss="offcanvas"
+          aria-label="閉じる"
+        ></button>
       </div>
       <div class="offcanvas-body">
         <form id="adminUserDetailForm">
@@ -4934,7 +5094,11 @@
           <div class="d-flex gap-2">
             <button class="btn btn-primary flex-grow-1" type="submit" id="adminUserDetailSave">
               <span class="label">変更を保存</span>
-              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+              <span
+                class="spinner-border spinner-border-sm d-none"
+                role="status"
+                aria-hidden="true"
+              ></span>
             </button>
             <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="offcanvas">
               閉じる
@@ -5512,7 +5676,9 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              キャンセル
+            </button>
             <button type="button" class="btn btn-primary" id="btnQuickFolderSave">
               <span class="label">保存</span>
               <span class="spinner-border spinner-border-sm d-none" role="status"></span>
@@ -5636,7 +5802,12 @@
       let IS_MANAGER = !!__BOOT__.isManager;
       const CURRENT_USER_ROLE = typeof __BOOT__.role === 'string' ? __BOOT__.role : '';
       const IS_ADMIN = String(CURRENT_USER_ROLE || '').toLowerCase() === 'admin';
-      let ADMIN_STATE = { active: false, section: 'dashboard', orgId: 'current', orgLabel: '現在の組織' };
+      let ADMIN_STATE = {
+        active: false,
+        section: 'dashboard',
+        orgId: 'current',
+        orgLabel: '現在の組織',
+      };
       const ADMIN_SECTION_LISTENERS = [];
       const ADMIN_ORG_LISTENERS = [];
       function addAdminSectionListener(fn) {
@@ -5688,8 +5859,10 @@
       const TEST_USER_EMAIL = 'tester.member@shiftflow.dev';
       const TEST_AVATAR_URL = 'https://placehold.jp/3d4070/ffffff/160x160.png?text=TEST';
       const TEST_THUMB_URL = 'https://placehold.jp/2c3d55/ffffff/96x96.png?text=UI';
-      const TEST_ATTACHMENT_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80';
-      const TEST_ATTACHMENT_MENU = 'https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=800&q=80';
+      const TEST_ATTACHMENT_IMAGE =
+        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80';
+      const TEST_ATTACHMENT_MENU =
+        'https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=800&q=80';
       let TEST_MODE_STATE = window.__SHIFT_FLOW_TEST_MODE__ || { active: false };
       window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
       let APP_UPDATE_PROMPTED = false;
@@ -5714,10 +5887,13 @@
         var task = {
           id: options.id || 'TASK-' + Math.floor(Math.random() * 10000),
           title: options.title || 'テストタスク',
-          assignees: Array.isArray(options.assignees) ? options.assignees.slice() : [TEST_USER_EMAIL],
-          assignee: Array.isArray(options.assignees) && options.assignees.length
-            ? options.assignees[0]
-            : TEST_USER_EMAIL,
+          assignees: Array.isArray(options.assignees)
+            ? options.assignees.slice()
+            : [TEST_USER_EMAIL],
+          assignee:
+            Array.isArray(options.assignees) && options.assignees.length
+              ? options.assignees[0]
+              : TEST_USER_EMAIL,
           dueDate: due.toISOString().slice(0, 10),
           dueValue: due.getTime(),
           status: options.status || '対応中',
@@ -5845,9 +6021,24 @@
           { id: 'バックヤード', name: 'バックヤード' },
         ];
         var users = [
-          { email: TEST_USER_EMAIL, name: 'テストユーザー', role: 'member', imageUrl: TEST_AVATAR_URL },
-          { email: 'manager@shiftflow.dev', name: '山田マネージャー', role: 'manager', imageUrl: TEST_THUMB_URL },
-          { email: 'kitchen.lead@shiftflow.dev', name: '厨房リード', role: 'member', imageUrl: TEST_THUMB_URL },
+          {
+            email: TEST_USER_EMAIL,
+            name: 'テストユーザー',
+            role: 'member',
+            imageUrl: TEST_AVATAR_URL,
+          },
+          {
+            email: 'manager@shiftflow.dev',
+            name: '山田マネージャー',
+            role: 'manager',
+            imageUrl: TEST_THUMB_URL,
+          },
+          {
+            email: 'kitchen.lead@shiftflow.dev',
+            name: '厨房リード',
+            role: 'member',
+            imageUrl: TEST_THUMB_URL,
+          },
         ];
         var userInfo = {
           email: TEST_USER_EMAIL,
@@ -6009,9 +6200,10 @@
               priority: payload.priority || '中',
               status: '未着手',
               dueOffsetDays: 0,
-              assignees: Array.isArray(payload.assignees) && payload.assignees.length
-                ? payload.assignees
-                : [data.userInfo.email],
+              assignees:
+                Array.isArray(payload.assignees) && payload.assignees.length
+                  ? payload.assignees
+                  : [data.userInfo.email],
               createdBy: data.userInfo.email,
             });
             if (payload.dueDate) {
@@ -6657,7 +6849,8 @@
             return memberMatchesKeyword(user, keyword);
           });
           if (!filtered.length) {
-            list.innerHTML = '<div class="text-muted small px-2">一致するメンバーがいません。</div>';
+            list.innerHTML =
+              '<div class="text-muted small px-2">一致するメンバーがいません。</div>';
             return;
           }
           list.innerHTML = filtered
@@ -6732,9 +6925,10 @@
           if (nameInput) nameInput.value = (folder && folder.name) || '';
           if (colorInput) colorInput.value = (folder && folder.color) || '#517cb2';
           if (publicSwitch) {
-            publicSwitch.checked = folder && Object.prototype.hasOwnProperty.call(folder, 'isPublic')
-              ? !!folder.isPublic
-              : true;
+            publicSwitch.checked =
+              folder && Object.prototype.hasOwnProperty.call(folder, 'isPublic')
+                ? !!folder.isPublic
+                : true;
           }
           if (searchInput) {
             searchInput.value = '';
@@ -6987,7 +7181,9 @@
           var badge = isPublic ? '公開' : '限定';
           var icon = isPublic ? 'lock_open' : 'lock';
           var colorDot =
-            '<span class="folder-color-dot" style="background:' + esc(folder.color || '#517cb2') + '"></span>';
+            '<span class="folder-color-dot" style="background:' +
+            esc(folder.color || '#517cb2') +
+            '"></span>';
           var memberCount =
             folder.memberCount != null
               ? folder.memberCount
@@ -6996,7 +7192,8 @@
               : '—';
           var memberCountLabel = esc(String(memberCount));
           var stateBadges = [];
-          if (!isActive) stateBadges.push('<span class="folder-state-badge is-inactive">無効</span>');
+          if (!isActive)
+            stateBadges.push('<span class="folder-state-badge is-inactive">無効</span>');
           if (isSystem) stateBadges.push('<span class="folder-state-badge is-system">固定</span>');
           var stateBadgeHtml = stateBadges.length
             ? '<div class="folder-meta-badges">' + stateBadges.join('') + '</div>'
@@ -7368,28 +7565,29 @@
 
         function handleTestRoute(route, argsSnapshot, handlers) {
           var testState = globalThis.__SHIFT_FLOW_TEST_MODE__;
-          if (
-            !testState ||
-            !testState.active ||
-            typeof testState.handleRoute !== 'function'
-          ) {
+          if (!testState || !testState.active || typeof testState.handleRoute !== 'function') {
             return false;
           }
           var delayMs = Number(testState.networkDelayMs || 200);
-          setTimeout(function () {
-            Promise.resolve()
-              .then(function () {
-                return testState.handleRoute(route, argsSnapshot || []);
-              })
-              .then(function (payload) {
-                deliver(handlers.success, payload, handlers.userObject);
-              })
-              .catch(function (err) {
-                var normalized =
-                  err instanceof Error ? err : createError(String(err || 'Test mode failure'), { route: route });
-                deliverFailure(handlers.failure, normalized, handlers.userObject);
-              });
-          }, delayMs >= 0 ? delayMs : 0);
+          setTimeout(
+            function () {
+              Promise.resolve()
+                .then(function () {
+                  return testState.handleRoute(route, argsSnapshot || []);
+                })
+                .then(function (payload) {
+                  deliver(handlers.success, payload, handlers.userObject);
+                })
+                .catch(function (err) {
+                  var normalized =
+                    err instanceof Error
+                      ? err
+                      : createError(String(err || 'Test mode failure'), { route: route });
+                  deliverFailure(handlers.failure, normalized, handlers.userObject);
+                });
+            },
+            delayMs >= 0 ? delayMs : 0
+          );
           return true;
         }
 
@@ -7800,8 +7998,7 @@
         closeBtn.addEventListener('click', dismiss);
         el.appendChild(closeBtn);
         wrap.appendChild(el);
-        var ttl =
-          typeof options.duration === 'number' ? options.duration : 2200;
+        var ttl = typeof options.duration === 'number' ? options.duration : 2200;
         if (ttl > 0) {
           setTimeout(dismiss, ttl);
         }
@@ -7869,8 +8066,7 @@
       function promptForAppUpdate(data) {
         if (APP_UPDATE_PROMPTED) return;
         APP_UPDATE_PROMPTED = true;
-        var versionLabel =
-          data && data.version ? '（' + data.version + '）' : '';
+        var versionLabel = data && data.version ? '（' + data.version + '）' : '';
         notify('最新版がリリースされました' + versionLabel + '。更新しますか？', true, {
           actionLabel: '更新する',
           onAction: applyAppShellUpdate,
@@ -7901,18 +8097,12 @@
 
       function waitForControllerChange() {
         function onControllerChange() {
-          navigator.serviceWorker.removeEventListener(
-            'controllerchange',
-            onControllerChange
-          );
+          navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
           if (APP_UPDATE_REFRESHING) return;
           APP_UPDATE_REFRESHING = true;
           window.location.reload();
         }
-        navigator.serviceWorker.addEventListener(
-          'controllerchange',
-          onControllerChange
-        );
+        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
       }
       var HISTORY_GUARD_ACTIVE = false;
       var OVERLAY_HISTORY_STACK = [];
@@ -8174,7 +8364,11 @@
       function showAuthOverlay(messageOrOptions, maybeOptions) {
         var overlayOpts = {};
         var resolvedMessage = messageOrOptions;
-        if (messageOrOptions && typeof messageOrOptions === 'object' && !Array.isArray(messageOrOptions)) {
+        if (
+          messageOrOptions &&
+          typeof messageOrOptions === 'object' &&
+          !Array.isArray(messageOrOptions)
+        ) {
           overlayOpts = messageOrOptions;
           resolvedMessage = overlayOpts.message;
         } else if (maybeOptions && typeof maybeOptions === 'object') {
@@ -8321,11 +8515,11 @@
                   return '長時間経過したため再度 Google でログインしてください。';
                 case 'no_session':
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+                    ? 'Google へサインインしてください。'
                     : 'Google でログインしてください。';
                 default:
                   return NEEDS_MANUAL_SIGNIN
-                    ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+                    ? 'Google へサインインしてください。'
                     : 'Google でログインしてください。';
               }
             })();
@@ -8451,9 +8645,7 @@
           const authWindow = window.open(startUrl, '_blank', 'noopener');
           if (!authWindow) {
             if (manualMode && fallbackTarget) {
-              showAuthOverlay(
-                'Google の認証ページを別タブで開きました。サインイン完了後にこの画面へ戻ってください。'
-              );
+              showAuthOverlay('Google の認証ページからサインインしてください。');
               window.open(fallbackTarget, '_blank', 'noopener');
               return;
             }
@@ -8574,7 +8766,7 @@
           const retryMessage = returningFromAuth
             ? 'ログインの完了を確認できませんでした。ブラウザで再度 Google へサインインしてください。'
             : NEEDS_MANUAL_SIGNIN
-            ? 'ホーム画面から開いた場合はブラウザで Google へサインインしてください。'
+            ? 'Google へサインインしてください。'
             : 'Google でログインしてください。';
           showAuthOverlay(retryMessage);
           return;
@@ -8686,10 +8878,10 @@
         });
       }
       function cssEscapeValue(value) {
-          if (window.CSS && typeof window.CSS.escape === 'function') {
-            return window.CSS.escape(value);
-          }
-          return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+          return window.CSS.escape(value);
+        }
+        return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
       }
       function scrollToTopNow() {
         document.documentElement.scrollTop = 0;
@@ -12189,21 +12381,21 @@
 
         function init() {
           on(SELECTORS.save, 'click', handleSave);
-           MessageDraftController.init();
-           bindTemplateRefresh();
-           const quickFolderBtn = byId('btnQuickFolder');
-           if (quickFolderBtn) {
-             quickFolderBtn.addEventListener('click', QuickFolderController.open);
-           }
-           const quickFolderSave = byId('btnQuickFolderSave');
-           if (quickFolderSave) {
-             quickFolderSave.addEventListener('click', QuickFolderController.save);
-           }
-           const quickFolderPublic = byId('quickFolderPublic');
-           if (quickFolderPublic) {
-             quickFolderPublic.addEventListener('change', QuickFolderController.toggleMembers);
-           }
-           handleFolderChange();
+          MessageDraftController.init();
+          bindTemplateRefresh();
+          const quickFolderBtn = byId('btnQuickFolder');
+          if (quickFolderBtn) {
+            quickFolderBtn.addEventListener('click', QuickFolderController.open);
+          }
+          const quickFolderSave = byId('btnQuickFolderSave');
+          if (quickFolderSave) {
+            quickFolderSave.addEventListener('click', QuickFolderController.save);
+          }
+          const quickFolderPublic = byId('quickFolderPublic');
+          if (quickFolderPublic) {
+            quickFolderPublic.addEventListener('change', QuickFolderController.toggleMembers);
+          }
+          handleFolderChange();
         }
 
         return {
@@ -12508,8 +12700,7 @@
           setAlert('');
           var list = byId('adminTemplateList');
           if (list) {
-            list.innerHTML =
-              '<div class="list-group-item text-muted">読み込み中...</div>';
+            list.innerHTML = '<div class="list-group-item text-muted">読み込み中...</div>';
           }
           state.loading = true;
           try {
@@ -12560,8 +12751,7 @@
             setAlert('名称を入力してください。');
             return;
           }
-          var title =
-            (byId('adminTemplateTitle') && byId('adminTemplateTitle').value) || '';
+          var title = (byId('adminTemplateTitle') && byId('adminTemplateTitle').value) || '';
           var body = (byId('adminTemplateBody') && byId('adminTemplateBody').value) || '';
           setSaving(true);
           setAlert('');
@@ -12710,7 +12900,10 @@
           var suspendedCount = (stats.suspended || 0) + (stats.revoked || 0);
           setText('adminDashboardSuspendedCount', formatNumber(suspendedCount));
           setText('adminDashboardSuspendedMeta', formatNumber(stats.suspended));
-          setText('adminDashboardAuditCount', state.auditCount ? state.auditCount : (state.loaded ? 0 : '—'));
+          setText(
+            'adminDashboardAuditCount',
+            state.auditCount ? state.auditCount : state.loaded ? 0 : '—'
+          );
           setText(
             'adminDashboardKpiUpdated',
             state.updatedAt ? formatJst(state.updatedAt, true) : '—'
@@ -12784,7 +12977,8 @@
 
         function renderSystemCard() {
           setText('adminDashboardOrgLabel', ADMIN_STATE.orgLabel || '現在の組織');
-          var orgId = ADMIN_STATE.orgId && ADMIN_STATE.orgId !== 'current' ? ADMIN_STATE.orgId : 'current';
+          var orgId =
+            ADMIN_STATE.orgId && ADMIN_STATE.orgId !== 'current' ? ADMIN_STATE.orgId : 'current';
           setText('adminDashboardOrgId', orgId);
           setText(
             'adminDashboardUpdatedAt',
@@ -12863,7 +13057,10 @@
               return true;
             })
             .catch(function (err) {
-              setNotice(err && err.message ? err.message : '管理トップの読み込みに失敗しました。', true);
+              setNotice(
+                err && err.message ? err.message : '管理トップの読み込みに失敗しました。',
+                true
+              );
               return false;
             })
             .finally(function () {
@@ -12934,7 +13131,9 @@
         };
 
         function getOrgFilter() {
-          return state.filters.orgId === 'current' ? ADMIN_STATE.orgId || 'current' : state.filters.orgId;
+          return state.filters.orgId === 'current'
+            ? ADMIN_STATE.orgId || 'current'
+            : state.filters.orgId;
         }
 
         function setNotice(message, isError) {
@@ -13008,7 +13207,13 @@
 
         function buildRoleControl(row) {
           var normalizedRole = String(row.role || 'member');
-          return '<span class="admin-role-label" data-role="' + esc(normalizedRole) + '">' + esc(normalizedRole) + '</span>';
+          return (
+            '<span class="admin-role-label" data-role="' +
+            esc(normalizedRole) +
+            '">' +
+            esc(normalizedRole) +
+            '</span>'
+          );
         }
 
         function buildActionButtons(row) {
@@ -13071,7 +13276,8 @@
           var orgEl = byId('adminUserDetailOrg');
           if (orgEl) orgEl.textContent = row.orgName || '現在の組織';
           var membershipEl = byId('adminUserDetailMembershipStatus');
-          if (membershipEl) membershipEl.textContent = formatStatusDisplay(row.membershipStatus || row.status);
+          if (membershipEl)
+            membershipEl.textContent = formatStatusDisplay(row.membershipStatus || row.status);
           var accountEl = byId('adminUserDetailAccountStatus');
           if (accountEl) accountEl.textContent = formatStatusDisplay(row.userStatus || row.status);
           var lastLoginEl = byId('adminUserDetailLastLogin');
@@ -13181,7 +13387,9 @@
                 '</strong><div class="small text-muted">' +
                 esc(row.orgName || '') +
                 '</div></div></div></td>' +
-                '<td><div class="small">' + esc(row.email) + '</div></td>' +
+                '<td><div class="small">' +
+                esc(row.email) +
+                '</div></td>' +
                 '<td>' +
                 buildRoleControl(row) +
                 '</td>' +
@@ -13244,9 +13452,12 @@
           if (state.searchTimer) {
             clearTimeout(state.searchTimer);
           }
-          state.searchTimer = setTimeout(function () {
-            fetchUsers();
-          }, typeof delay === 'number' ? delay : 320);
+          state.searchTimer = setTimeout(
+            function () {
+              fetchUsers();
+            },
+            typeof delay === 'number' ? delay : 320
+          );
         }
 
         function buildRequestArgs() {
@@ -13295,7 +13506,9 @@
         }
 
         function setRowBusy(userId, busy) {
-          var row = document.querySelector('[data-admin-user-row="' + cssEscapeValue(userId) + '"]');
+          var row = document.querySelector(
+            '[data-admin-user-row="' + cssEscapeValue(userId) + '"]'
+          );
           if (!row) return;
           var controls = row.querySelectorAll('button,select');
           controls.forEach(function (el) {
@@ -13318,7 +13531,10 @@
               if (!options.skipRowBusy) {
                 setRowBusy(payload.userId, false);
               }
-              notify(res && res.message ? res.message : '更新しました。', res && res.success !== false);
+              notify(
+                res && res.message ? res.message : '更新しました。',
+                res && res.success !== false
+              );
               if (typeof options.onSuccess === 'function') {
                 try {
                   options.onSuccess(res);
@@ -13435,9 +13651,10 @@
           var roleEl = byId('adminUsersRole');
           if (roleEl) roleEl.addEventListener('change', handleRoleFilterChange);
           var reloadBtn = byId('btnAdminUsersReload');
-          if (reloadBtn) reloadBtn.addEventListener('click', function () {
-            fetchUsers();
-          });
+          if (reloadBtn)
+            reloadBtn.addEventListener('click', function () {
+              fetchUsers();
+            });
           var table = byId('adminUsersTableBody');
           if (table) {
             table.addEventListener('click', handleActionClick);
@@ -13542,7 +13759,11 @@
               '）'
           );
           if (meta.truncated) {
-            parts.push('最新 ' + (meta.filters && meta.filters.limit ? meta.filters.limit : AUDIT_LIMIT) + ' 件のみ表示');
+            parts.push(
+              '最新 ' +
+                (meta.filters && meta.filters.limit ? meta.filters.limit : AUDIT_LIMIT) +
+                ' 件のみ表示'
+            );
           }
           el.textContent = parts.join(' / ');
         }
@@ -13639,15 +13860,17 @@
           if (!Array.isArray(rows)) return [];
           return rows.map(function (row) {
             var id = row && row.id ? String(row.id) : 'audit_' + createRequestId();
-            var meta =
-              row && row.meta && typeof row.meta === 'object'
-                ? row.meta
-                : {};
+            var meta = row && row.meta && typeof row.meta === 'object' ? row.meta : {};
             return {
               id: id,
               type: row && row.type ? row.type : 'admin',
               typeLabel: row && row.typeLabel ? row.typeLabel : '監査',
-              eventLabel: row && row.eventLabel ? row.eventLabel : row && row.statusLabel ? row.statusLabel : 'イベント',
+              eventLabel:
+                row && row.eventLabel
+                  ? row.eventLabel
+                  : row && row.statusLabel
+                  ? row.statusLabel
+                  : 'イベント',
               statusLabel: row && row.statusLabel ? row.statusLabel : '',
               severity: row && row.severity ? row.severity : 'info',
               summary: row && row.summary ? row.summary : '',
@@ -13759,7 +13982,8 @@
           if (!row) return;
           var title = byId('adminAuditDetailTitle');
           if (title) {
-            title.textContent = (row.eventLabel || 'ログ詳細') + '（' + (row.typeLabel || '') + '）';
+            title.textContent =
+              (row.eventLabel || 'ログ詳細') + '（' + (row.typeLabel || '') + '）';
           }
           var mapping = [
             ['adminAuditDetailTime', row.occurredLabel || '—'],
@@ -13784,7 +14008,8 @@
           if (row.meta) {
             if (row.meta.route) routeText = row.meta.route;
             if (row.meta.targetType || row.meta.targetId) {
-              var target = (row.meta.targetType || '') + (row.meta.targetId ? ' / ' + row.meta.targetId : '');
+              var target =
+                (row.meta.targetType || '') + (row.meta.targetId ? ' / ' + row.meta.targetId : '');
               routeText = routeText ? routeText + ' / ' + target : target;
             }
           }
@@ -13913,7 +14138,11 @@
                   backendErr.code = body.code || 'api_error';
                   throw backendErr;
                 }
-                if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'result')) {
+                if (
+                  body &&
+                  typeof body === 'object' &&
+                  Object.prototype.hasOwnProperty.call(body, 'result')
+                ) {
                   return body.result;
                 }
                 return body;
@@ -14167,7 +14396,10 @@
           callOrgApi('adminUpdateOrganization', payload)
             .then(function (res) {
               setButtonLoading(btn, false);
-              notify(res && res.message ? res.message : '組織情報を更新しました。', res && res.success !== false);
+              notify(
+                res && res.message ? res.message : '組織情報を更新しました。',
+                res && res.success !== false
+              );
               fetchOrgDetail(state.activeOrgId);
               fetchOrgList();
             })
@@ -14286,7 +14518,9 @@
         function handleAdminTargetClick(event) {
           if (event) event.preventDefault();
           var target =
-            (event && event.currentTarget && event.currentTarget.getAttribute('data-admin-target')) ||
+            (event &&
+              event.currentTarget &&
+              event.currentTarget.getAttribute('data-admin-target')) ||
             'dashboard';
           activateAdminSection(target);
         }
@@ -14442,8 +14676,7 @@
         // スタンドアロン（PWA起動）では余分なヒーローを省き、一覧を優先表示
         try {
           var isStandalone =
-            (window.matchMedia &&
-              window.matchMedia('(display-mode: standalone)').matches) ||
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
             (window.navigator && window.navigator.standalone);
           if (isStandalone) {
             document.body.classList.add('standalone-condensed');
