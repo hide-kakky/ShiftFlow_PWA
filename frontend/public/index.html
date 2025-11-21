@@ -753,8 +753,8 @@
       @media (min-width: 992px) {
         .app-shell-grid {
           display: grid;
-          grid-template-columns: 260px 1fr;
-          gap: 18px;
+          grid-template-columns: 220px 1fr;
+          gap: 12px;
           align-items: start;
           max-width: 1600px;
           padding-left: calc(12px + env(safe-area-inset-left));
@@ -781,7 +781,7 @@
           top: calc(var(--header-h) + var(--safe-top) + 10px);
           align-self: flex-start;
           min-height: calc(100vh - var(--header-h) - 32px);
-          padding: 16px;
+          padding: 14px;
         }
         .topbar .navbar-nav {
           flex-direction: column;
@@ -1137,12 +1137,12 @@
         margin-top: clamp(28px, 6vw, 40px);
       }
       .container-xl {
-        max-width: 1520px;
+        max-width: 1760px;
         width: 100%;
         margin-left: auto;
         margin-right: auto;
-        padding-left: calc(12px + env(safe-area-inset-left));
-        padding-right: calc(12px + env(safe-area-inset-right));
+        padding-left: calc(10px + env(safe-area-inset-left));
+        padding-right: calc(10px + env(safe-area-inset-right));
       }
       .card {
         background: var(--card);
@@ -1371,6 +1371,12 @@
         .home-panel-grid {
           grid-template-columns: 1.3fr 1fr;
         }
+      }
+      .standalone-condensed .home-hero {
+        display: none;
+      }
+      .standalone-condensed .home-panel-grid {
+        grid-template-columns: 1fr;
       }
       .home-panel {
         background: var(--card);
@@ -3902,9 +3908,6 @@
                   <h2 class="home-hero__title">
                     <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
                   </h2>
-                  <p class="home-hero__lead">
-                    いま必要な情報だけに絞りました。タスクとメッセージの最新状況を確認しましょう。
-                  </p>
                   <div class="home-hero__actions">
                     <button class="home-hero__action home-hero__action--primary" type="button" data-view="tasks">
                       <span class="material-icons" aria-hidden="true">checklist</span>
@@ -14409,6 +14412,19 @@
 
         initPullToRefresh();
         initializeAuthGateway();
+
+        // スタンドアロン（PWA起動）では余分なヒーローを省き、一覧を優先表示
+        try {
+          var isStandalone =
+            (window.matchMedia &&
+              window.matchMedia('(display-mode: standalone)').matches) ||
+            (window.navigator && window.navigator.standalone);
+          if (isStandalone) {
+            document.body.classList.add('standalone-condensed');
+          }
+        } catch (_err) {
+          /* noop */
+        }
       });
     </script>
     <script>
