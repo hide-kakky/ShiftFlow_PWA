@@ -3992,7 +3992,7 @@
                     </div>
                     <a href="#" class="link-soft" data-view="tasks">
                       <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                      タスク一覧
+                      一覧へ
                     </a>
                   </div>
                   <!-- Mount point for the "today's tasks" card list -->
@@ -4009,7 +4009,7 @@
                     </div>
                     <a href="#" class="link-soft" data-view="messages">
                       <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                      メッセージ一覧
+                      一覧へ
                     </a>
                   </div>
                   <!-- Mount point for unread message cards -->
@@ -5857,13 +5857,20 @@
         API_BASE_PATH,
       } = SHIFT_FLOW_CONFIG;
       const TEST_USER_EMAIL = 'tester.member@shiftflow.dev';
+      const TEST_MANAGER_EMAIL = 'tester.manager@shiftflow.dev';
+      const TEST_MANAGER_NAME = 'テストマネージャー';
+      const TEST_DEMO_ORG_ID = 'demo-org';
+      const TEST_DEMO_ORG_LABEL = 'ShiftFlow Demo';
       const TEST_AVATAR_URL = 'https://placehold.jp/3d4070/ffffff/160x160.png?text=TEST';
       const TEST_THUMB_URL = 'https://placehold.jp/2c3d55/ffffff/96x96.png?text=UI';
       const TEST_ATTACHMENT_IMAGE =
         'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80';
       const TEST_ATTACHMENT_MENU =
         'https://images.unsplash.com/photo-1529042410759-befb1204b468?auto=format&fit=crop&w=800&q=80';
-      let TEST_MODE_STATE = window.__SHIFT_FLOW_TEST_MODE__ || { active: false };
+      let TEST_MODE_STATE =
+        window.__SHIFT_FLOW_TEST_MODE__ && typeof window.__SHIFT_FLOW_TEST_MODE__ === 'object'
+          ? window.__SHIFT_FLOW_TEST_MODE__
+          : { active: false, profile: 'member' };
       window.__SHIFT_FLOW_TEST_MODE__ = TEST_MODE_STATE;
       let APP_UPDATE_PROMPTED = false;
       let APP_UPDATE_REFRESHING = false;
@@ -5924,6 +5931,7 @@
           priority: options.priority || '中',
           folderId: options.folderId || '全体',
           isRead: !!options.isRead,
+          isPinned: !!options.isPinned,
           createdAt: createdAt,
         };
         summary.detail = {
@@ -5938,6 +5946,7 @@
           canDelete: true,
           priority: summary.priority,
           folderId: summary.folderId,
+          isPinned: summary.isPinned,
         };
         return summary;
       }
