@@ -5,6 +5,14 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ---
 
+## 運用メモ（Codex / Service Worker）
+
+- 現在の APP_VERSION: `1.0.27`（`frontend/public/sw.js` 内の定義）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
+- 基本ルールは `CODEx_PROMPT.md` と `AGENTS.md` に従うこと。
+
+---
+
 ## システム構成
 
 | レイヤー | 役割 | 実装/リソース | 備考 |
