@@ -2324,12 +2324,6 @@
         gap: 12px;
         align-items: center;
       }
-      .settings-admin-card {
-        background: linear-gradient(135deg, rgba(81, 124, 178, 0.08), transparent);
-      }
-      :root[data-theme='dark'] .settings-admin-card {
-        background: linear-gradient(135deg, rgba(95, 125, 255, 0.22), rgba(16, 26, 53, 0.6));
-      }
       .admin-shell {
         display: none;
         padding: 12px 0 64px;
@@ -2779,6 +2773,123 @@
       :root[data-theme='dark'] .admin-table-light td {
         background-color: #f9fbff !important;
         color: #0f172a !important;
+      }
+      .admin-folder-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: transparent;
+      }
+      .admin-folder-table thead th {
+        font-size: 0.85rem;
+        letter-spacing: 0.02em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--card-border);
+        padding: 10px 8px;
+        white-space: nowrap;
+      }
+      .admin-folder-table tbody td {
+        padding: 12px 8px;
+        vertical-align: middle;
+        border-top: 1px solid var(--card-border);
+      }
+      .admin-folder-table tbody tr:hover td {
+        background: rgba(81, 124, 178, 0.06);
+      }
+      :root[data-theme='dark'] .admin-folder-table tbody tr:hover td {
+        background: rgba(122, 162, 255, 0.09);
+      }
+      .folder-name-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .folder-color-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.48);
+        box-shadow: 0 0 0 2px var(--card);
+      }
+      .folder-name-body strong {
+        display: block;
+        font-weight: 700;
+      }
+      .folder-meta-badges {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 2px;
+      }
+      .folder-state-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        border: 1px solid var(--card-border);
+        color: var(--muted);
+        background: rgba(15, 23, 42, 0.03);
+      }
+      :root[data-theme='dark'] .folder-state-badge {
+        background: rgba(255, 255, 255, 0.05);
+        color: #dbe4ff;
+      }
+      .folder-state-badge.is-system {
+        border-color: rgba(81, 124, 178, 0.45);
+        color: var(--primary);
+        background: rgba(81, 124, 178, 0.08);
+      }
+      .folder-state-badge.is-inactive {
+        border-color: rgba(148, 163, 184, 0.6);
+        color: #64748b;
+        background: rgba(148, 163, 184, 0.12);
+      }
+      :root[data-theme='dark'] .folder-state-badge.is-inactive {
+        color: #cbd5e1;
+      }
+      .folder-visibility-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: rgba(81, 124, 178, 0.08);
+        color: var(--primary);
+        font-weight: 600;
+        border: 1px solid rgba(81, 124, 178, 0.22);
+        white-space: nowrap;
+      }
+      .folder-visibility-chip.is-private {
+        background: rgba(255, 193, 7, 0.12);
+        color: #c77b00;
+        border-color: rgba(255, 193, 7, 0.32);
+      }
+      :root[data-theme='dark'] .folder-visibility-chip.is-private {
+        color: #ffd166;
+      }
+      .folder-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-900);
+        font-weight: 700;
+      }
+      :root[data-theme='dark'] .folder-pill {
+        color: #e6ecff;
+        background: rgba(148, 163, 184, 0.24);
+      }
+      .folder-updated {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 0.92rem;
       }
       .admin-role-label {
         font-weight: 600;
@@ -3436,7 +3547,7 @@
                 data-user-menu="admin"
                 data-manager-only
               >
-                <span class="material-icons-outlined">shield_person</span>
+                <span class="material-icons-outlined">admin_panel_settings</span>
                 管理メニュー
               </button>
               <button
@@ -3771,23 +3882,6 @@
                 </button>
               </div>
             </form>
-
-            <div class="form-section settings-block settings-admin-card mt-2">
-              <div class="settings-block-header">
-                <div class="settings-block-icon">
-                  <span class="material-icons-outlined">admin_panel_settings</span>
-                </div>
-                <div>
-                  <h5>管理者メニュー</h5>
-                  <p>
-                    ユーザー管理機能を準備中です。今後この画面から各種管理が行えるようになります。
-                  </p>
-                </div>
-              </div>
-              <p class="mb-0 text-muted small">
-                管理機能をご希望の場合は管理者までお問い合わせください。リリースまでしばらくお待ちください。
-              </p>
-            </div>
           </section>
         </div>
       </div>
@@ -4042,7 +4136,7 @@
                       </div>
                     </div>
                     <div class="table-responsive" data-prevent-admin-swipe="true">
-                      <table class="table table-sm align-middle">
+                      <table class="table table-sm align-middle admin-folder-table">
                         <thead>
                           <tr>
                             <th scope="col">名称</th>
@@ -6517,18 +6611,22 @@
               : folder.is_system === 1;
           var badge = isPublic ? '公開' : '限定';
           var icon = isPublic ? 'lock_open' : 'lock';
-          var colorChip =
-            '<span class="badge rounded-pill" style="background:' +
-            esc(folder.color || '#517cb2') +
-            '"></span>';
+          var colorDot =
+            '<span class="folder-color-dot" style="background:' + esc(folder.color || '#517cb2') + '"></span>';
           var memberCount =
             folder.memberCount != null
               ? folder.memberCount
               : Array.isArray(folder.memberUserIds)
               ? folder.memberUserIds.length
               : '—';
-          var statusBadge = !isActive ? '<span class="badge bg-secondary ms-1">無効</span>' : '';
-          var systemBadge = isSystem ? '<span class="badge bg-light text-dark ms-1">固定</span>' : '';
+          var memberCountLabel = esc(String(memberCount));
+          var stateBadges = [];
+          if (!isActive) stateBadges.push('<span class="folder-state-badge is-inactive">無効</span>');
+          if (isSystem) stateBadges.push('<span class="folder-state-badge is-system">固定</span>');
+          var stateBadgeHtml = stateBadges.length
+            ? '<div class="folder-meta-badges">' + stateBadges.join('') + '</div>'
+            : '';
+          var updatedLabel = folder.updatedAt ? new Date(folder.updatedAt).toLocaleString() : '—';
           var actions =
             IS_MANAGER && !isSystem
               ? '<button class="btn btn-sm btn-outline-secondary" type="button" data-folder-edit="' +
@@ -6540,23 +6638,33 @@
           return (
             '<tr>' +
             '<td>' +
-            colorChip +
-            ' ' +
+            '<div class="folder-name-cell">' +
+            colorDot +
+            '<div class="folder-name-body">' +
+            '<strong>' +
             esc(folder.name || folder.id) +
-            statusBadge +
-            systemBadge +
+            '</strong>' +
+            stateBadgeHtml +
+            '</div>' +
+            '</div>' +
             '</td>' +
-            '<td><span class="material-icons-outlined align-middle me-1" aria-hidden="true">' +
+            '<td><span class="folder-visibility-chip ' +
+            (isPublic ? 'is-public' : 'is-private') +
+            '">' +
+            '<span class="material-icons-outlined align-middle" aria-hidden="true">' +
             icon +
             '</span>' +
             badge +
-            '</td>' +
-            '<td>' +
-            memberCount +
-            '</td>' +
-            '<td>' +
-            (folder.updatedAt ? new Date(folder.updatedAt).toLocaleString() : '—') +
-            '</td>' +
+            '</span></td>' +
+            '<td><span class="folder-pill">' +
+            memberCountLabel +
+            '</span></td>' +
+            '<td><div class="folder-updated">' +
+            '<span class="material-icons-outlined align-middle" aria-hidden="true">schedule</span>' +
+            '<span>' +
+            esc(updatedLabel) +
+            '</span>' +
+            '</div></td>' +
             '<td class="text-end">' +
             actions +
             '</td>' +
