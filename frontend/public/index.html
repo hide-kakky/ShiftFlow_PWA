@@ -3199,13 +3199,13 @@
       <div class="auth-shell">
         <section class="auth-card">
           <div id="auth-session" class="auth-session">
-            <img id="auth-session-avatar" class="auth-session__avatar" alt="Profile" />
+            <img id="auth-session-avatar" class="auth-session__avatar" alt="プロフィール" />
             <div class="auth-session__meta">
               <span id="auth-session-name" class="auth-session__name"></span>
               <span id="auth-session-email" class="auth-session__email"></span>
             </div>
           </div>
-          <h1 class="auth-card__title">Sign-in</h1>
+          <h1 class="auth-card__title">サインイン</h1>
           <p class="auth-card__subtitle">
             個人の Google アカウントで認証します。下のボタンから認証を行ってください。
           </p>
@@ -3226,11 +3226,11 @@
               type="button"
             >
               <span class="material-icons-outlined">logout</span>
-              <span>Sign-out</span>
+              <span>サインアウト</span>
             </button>
             <button id="btn-auth-demo" class="auth-button auth-button--ghost" type="button">
               <span class="material-icons-outlined">play_circle</span>
-              <span>テストユーザーで試す</span>
+              <span>テストユーザーでログイン</span>
             </button>
           </div>
         </section>
@@ -3264,7 +3264,7 @@
     <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true" data-app-shell hidden>
       <div class="bootstrap-loading__card" role="status" aria-live="polite">
         <div class="spinner-border text-primary" role="presentation"></div>
-        <p class="bootstrap-loading__text">ShiftFlow のデータを読み込んでいます…</p>
+        <p class="bootstrap-loading__text">データ読み込み中…</p>
       </div>
     </div>
 
@@ -3376,7 +3376,7 @@
                 class="avatar avatar-sm js-user-avatar user-menu-avatar"
                 data-avatar-url="/icons/icon-192.png"
                 data-bind-user-avatar
-                alt="User"
+                alt="ユーザー"
               />
               <span class="d-none d-xl-inline-flex flex-column text-start lh-1">
                 <strong class="user-menu-name" data-bind-user-name>ゲストユーザー</strong>
@@ -3465,9 +3465,9 @@
                 <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                   >calendar_month</span
                 >
-                <h3 class="m-0">Upcoming Task</h3>
+                <h3 class="m-0">直近のタスク</h3>
               </div>
-              <a href="#" class="link-soft" data-view="tasks">View all</a>
+              <a href="#" class="link-soft" data-view="tasks">タスク一覧</a>
             </div>
             <!-- Mount point for the "today's tasks" card list -->
             <div id="home-today-tasks" class="mt-2"></div>
@@ -3477,9 +3477,9 @@
                 <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                   >mark_email_unread</span
                 >
-                <h3 class="m-0">New Message</h3>
+                <h3 class="m-0">新着メッセージ</h3>
               </div>
-              <a href="#" class="link-soft" data-view="messages">View all</a>
+              <a href="#" class="link-soft" data-view="messages">メッセージ一覧</a>
             </div>
             <!-- Mount point for unread message cards -->
             <div id="home-unread" class="mt-2"></div>
@@ -3490,27 +3490,27 @@
             <div class="task-header mt-0">
               <div class="task-title-wrap">
                 <span class="material-icons-outlined task-title-icon">send</span>
-                <h3 class="view-title">TASKS</h3>
+                <h3 class="view-title">タスク</h3>
               </div>
               <button
                 class="btn btn-outline-primary d-flex align-items-center gap-1"
                 id="task-reload"
                 type="button"
               >
-                <span class="material-icons align-middle">refresh</span>RELOAD
+                <span class="material-icons align-middle">refresh</span>再読込
               </button>
             </div>
 
             <div class="task-tabs" id="taskTabs">
-              <button class="task-tab-btn active" data-task-tab="my" type="button">MY TASK</button>
-              <button class="task-tab-btn" data-task-tab="from" type="button">FROM ME</button>
+              <button class="task-tab-btn active" data-task-tab="my" type="button">あなたのタスク</button>
+              <button class="task-tab-btn" data-task-tab="from" type="button">依頼したタスク</button>
               <button
                 class="task-tab-btn d-none"
                 data-task-tab="all"
                 data-manager-only="true"
                 type="button"
               >
-                <span class="material-icons-outlined">admin_panel_settings</span>ALL TASKS
+                <span class="material-icons-outlined">admin_panel_settings</span>全タスク
               </button>
             </div>
 
@@ -3522,8 +3522,8 @@
                     <input
                       type="search"
                       id="task-search-my"
-                      placeholder="Search tasks"
-                      aria-label="Search my tasks"
+                      placeholder="キーワード検索"
+                      aria-label="自分のタスクを検索"
                     />
                   </div>
                 </div>
@@ -3538,13 +3538,13 @@
                     <input
                       type="search"
                       id="task-search-from"
-                      placeholder="Search tasks"
-                      aria-label="Search tasks I created"
+                      placeholder="キーワード検索"
+                      aria-label="自分が依頼したタスクを検索"
                     />
                   </div>
                   <div class="task-filter-row">
                     <select class="task-filter-select" id="task-filter-from-assignee">
-                      <option value="">Filter by assignee</option>
+                      <option value="">担当者で絞り込み</option>
                     </select>
                   </div>
                 </div>
@@ -3559,13 +3559,13 @@
                     <input
                       type="search"
                       id="task-search-all"
-                      placeholder="Search tasks"
-                      aria-label="Search all tasks"
+                      placeholder="キーワード検索"
+                      aria-label="すべてのタスクを検索"
                     />
                   </div>
                   <div class="task-filter-row">
                     <select class="task-filter-select" id="task-filter-all-assignee">
-                      <option value="">Filter by assignee</option>
+                      <option value="">担当者で絞り込み</option>
                     </select>
                   </div>
                 </div>
@@ -3581,7 +3581,7 @@
             <div class="task-header mt-0">
               <div class="task-title-wrap">
                 <span class="material-icons-outlined task-title-icon">mail</span>
-                <h3 class="view-title">MESSAGES</h3>
+                <h3 class="view-title">メッセージ</h3>
               </div>
             </div>
             <div class="subhead-bar mt-2">
@@ -3591,22 +3591,22 @@
                   type="text"
                   class="form-control"
                   id="msg-search-box"
-                  placeholder="Search title or body"
+                  placeholder="キーワード検索"
                 />
               </div>
             </div>
             <div class="row g-2 align-items-end mt-2">
               <div class="col-auto">
-                <label class="form-label">Folder</label>
+                <label class="form-label">フォルダ</label>
                 <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
-                  <option value="">All</option>
+                  <option value="">全て</option>
                 </select>
               </div>
               <div class="col-auto">
                 <label class="form-label d-block">&nbsp;</label>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                  <label class="form-check-label" for="flt-msg-unread">Unread only</label>
+                  <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
                 </div>
               </div>
               <div class="col-auto">
@@ -3615,9 +3615,9 @@
                   class="btn btn-outline-success"
                   id="btn-msg-markall"
                   type="button"
-                  aria-label="Mark all unread as read"
+                  aria-label="未読をすべて既読にする"
                 >
-                  <span class="material-icons align-middle me-1">done_all</span>Mark All Read
+                  <span class="material-icons align-middle me-1">done_all</span>全て既読にする
                 </button>
               </div>
             </div>
@@ -3890,7 +3890,7 @@
                     <dl class="row small mb-0">
                       <dt class="col-4 col-md-3">対象組織</dt>
                       <dd class="col-8 col-md-9" id="adminDashboardOrgLabel">現在の組織</dd>
-                      <dt class="col-4 col-md-3">Org ID</dt>
+                      <dt class="col-4 col-md-3">組織 ID</dt>
                       <dd class="col-8 col-md-9" id="adminDashboardOrgId">—</dd>
                       <dt class="col-4 col-md-3">更新</dt>
                       <dd class="col-8 col-md-9" id="adminDashboardUpdatedAt">—</dd>
@@ -3928,10 +3928,10 @@
                       <label class="form-label" for="adminUsersRole">ロール</label>
                       <select class="form-select" id="adminUsersRole">
                         <option value="">すべて</option>
-                        <option value="admin">Admin</option>
-                        <option value="manager">Manager</option>
-                        <option value="member">Member</option>
-                        <option value="guest">Guest</option>
+                        <option value="admin">管理者</option>
+                        <option value="manager">マネージャー</option>
+                        <option value="member">一般</option>
+                        <option value="guest">ゲスト</option>
                       </select>
                     </div>
                     <div class="admin-filter-item admin-filter-actions">
@@ -4451,12 +4451,12 @@
       <ul class="dropdown-menu" aria-labelledby="fabButton">
         <li>
           <button class="dropdown-item" type="button" id="btn-open-new-task">
-            <span class="material-icons-outlined">send</span> Task
+            <span class="material-icons-outlined">send</span> タスク
           </button>
         </li>
         <li>
           <button class="dropdown-item" type="button" id="btn-open-new-msg">
-            <span class="material-icons-outlined">mail</span> Message
+            <span class="material-icons-outlined">mail</span> メッセージ
           </button>
         </li>
       </ul>
@@ -4971,7 +4971,7 @@
             <div class="alert alert-danger d-none" id="quickFolderError"></div>
             <div class="mb-3">
               <label class="form-label" for="quickFolderName">名称</label>
-              <input type="text" class="form-control" id="quickFolderName" placeholder="Main" />
+              <input type="text" class="form-control" id="quickFolderName" placeholder="メイン" />
             </div>
             <div class="mb-3">
               <label class="form-label" for="quickFolderColor">カラー</label>
@@ -5850,7 +5850,7 @@
           select.innerHTML = '';
           var placeholder = document.createElement('option');
           placeholder.value = '';
-          placeholder.textContent = 'Filter by assignee';
+          placeholder.textContent = '担当者で絞り込み';
           select.appendChild(placeholder);
           rows.forEach(function (user) {
             if (!user || !user.email) return;
@@ -6488,7 +6488,7 @@
               ? folder.memberUserIds.length
               : '—';
           var statusBadge = !isActive ? '<span class="badge bg-secondary ms-1">無効</span>' : '';
-          var systemBadge = isSystem ? '<span class="badge bg-light text-dark ms-1">system</span>' : '';
+          var systemBadge = isSystem ? '<span class="badge bg-light text-dark ms-1">固定</span>' : '';
           var actions =
             IS_MANAGER && !isSystem
               ? '<button class="btn btn-sm btn-outline-secondary" type="button" data-folder-edit="' +
@@ -7740,14 +7740,14 @@
           if (emailEl) emailEl.textContent = email;
           if (avatarEl) {
             avatarEl.src = session.user.picture || PROFILE_PLACEHOLDER_URL;
-            avatarEl.alt = name || email || 'Profile';
+            avatarEl.alt = name || email || 'プロフィール';
           }
         } else {
           if (nameEl) nameEl.textContent = '';
           if (emailEl) emailEl.textContent = '';
           if (avatarEl) {
             avatarEl.src = PROFILE_PLACEHOLDER_URL;
-            avatarEl.alt = 'Profile placeholder';
+            avatarEl.alt = 'プロフィール（プレースホルダ）';
           }
         }
       }
@@ -10158,7 +10158,7 @@
         var bodyClasses = ['card-body', 'app-card-body'];
         var actionHtml = '';
         if (!opts.hideAction) {
-          var lab = isRead ? 'Mark as unread' : 'Mark as read';
+          var lab = isRead ? '未読にする' : '既読にする';
           var style = isRead ? 'btn-outline-primary' : 'btn-primary';
           var toggleFlag = isRead ? 'false' : 'true';
           actionHtml =
@@ -10274,7 +10274,7 @@
       function renderMessageList(rows) {
         var list = Array.isArray(rows) ? rows : [];
         if (!list.length) {
-          return '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">No messages.</div></div>';
+          return '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">メッセージはありません。</div></div>';
         }
         return list
           .map(function (m) {
@@ -10381,7 +10381,7 @@
           })
           .withFailureHandler(function (e) {
             setButtonLoading(btn, false);
-            notify('Failed to update read status: ' + e.message, false);
+            notify('メッセージの更新に失敗しました。' + e.message, false);
             if (typeof onComplete === 'function') {
               var err =
                 e instanceof Error
@@ -10418,7 +10418,7 @@
         btn.disabled = true;
         var originalHTML = btn.innerHTML;
         btn.innerHTML =
-          '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Processing...';
+          '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>処理中...';
         var folderRef = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
         if (folderRef != null) folderRef = String(folderRef).trim();
         if (!folderRef || folderRef.toLowerCase() === 'all') folderRef = '';
@@ -10431,7 +10431,7 @@
               return x.id;
             });
             if (ids.length === 0) {
-              notify('No unread messages to mark as read.', true);
+              notify('未読メッセージはありません', true);
               btn.disabled = false;
               btn.innerHTML = originalHTML;
               return;
@@ -10439,7 +10439,7 @@
             google.script.run
               .withSuccessHandler(function (res) {
                 notify(
-                  res && res.message ? res.message : 'Marked unread messages as read.',
+                  res && res.message ? res.message : '既読にしました',
                   res && res.success !== false
                 );
                 btn.disabled = false;
