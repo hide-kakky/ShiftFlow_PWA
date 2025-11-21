@@ -577,32 +577,48 @@
         }
       }
 
-      /* PC topbar */
+      /* PC topbar (sidebar style) */
       .topbar {
-        background: var(--primary);
-        border-top: 1px solid rgba(255, 255, 255, 0.12);
-        border-bottom: 1px solid var(--divider);
-        padding: 9px 0;
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        padding: 12px;
+        border-radius: 16px;
+        box-shadow: var(--card-shadow);
+      }
+      .topbar .container-xl {
+        padding: 0;
+      }
+      .topbar .navbar-nav {
+        gap: 8px;
       }
       .topbar .nav-link {
-        color: var(--on-primary);
-        padding: 0.6rem 1rem;
-        border-radius: 10px;
+        color: var(--text-900);
+        padding: 0.65rem 0.9rem;
+        border-radius: 12px;
         display: flex;
         align-items: center;
+        gap: 10px;
         position: relative;
+        font-weight: 700;
+        letter-spacing: 0.01em;
       }
       .topbar .nav-link:hover {
-        background: var(--topbar-hover-bg);
-        color: var(--on-primary);
+        background: var(--tab-hover-bg);
+        color: var(--text-900);
       }
       .topbar .nav-link.active {
-        background: var(--topbar-active-bg);
-        color: var(--topbar-active-fg);
+        background: var(--tab-active-bg);
+        color: var(--tab-active-text);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
       }
       .topbar .nav-link .material-icons,
       .topbar .nav-link .material-icons-outlined {
-        font-size: 28px;
+        font-size: 24px;
+      }
+      .topbar .nav-label {
+        margin-left: 6px;
+        flex: 1;
+        font-size: 0.95rem;
       }
       .user-menu-dropdown {
         position: relative;
@@ -671,12 +687,12 @@
       }
       .nav-icon-badge {
         position: absolute;
-        top: 6px;
-        right: 10px;
-        transform: translate(45%, -45%);
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
       }
       .topbar .nav-icon-badge {
-        box-shadow: 0 0 0 2px var(--primary);
+        box-shadow: 0 0 0 2px var(--card);
       }
       .footer-nav .nav-icon-badge {
         top: 10px;
@@ -713,9 +729,11 @@
         padding: 0;
       }
 
-      :root[data-theme='dark'] header.navbar,
-      :root[data-theme='dark'] .topbar {
+      :root[data-theme='dark'] header.navbar {
         background: var(--primary);
+      }
+      :root[data-theme='dark'] .topbar {
+        background: var(--card);
       }
       @media (max-width: 768px) {
         :root[data-theme='dark'] header.navbar::before {
@@ -724,6 +742,57 @@
       }
       :root[data-theme='dark'] .footer-nav {
         background: linear-gradient(135deg, rgba(10, 18, 40, 0.92), rgba(5, 12, 30, 0.95));
+      }
+
+      /* Desktop layout shell */
+      .app-shell-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      @media (min-width: 992px) {
+        .app-shell-grid {
+          display: grid;
+          grid-template-columns: 260px 1fr;
+          gap: 18px;
+          align-items: start;
+          max-width: 1360px;
+          padding-left: calc(12px + env(safe-area-inset-left));
+          padding-right: calc(12px + env(safe-area-inset-right));
+          margin: 8px auto 0;
+        }
+        header.navbar {
+          position: sticky;
+          top: 0;
+          z-index: 1100;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+          backdrop-filter: blur(10px);
+        }
+        header.navbar::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: var(--primary);
+          opacity: 0.96;
+          z-index: -1;
+        }
+        .topbar {
+          position: sticky;
+          top: calc(var(--header-h) + var(--safe-top) + 10px);
+          align-self: flex-start;
+        }
+        .topbar .navbar-nav {
+          flex-direction: column;
+          gap: 8px;
+          align-items: stretch;
+        }
+        .topbar .nav-item {
+          width: 100%;
+        }
+        .topbar .nav-link {
+          justify-content: flex-start;
+          width: 100%;
+        }
       }
 
       /* Footer nav mobile */
@@ -1065,7 +1134,7 @@
         margin-top: clamp(28px, 6vw, 40px);
       }
       .container-xl {
-        max-width: 1200px;
+        max-width: 1320px;
         width: 100%;
         margin-left: auto;
         margin-right: auto;
@@ -1899,6 +1968,19 @@
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+      @media (min-width: 992px) {
+        .fab.dropup-center {
+          left: auto;
+          right: 26px;
+          bottom: 26px;
+          transform: none;
+        }
+        .fab .btn {
+          width: 62px;
+          height: 62px;
+          box-shadow: 0 22px 32px rgba(255, 95, 125, 0.35), 0 8px 18px rgba(255, 95, 125, 0.24);
+        }
       }
       body.admin-view-active .fab {
         display: none !important;
@@ -3774,48 +3856,59 @@
     </header>
     <!-- /SECTION: ヘッダー -->
 
-    <!-- SECTION: サイドバー（デスクトップ ビュー切替ナビゲーション） -->
-    <nav class="navbar navbar-expand-md topbar d-none d-md-block" data-app-shell hidden>
-      <div class="container-xl">
-        <ul class="navbar-nav">
-          <li class="nav-item">
-            <a class="nav-link active" href="#" data-view="home" title="Home"
-              ><span class="material-icons-outlined">home</span></a
-            >
-          </li>
-          <li class="nav-item">
-            <a class="nav-link nav-icon" href="#" data-view="tasks" title="Tasks">
-              <span class="material-icons-outlined">send</span>
-              <span class="badge badge-overdue nav-icon-badge d-none" id="badge-task-overdue-top"
-                >0</span
-              >
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link nav-icon" href="#" data-view="messages" title="Messages">
-              <span class="material-icons-outlined">mail</span>
-              <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-top">0</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#" data-view="settings" title="Settings"
-              ><span class="material-icons-outlined">settings</span></a
-            >
-          </li>
-          <li class="nav-item d-none" data-manager-only>
-            <a class="nav-link nav-icon" href="#" data-admin-target="dashboard" title="Admin">
-              <span class="material-icons-outlined">shield</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </nav>
-    <!-- /SECTION: サイドバー（デスクトップ） -->
+    <div class="app-shell-grid" data-app-shell hidden>
+      <!-- SECTION: サイドバー（デスクトップ ビュー切替ナビゲーション） -->
+      <nav class="navbar navbar-expand-md topbar d-none d-md-block" data-app-shell hidden>
+        <div class="container-xl">
+          <ul class="navbar-nav">
+            <li class="nav-item">
+              <a class="nav-link active" href="#" data-view="home" title="Home">
+                <span class="material-icons-outlined" aria-hidden="true">home</span>
+                <span class="nav-label">ホーム</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-icon" href="#" data-view="tasks" title="Tasks">
+                <span class="material-icons-outlined" aria-hidden="true">send</span>
+                <span class="nav-label">タスク</span>
+                <span
+                  class="badge badge-overdue nav-icon-badge d-none"
+                  id="badge-task-overdue-top"
+                  aria-label="期限超過件数"
+                  >0</span
+                >
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link nav-icon" href="#" data-view="messages" title="Messages">
+                <span class="material-icons-outlined" aria-hidden="true">mail</span>
+                <span class="nav-label">メッセージ</span>
+                <span class="badge badge-unread nav-icon-badge d-none" id="badge-unread-top" aria-label="未読件数"
+                  >0</span
+                >
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-view="settings" title="Settings">
+                <span class="material-icons-outlined" aria-hidden="true">settings</span>
+                <span class="nav-label">設定</span>
+              </a>
+            </li>
+            <li class="nav-item d-none" data-manager-only>
+              <a class="nav-link nav-icon" href="#" data-admin-target="dashboard" title="Admin">
+                <span class="material-icons-outlined" aria-hidden="true">shield</span>
+                <span class="nav-label">管理</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+      <!-- /SECTION: サイドバー（デスクトップ） -->
 
-    <!-- 認証ゲート（ログイン画面）はGASが自動で表示するため、HTMLからは削除 -->
+      <!-- 認証ゲート（ログイン画面）はGASが自動で表示するため、HTMLからは削除 -->
 
-    <!-- ===== Main application view panels ===== -->
-    <main class="page-body" data-app-shell hidden>
+      <!-- ===== Main application view panels ===== -->
+      <main class="page-body" data-app-shell hidden>
       <div class="views-wrapper container-xl" id="viewsWrapper">
         <div class="views-track" id="viewsTrack">
           <!-- ----- Home view panel ----- -->
@@ -4748,6 +4841,7 @@
         </div>
       </section>
     </main>
+    </div>
 
     <div
       class="modal fade"
