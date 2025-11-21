@@ -780,6 +780,8 @@
           position: sticky;
           top: calc(var(--header-h) + var(--safe-top) + 10px);
           align-self: flex-start;
+          min-height: calc(100vh - var(--header-h) - 32px);
+          padding: 16px;
         }
         .topbar .navbar-nav {
           flex-direction: column;
@@ -792,6 +794,7 @@
         .topbar .nav-link {
           justify-content: flex-start;
           width: 100%;
+          min-height: 48px;
         }
       }
 
