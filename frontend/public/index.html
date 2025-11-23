@@ -9004,6 +9004,7 @@
       const LAST_TASK_FETCH_AT = { my: 0, from: 0, all: 0 };
       let LAST_SETTINGS_FETCH_AT = 0;
       let LAST_SETTINGS_CACHE = null;
+      let SETTINGS_INFLIGHT = null;
 
       function shouldThrottleFetch(lastRun, opts) {
         if (opts && opts.force) return false;
@@ -10143,9 +10144,9 @@
         if (v === 'tasks') {
           ensureTaskBootstrap();
           var activeTaskTab = ACTIVE_TASK_TAB || 'my';
-          setTaskLoading(activeTaskTab, true);
           activateTaskTab(activeTaskTab, false);
-          reloadActiveTaskTab({ force: options.force === true });
+          var needForceTasks = options.force === true || !hasTaskRows(activeTaskTab);
+          reloadActiveTaskTab({ force: needForceTasks });
         }
         if (v === 'messages') loadMessages({ force: options.force === true });
         if (v === 'settings') loadSettings({ force: options.force === true });
@@ -11092,6 +11093,12 @@
         }
       }
 
+      function hasTaskRows(scope) {
+        var state = TASK_STATE[scope];
+        if (!state) return false;
+        return Array.isArray(state.rows) && state.rows.length > 0;
+      }
+
       function loadMyTasks(options) {
         const opts = options || {};
         var scope = 'my';
@@ -11105,14 +11112,13 @@
         }
         const now = Date.now();
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        const hasRows = hasTaskRows(scope);
         if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge(TASK_STATE[scope].rows);
           return Promise.resolve(true);
         }
         var cachedPayload = null;
-        setTaskLoading(scope, true);
         var skeletonStartedAt = Date.now();
         return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
@@ -11123,6 +11129,7 @@
               cachedPayload = cached;
             }
             return new Promise(function (resolve) {
+              setTaskLoading(scope, true);
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
@@ -11189,13 +11196,12 @@
         var cachedPayload = null;
         const now = Date.now();
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        const hasRows = hasTaskRows(scope);
         if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge();
           return Promise.resolve(true);
         }
-        setTaskLoading(scope, true);
         var skeletonStartedAt = Date.now();
         return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
@@ -11206,6 +11212,7 @@
               cachedPayload = cached;
             }
             return new Promise(function (resolve) {
+              setTaskLoading(scope, true);
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
@@ -11276,14 +11283,13 @@
           return Promise.resolve(false);
         }
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        const hasRows = hasTaskRows(scope);
         if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge();
           return Promise.resolve(true);
         }
         var cachedPayload = null;
-        setTaskLoading(scope, true);
         var skeletonStartedAt = Date.now();
         return loadTasksFromCache(scope, { render: false, mutate: false })
           .catch(function () {
@@ -11294,6 +11300,7 @@
               cachedPayload = cached;
             }
             return new Promise(function (resolve) {
+              setTaskLoading(scope, true);
               if (!(globalThis.google && google.script && google.script.run)) {
                 TASK_STATE[scope].loading = false;
                 revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
@@ -13201,22 +13208,39 @@
             resolve(true);
             return;
           }
-          google.script.run
-            .withSuccessHandler(function (s) {
-              if (!s) {
-                resolve(false);
-                return;
+          if (SETTINGS_INFLIGHT && !opts.force) {
+            SETTINGS_INFLIGHT.then(function (s) {
+              if (s) {
+                applySettingsPayload(s);
               }
-              LAST_SETTINGS_CACHE = s;
-              LAST_SETTINGS_FETCH_AT = Date.now();
-              applySettingsPayload(s);
-              resolve(true);
-            })
-            .withFailureHandler(function (e) {
-              notify('設定読み込み失敗: ' + e.message, false);
-              resolve(false);
-            })
-            .getUserSettings();
+              resolve(Boolean(s));
+            });
+            return;
+          }
+          LAST_SETTINGS_FETCH_AT = Date.now();
+          SETTINGS_INFLIGHT = new Promise(function (resFetch) {
+            google.script.run
+              .withSuccessHandler(function (s) {
+                if (s) {
+                  LAST_SETTINGS_CACHE = s;
+                  LAST_SETTINGS_FETCH_AT = Date.now();
+                  applySettingsPayload(s);
+                  resFetch(s);
+                  resolve(true);
+                } else {
+                  resFetch(null);
+                  resolve(false);
+                }
+              })
+              .withFailureHandler(function (e) {
+                notify('設定読み込み失敗: ' + e.message, false);
+                resFetch(null);
+                resolve(false);
+              })
+              .getUserSettings();
+          }).finally(function () {
+            SETTINGS_INFLIGHT = null;
+          });
         });
       }
 
