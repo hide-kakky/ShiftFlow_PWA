@@ -10152,26 +10152,28 @@
         if (v === 'settings') loadSettings({ force: options.force === true });
       }
 
-      function refreshCurrentView() {
+      function refreshCurrentView(options) {
+        const opts = options || {};
         if (CURRENT_VIEW === 'home') {
-          return Promise.resolve(loadHome());
+          return Promise.resolve(loadHome({ force: opts.force === true }));
         }
         if (CURRENT_VIEW === 'tasks') {
           ensureTaskBootstrap();
           return Promise.all([
-            Promise.resolve(reloadActiveTaskTab()),
-            Promise.resolve(loadHome()),
+            Promise.resolve(reloadActiveTaskTab({ force: opts.force === true })),
+            Promise.resolve(loadHome({ force: opts.force === true })),
           ]).then(function () {});
         }
         if (CURRENT_VIEW === 'messages') {
-          return Promise.all([Promise.resolve(loadMessages()), Promise.resolve(loadHome())]).then(
-            function () {}
-          );
+          return Promise.all([
+            Promise.resolve(loadMessages({ force: opts.force === true })),
+            Promise.resolve(loadHome({ force: opts.force === true })),
+          ]).then(function () {});
         }
         if (CURRENT_VIEW === 'settings') {
-          return Promise.resolve(loadSettings());
+          return Promise.resolve(loadSettings({ force: opts.force === true }));
         }
-        return Promise.resolve(loadHome());
+        return Promise.resolve(loadHome({ force: opts.force === true }));
       }
 
       (function enableSwipe() {
@@ -10481,7 +10483,7 @@
           startedAt = Date.now();
           var result;
           try {
-            result = refreshCurrentView();
+            result = refreshCurrentView({ force: true });
           } catch (err) {
             result = Promise.reject(err);
           }
