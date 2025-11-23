@@ -8998,6 +8998,16 @@
       const AUTH_SESSION_EXPIRY_BUFFER_MS = 60 * 1000;
       let LAST_AUTH_SESSION = null;
       let LAST_AUTH_SESSION_AT = 0;
+      const API_REFRESH_INTERVAL_MS = 7 * 60 * 1000;
+      let LAST_HOME_FETCH_AT = 0;
+      let LAST_MESSAGES_FETCH_AT = 0;
+      const LAST_TASK_FETCH_AT = { my: 0, from: 0, all: 0 };
+
+      function shouldThrottleFetch(lastRun, opts) {
+        if (opts && opts.force) return false;
+        if (!lastRun) return false;
+        return Date.now() - lastRun < API_REFRESH_INTERVAL_MS;
+      }
 
       async function syncAuthSession(options) {
         const opts = options || {};
@@ -10753,7 +10763,8 @@
       }
 
       // ===== Home =====
-      function loadHome() {
+      function loadHome(options) {
+        const opts = options || {};
         if (!HAS_ACTIVE_EMAIL) {
           var card = authRequiredCard();
           byId('home-today-tasks').innerHTML = card;
@@ -10764,6 +10775,7 @@
           }
           return Promise.resolve(false);
         }
+        const skipFetch = shouldThrottleFetch(LAST_HOME_FETCH_AT, opts);
         var skeletonRendered = false;
         var cachedPayload = null;
         var skeletonStartedAt = 0;
@@ -10780,6 +10792,10 @@
           .then(function (cached) {
             if (cached) {
               cachedPayload = cached;
+            }
+            if (skipFetch && cachedPayload) {
+              renderHomeView(cachedPayload);
+              return false;
             }
             ensureSkeleton();
             skeletonStartedAt = Date.now();
@@ -10798,6 +10814,7 @@
               google.script.run
                 .withSuccessHandler(function (d) {
                   cacheHomePayload(d);
+                  LAST_HOME_FETCH_AT = Date.now();
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     renderHomeView(d);
                   });
@@ -11073,7 +11090,8 @@
         }
       }
 
-      function loadMyTasks() {
+      function loadMyTasks(options) {
+        const opts = options || {};
         var scope = 'my';
         if (!HAS_ACTIVE_EMAIL) {
           renderTaskList(scope);
@@ -11082,6 +11100,13 @@
             AUTH_NOTICE_SHOWN = true;
           }
           return Promise.resolve(false);
+        }
+        const now = Date.now();
+        const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
+        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+          renderTaskList(scope);
+          updateTaskOverdueBadge(TASK_STATE[scope].rows);
+          return Promise.resolve(true);
         }
         var cachedPayload = null;
         setTaskLoading(scope, true);
@@ -11122,6 +11147,7 @@
                   TASK_STATE.my.meta = payload.meta || {};
                   TASK_STATE.my.loaded = true;
                   TASK_STATE.my.loading = false;
+                  LAST_TASK_FETCH_AT[scope] = Date.now();
                   cacheTasks(scope, payload.rows, payload.meta);
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     renderTaskList(scope);
@@ -11154,9 +11180,17 @@
           });
       }
 
-      function loadCreatedTasks() {
+      function loadCreatedTasks(options) {
+        const opts = options || {};
         var scope = 'from';
         var cachedPayload = null;
+        const now = Date.now();
+        const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
+        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+          renderTaskList(scope);
+          updateTaskOverdueBadge();
+          return Promise.resolve(true);
+        }
         setTaskLoading(scope, true);
         var skeletonStartedAt = Date.now();
         return loadTasksFromCache(scope, { render: false, mutate: false })
@@ -11195,6 +11229,7 @@
                   TASK_STATE.from.meta = payload.meta || {};
                   TASK_STATE.from.loaded = true;
                   TASK_STATE.from.loading = false;
+                  LAST_TASK_FETCH_AT[scope] = Date.now();
                   cacheTasks(scope, payload.rows, payload.meta);
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     renderTaskList(scope);
@@ -11228,12 +11263,19 @@
           });
       }
 
-      function loadAllTasks() {
+      function loadAllTasks(options) {
+        const opts = options || {};
         var scope = 'all';
         if (!IS_MANAGER) {
           TASK_STATE.all.restricted = true;
           renderTaskList(scope);
           return Promise.resolve(false);
+        }
+        const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
+        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+          renderTaskList(scope);
+          updateTaskOverdueBadge();
+          return Promise.resolve(true);
         }
         var cachedPayload = null;
         setTaskLoading(scope, true);
@@ -11288,6 +11330,7 @@
                   TASK_STATE.all.loaded = true;
                   TASK_STATE.all.restricted = false;
                   TASK_STATE.all.loading = false;
+                  LAST_TASK_FETCH_AT[scope] = Date.now();
                   cacheTasks(scope, payload.rows, payload.meta);
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     renderTaskList(scope);
@@ -11754,7 +11797,8 @@
         var btnAll = byId('btn-msg-markall');
         if (btnAll) btnAll.disabled = !!loading;
       }
-      function loadMessages() {
+      function loadMessages(options) {
+        const opts = options || {};
         if (!HAS_ACTIVE_EMAIL) {
           byId('msg-list').innerHTML = authRequiredCard();
           if (!AUTH_NOTICE_SHOWN) {
@@ -11770,8 +11814,9 @@
         var useCache = !searchKeyword;
         var cacheKey = useCache ? MessageViewController.buildCacheKey(filters) : null;
         var cachedRows = null;
+        const now = Date.now();
+        const shouldSkipFetch = shouldThrottleFetch(LAST_MESSAGES_FETCH_AT, opts);
         var skeletonStartedAt = Date.now();
-        setMsgLoading(true);
         var cachePromise = useCache
           ? loadMessagesFromCache(cacheKey).catch(function () {
               return null;
@@ -11784,6 +11829,12 @@
             }
           })
           .then(function () {
+            if (shouldSkipFetch && cachedRows) {
+              byId('msg-list').innerHTML = renderMessageList(cachedRows);
+              setMsgLoading(false);
+              return false;
+            }
+            setMsgLoading(true);
             return new Promise(function (resolve) {
               google.script.run
                 .withSuccessHandler(function (list) {
@@ -11791,6 +11842,7 @@
                   if (useCache) {
                     cacheMessages(cacheKey, rows);
                   }
+                  LAST_MESSAGES_FETCH_AT = Date.now();
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
                     byId('msg-list').innerHTML = renderMessageList(rows);
                     setMsgLoading(false);
@@ -11843,8 +11895,8 @@
           .withSuccessHandler(function () {
             setButtonLoading(btn, false);
             if (typeof onComplete === 'function') onComplete(null, shouldRead);
-            loadMessages();
-            loadHome();
+            loadMessages({ force: true });
+            loadHome({ force: true });
           })
           .withFailureHandler(function (e) {
             setButtonLoading(btn, false);
@@ -11871,8 +11923,8 @@
           .then(function (res) {
             setButtonLoading(btn, false);
             notify('ピン状態を更新しました。', true);
-            loadMessages();
-            loadHome();
+            loadMessages({ force: true });
+            loadHome({ force: true });
           })
           .catch(function (err) {
             setButtonLoading(btn, false);
@@ -11905,19 +11957,19 @@
             }
             google.script.run
               .withSuccessHandler(function (res) {
-                notify(
-                  res && res.message ? res.message : '既読にしました',
-                  res && res.success !== false
-                );
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
-                loadMessages();
-                loadHome();
-              })
-              .withFailureHandler(function (e) {
-                notify('Failed to mark messages as read: ' + e.message, false);
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
+                  notify(
+                    res && res.message ? res.message : '既読にしました',
+                    res && res.success !== false
+                  );
+                  btn.disabled = false;
+                  btn.innerHTML = originalHTML;
+                  loadMessages({ force: true });
+                  loadHome({ force: true });
+                })
+                .withFailureHandler(function (e) {
+                  notify('Failed to mark messages as read: ' + e.message, false);
+                  btn.disabled = false;
+                  btn.innerHTML = originalHTML;
               })
               .markMemosReadBulk(ids);
           })
@@ -12149,13 +12201,13 @@
             notify(res && res.message ? res.message : '更新しました', res && res.success !== false);
             var modalInst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
             if (modalInst) modalInst.hide();
-            loadHome();
-            loadMyTasks();
+            loadHome({ force: true });
+            loadMyTasks({ force: true });
             if (TASK_STATE.from && TASK_STATE.from.loaded) {
-              loadCreatedTasks();
+              loadCreatedTasks({ force: true });
             }
             if (IS_MANAGER && TASK_STATE.all && TASK_STATE.all.loaded) {
-              loadAllTasks();
+              loadAllTasks({ force: true });
             }
           })
           .withFailureHandler(function (e) {
@@ -12175,8 +12227,8 @@
             notify(res && res.message ? res.message : '完了しました', res && res.success !== false);
             var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
             if (inst) inst.hide();
-            loadHome();
-            loadMyTasks();
+            loadHome({ force: true });
+            loadMyTasks({ force: true });
           })
           .withFailureHandler(function (e) {
             setButtonLoading(btn, false);
@@ -12187,18 +12239,18 @@
       on('deleteTaskButton', 'click', function () {
         if (!CURRENT_TASK_ID) return;
         if (!confirm('このタスクを削除します。よろしいですか？')) return;
-        google.script.run
-          .withSuccessHandler(function (res) {
-            notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
-            var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
-            if (inst) inst.hide();
-            loadHome();
-            loadMyTasks();
-          })
-          .withFailureHandler(function (e) {
-            notify('削除に失敗: ' + e.message, false);
-          })
-          .deleteTaskById(CURRENT_TASK_ID);
+            google.script.run
+              .withSuccessHandler(function (res) {
+                notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+                var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
+                if (inst) inst.hide();
+                loadHome({ force: true });
+                loadMyTasks({ force: true });
+              })
+              .withFailureHandler(function (e) {
+                notify('削除に失敗: ' + e.message, false);
+              })
+              .deleteTaskById(CURRENT_TASK_ID);
       });
       var CURRENT_MEMO_ID = null;
       var CURRENT_MEMO_IS_READ = false;
@@ -12546,7 +12598,7 @@
                 renderMessageDetail(data);
                 byId('msg-detail-loading').classList.add('d-none');
                 byId('msg-detail-content').classList.remove('d-none');
-                loadHome();
+                loadHome({ force: true });
               })
               .getMessageById(memoId);
           })
@@ -12644,8 +12696,8 @@
             notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
             var inst = bootstrap.Modal.getInstance(byId('messageDetailModal'));
             if (inst) inst.hide();
-            loadMessages();
-            loadHome();
+            loadMessages({ force: true });
+            loadHome({ force: true });
           })
           .withFailureHandler(function (e) {
             notify('削除に失敗: ' + e.message, false);
@@ -12976,10 +13028,10 @@
             } else {
               notify((res && res.message) || 'タスクの作成に失敗しました。', false);
             }
-            loadHome();
-            loadMyTasks();
-            if (TASK_STATE.from.loaded) loadCreatedTasks();
-            if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks();
+            loadHome({ force: true });
+            loadMyTasks({ force: true });
+            if (TASK_STATE.from.loaded) loadCreatedTasks({ force: true });
+            if (IS_MANAGER && TASK_STATE.all.loaded) loadAllTasks({ force: true });
           };
         }
 
@@ -13062,8 +13114,8 @@
               }
             }
             notify(res && res.message ? res.message : '完了', res && res.success !== false);
-            loadHome();
-            loadMessages();
+            loadHome({ force: true });
+            loadMessages({ force: true });
           };
         }
 
