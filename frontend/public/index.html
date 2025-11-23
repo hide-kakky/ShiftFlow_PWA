@@ -9002,6 +9002,8 @@
       let LAST_HOME_FETCH_AT = 0;
       let LAST_MESSAGES_FETCH_AT = 0;
       const LAST_TASK_FETCH_AT = { my: 0, from: 0, all: 0 };
+      let LAST_SETTINGS_FETCH_AT = 0;
+      let LAST_SETTINGS_CACHE = null;
 
       function shouldThrottleFetch(lastRun, opts) {
         if (opts && opts.force) return false;
@@ -10143,10 +10145,10 @@
           var activeTaskTab = ACTIVE_TASK_TAB || 'my';
           setTaskLoading(activeTaskTab, true);
           activateTaskTab(activeTaskTab, false);
-          reloadActiveTaskTab();
+          reloadActiveTaskTab({ force: options.force === true });
         }
-        if (v === 'messages') loadMessages();
-        if (v === 'settings') loadSettings();
+        if (v === 'messages') loadMessages({ force: options.force === true });
+        if (v === 'settings') loadSettings({ force: options.force === true });
       }
 
       function refreshCurrentView() {
@@ -11103,7 +11105,8 @@
         }
         const now = Date.now();
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge(TASK_STATE[scope].rows);
           return Promise.resolve(true);
@@ -11186,7 +11189,8 @@
         var cachedPayload = null;
         const now = Date.now();
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge();
           return Promise.resolve(true);
@@ -11272,7 +11276,8 @@
           return Promise.resolve(false);
         }
         const lastFetch = LAST_TASK_FETCH_AT[scope] || 0;
-        if (TASK_STATE[scope].loaded && shouldThrottleFetch(lastFetch, opts)) {
+        const hasRows = Array.isArray(TASK_STATE[scope].rows) && TASK_STATE[scope].rows.length > 0;
+        if (TASK_STATE[scope].loaded && hasRows && shouldThrottleFetch(lastFetch, opts)) {
           renderTaskList(scope);
           updateTaskOverdueBadge();
           return Promise.resolve(true);
@@ -11395,15 +11400,16 @@
         renderTaskList(tab);
       }
 
-      function reloadActiveTaskTab() {
+      function reloadActiveTaskTab(options) {
+        const opts = options || {};
         var active = ACTIVE_TASK_TAB || 'my';
         if (active === 'from') {
-          return loadCreatedTasks();
+          return loadCreatedTasks(opts);
         }
         if (active === 'all') {
-          return loadAllTasks();
+          return loadAllTasks(opts);
         }
-        return loadMyTasks();
+        return loadMyTasks(opts);
       }
 
       var API_REFRESH_COOLDOWN_MS = 1500;
@@ -13180,11 +13186,19 @@
       })();
 
       // ===== 設定 =====
-      function loadSettings() {
+      function loadSettings(options) {
+        const opts = options || {};
         return new Promise(function (resolve) {
           if (!HAS_ACTIVE_EMAIL) {
             notify(AUTH_NOTICE_MESSAGE, false);
             resolve(false);
+            return;
+          }
+          const lastFetch = LAST_SETTINGS_FETCH_AT || 0;
+          const cached = LAST_SETTINGS_CACHE;
+          if (cached && shouldThrottleFetch(lastFetch, opts)) {
+            applySettingsPayload(cached);
+            resolve(true);
             return;
           }
           google.script.run
@@ -13193,21 +13207,9 @@
                 resolve(false);
                 return;
               }
-              byId('setting-name').value = s.name || '';
-              ProfileImageController.applyLoadedSettings(s);
-              var themeVal = String(s.theme || 'light').toLowerCase();
-              if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
-                themeVal = 'light';
-              }
-              var themeInput = byId('setting-theme');
-              if (themeInput) {
-                themeInput.value = themeVal;
-                updateThemeStatus(themeVal);
-                applyThemePreference(themeVal);
-              } else {
-                applyThemePreference(themeVal);
-                updateThemeStatus(themeVal);
-              }
+              LAST_SETTINGS_CACHE = s;
+              LAST_SETTINGS_FETCH_AT = Date.now();
+              applySettingsPayload(s);
               resolve(true);
             })
             .withFailureHandler(function (e) {
@@ -13216,6 +13218,24 @@
             })
             .getUserSettings();
         });
+      }
+
+      function applySettingsPayload(s) {
+        byId('setting-name').value = s.name || '';
+        ProfileImageController.applyLoadedSettings(s);
+        var themeVal = String(s.theme || 'light').toLowerCase();
+        if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
+          themeVal = 'light';
+        }
+        var themeInput = byId('setting-theme');
+        if (themeInput) {
+          themeInput.value = themeVal;
+          updateThemeStatus(themeVal);
+          applyThemePreference(themeVal);
+        } else {
+          applyThemePreference(themeVal);
+          updateThemeStatus(themeVal);
+        }
       }
       on('btn-settings-save', 'click', function () {
         var btn = byId('btn-settings-save');
