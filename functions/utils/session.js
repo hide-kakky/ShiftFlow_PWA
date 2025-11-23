@@ -6,6 +6,8 @@ const SESSION_TTL_SECONDS = Math.ceil(SESSION_ABSOLUTE_TIMEOUT_MS / 1000);
 const INIT_NAMESPACE = 'sf:auth_init:';
 const INIT_TTL_SECONDS = 60 * 5; // 5 minutes
 const DEFAULT_COOKIE_DOMAIN = 'shiftflow.pages.dev';
+const MIN_SESSION_WRITE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_WRITE_TRACKER = new Map();
 
 function toBase64Url(bytes) {
   const binString = String.fromCharCode(...new Uint8Array(bytes));
@@ -76,6 +78,19 @@ export function parseSessionCookie(cookieHeader) {
   return { id, key };
 }
 
+function shouldSkipSessionPersist(sessionId, forcePersist) {
+  if (forcePersist) return false;
+  if (!sessionId) return false;
+  const now = Date.now();
+  const last = SESSION_WRITE_TRACKER.get(sessionId) || 0;
+  return now - last < MIN_SESSION_WRITE_INTERVAL_MS;
+}
+
+function markSessionPersisted(sessionId) {
+  if (!sessionId) return;
+  SESSION_WRITE_TRACKER.set(sessionId, Date.now());
+}
+
 export async function persistAuthInit(env, state, payload) {
   if (!env?.APP_KV) {
     throw new Error('APP_KV binding is required for auth init.');
@@ -134,9 +149,13 @@ export async function touchSession(env, sessionId, record) {
   if (!env?.APP_KV || !sessionId || !record) return;
   const now = Date.now();
   const updated = { ...record, updatedAt: now, lastAccessAt: now };
+  if (shouldSkipSessionPersist(sessionId, false)) {
+    return updated;
+  }
   await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
     expirationTtl: SESSION_TTL_SECONDS,
   });
+  markSessionPersisted(sessionId);
   return updated;
 }
 
@@ -168,6 +187,7 @@ export async function updateSessionTokens(env, sessionId, record, tokens) {
   await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
     expirationTtl: SESSION_TTL_SECONDS,
   });
+  markSessionPersisted(sessionId);
   return updated;
 }
 

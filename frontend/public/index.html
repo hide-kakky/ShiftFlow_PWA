@@ -8994,8 +8994,50 @@
         }
       }
 
+      const AUTH_SESSION_CACHE_MS = 3 * 60 * 1000;
+      const AUTH_SESSION_EXPIRY_BUFFER_MS = 60 * 1000;
+      let LAST_AUTH_SESSION = null;
+      let LAST_AUTH_SESSION_AT = 0;
+
       async function syncAuthSession(options) {
         const opts = options || {};
+        const now = Date.now();
+        const cached = LAST_AUTH_SESSION;
+        const cacheAge = now - LAST_AUTH_SESSION_AT;
+        const cachedExpiry = Number(cached && cached.expiresAt ? cached.expiresAt : 0);
+        const cachedNearExpiry = cachedExpiry && cachedExpiry <= now + AUTH_SESSION_EXPIRY_BUFFER_MS;
+        if (cached && cacheAge < AUTH_SESSION_CACHE_MS && !cachedNearExpiry && !opts.force) {
+          if (cached.authenticated) {
+            setAuthToken('SESSION');
+            clearAuthPendingFlag();
+            hideAuthOverlay();
+            updateAuthSessionUI(cached);
+          } else {
+            setAuthToken('');
+            updateAuthSessionUI(null);
+            if (!opts.silent) {
+              var cachedReason = cached && typeof cached.reason === 'string' ? cached.reason : '';
+              var cachedMessage = (function () {
+                switch (cachedReason) {
+                  case 'idle_timeout':
+                    return '一定時間操作がなかったため認証を再取得する必要があります。もう一度 Google でログインしてください。';
+                  case 'absolute_timeout':
+                    return '長時間経過したため再度 Google でログインしてください。';
+                  case 'no_session':
+                    return NEEDS_MANUAL_SIGNIN
+                      ? 'Google へサインインしてください。'
+                      : 'Google でログインしてください。';
+                  default:
+                    return NEEDS_MANUAL_SIGNIN
+                      ? 'Google へサインインしてください。'
+                      : 'Google でログインしてください。';
+                }
+              })();
+              showAuthOverlay(opts.message || cachedMessage);
+            }
+          }
+          return cached;
+        }
         const requestId = createRequestId();
         let response;
         try {
@@ -9022,6 +9064,8 @@
           throw new Error('SESSION_STATUS_' + response.status);
         }
         const data = await response.json();
+        LAST_AUTH_SESSION = data || null;
+        LAST_AUTH_SESSION_AT = Date.now();
         if (data && data.authenticated) {
           updateAuthSessionUI(data);
           setAuthToken('SESSION');
