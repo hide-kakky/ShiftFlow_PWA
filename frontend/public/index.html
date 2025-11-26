@@ -10009,7 +10009,10 @@
         if (!iso) return '—';
         var d = new Date(iso);
         if (isNaN(d.getTime())) return iso;
-        return d.getMonth() + 1 + '/' + d.getDate();
+        var days = ['日', '月', '火', '水', '木', '金', '土'];
+        var day = days[d.getDay()] || '';
+        var monthDay = d.getMonth() + 1 + '/' + d.getDate();
+        return day ? monthDay + '(' + day + ')' : monthDay;
       }
       function formatJst(input, includeTime) {
         if (input === null || input === undefined) return '—';
