@@ -5878,6 +5878,8 @@
         MESSAGE_ATTACHMENT_LIMIT,
         API_BASE_PATH,
       } = SHIFT_FLOW_CONFIG;
+      const APP_VERSION_LABEL = SHIFT_FLOW_CONFIG.APP_VERSION || 'dev';
+      const APP_UPDATE_DISMISS_PREFIX = 'shiftflow-update-dismiss:';
       const TEST_USER_EMAIL = 'tester.member@shiftflow.dev';
       const TEST_MANAGER_EMAIL = 'tester.manager@shiftflow.dev';
       const TEST_MANAGER_NAME = 'テストマネージャー';
@@ -8532,7 +8534,16 @@
         closeBtn.type = 'button';
         closeBtn.className = 'btn-close';
         closeBtn.setAttribute('aria-label', 'Close');
-        closeBtn.addEventListener('click', dismiss);
+        closeBtn.addEventListener('click', function () {
+          if (typeof options.onClose === 'function') {
+            try {
+              options.onClose();
+            } catch (_err) {
+              /* noop */
+            }
+          }
+          dismiss();
+        });
         el.appendChild(closeBtn);
         wrap.appendChild(el);
         var ttl = typeof options.duration === 'number' ? options.duration : 2200;
@@ -8601,6 +8612,15 @@
       }
 
       function promptForAppUpdate(data) {
+        var pendingVersion = (data && data.version) || APP_VERSION_LABEL || 'unknown';
+        var dismissKey = APP_UPDATE_DISMISS_PREFIX + pendingVersion;
+        try {
+          if (sessionStorage.getItem(dismissKey)) {
+            return;
+          }
+        } catch (_err) {
+          /* noop */
+        }
         if (APP_UPDATE_PROMPTED) return;
         APP_UPDATE_PROMPTED = true;
         var versionLabel = data && data.version ? '（' + data.version + '）' : '';
@@ -8609,6 +8629,13 @@
           onAction: applyAppShellUpdate,
           duration: 0,
           position: 'center',
+          onClose: function () {
+            try {
+              sessionStorage.setItem(dismissKey, '1');
+            } catch (_err2) {
+              /* noop */
+            }
+          },
         });
       }
 
@@ -8673,12 +8700,20 @@
       var OVERLAY_HISTORY_STACK = [];
       var MESSAGE_MODAL_HISTORY_ACTIVE = false;
       var MESSAGE_MODAL_CLOSING_FROM_HISTORY = false;
-      function ensureBaseHistoryState() {
+      function ensureBaseHistoryState(view) {
         if (!window.history || typeof window.history.replaceState !== 'function') return;
         var state = window.history.state || {};
         if (state && state.shiftflowBase) return;
-        var next = Object.assign({}, state, { shiftflowBase: true });
-        window.history.replaceState(next, document.title, window.location.href);
+        var next = Object.assign({}, state, {
+          shiftflowBase: true,
+          shiftflowView: view || (typeof CURRENT_VIEW === 'string' ? CURRENT_VIEW : 'home'),
+          ts: Date.now(),
+        });
+        try {
+          window.history.replaceState(next, document.title, window.location.href);
+        } catch (_err) {
+          /* noop */
+        }
       }
       function pushOverlayHistory(tag) {
         if (!window.history || typeof window.history.pushState !== 'function') return;
@@ -8704,7 +8739,11 @@
         HISTORY_GUARD_ACTIVE = true;
         window.history.back();
       }
-      ensureBaseHistoryState();
+      ensureBaseHistoryState(CURRENT_VIEW);
+      LAST_VIEW_HISTORY = typeof CURRENT_VIEW === 'string' ? CURRENT_VIEW : 'home';
+      if (VIEW_HISTORY_SUPPORTED) {
+        pushViewHistoryState(LAST_VIEW_HISTORY, true);
+      }
       window.addEventListener('popstate', function () {
         if (HISTORY_GUARD_ACTIVE) {
           HISTORY_GUARD_ACTIVE = false;
@@ -10133,6 +10172,9 @@
       var order = ['home', 'tasks', 'messages', 'settings'];
       var ADMIN_ORDER = ['dashboard', 'users', 'folders', 'orgs', 'audit'];
       var CURRENT_VIEW = 'home';
+      var VIEW_HISTORY_SUPPORTED = !!(window.history && window.history.pushState);
+      var VIEW_HISTORY_LOCK = false;
+      var LAST_VIEW_HISTORY = 'home';
       var SWIPE_LOCK = false;
       var SWIPE_VERTICAL_TOLERANCE = 160;
       var SWIPE_ACTIVATION_DELTA = 14;
@@ -10184,6 +10226,28 @@
           }
         });
       }
+
+      function pushViewHistoryState(view, force) {
+        if (!VIEW_HISTORY_SUPPORTED) return;
+        if (VIEW_HISTORY_LOCK && !force) return;
+        if (!force && LAST_VIEW_HISTORY === view) return;
+        LAST_VIEW_HISTORY = view;
+        try {
+          window.history.pushState(
+            { shiftflowView: view, ts: Date.now() },
+            document.title,
+            window.location.href
+          );
+        } catch (_err) {
+          /* noop */
+        }
+      }
+
+      function replaceBaseViewState(view) {
+        if (!VIEW_HISTORY_SUPPORTED) return;
+        ensureBaseHistoryState(view);
+        LAST_VIEW_HISTORY = view;
+      }
       function navigateTo(v, opts) {
         ensureAdminViewHidden();
         var options = opts || {};
@@ -10204,6 +10268,47 @@
         }
         if (v === 'messages') loadMessages({ force: options.force === true });
         if (v === 'settings') loadSettings({ force: options.force === true });
+        if (!options.skipHistory) {
+          pushViewHistoryState(v);
+        } else {
+          LAST_VIEW_HISTORY = v;
+        }
+      }
+
+      function handleViewHistoryPop(event) {
+        if (!VIEW_HISTORY_SUPPORTED) return;
+        if (VIEW_HISTORY_LOCK) return;
+        if (HISTORY_GUARD_ACTIVE) return;
+        var state = event && event.state;
+        if (state && (state.shiftflowModal || state.modalLock)) {
+          return;
+        }
+        if (state && state.shiftflowView) {
+          if (state.shiftflowView === CURRENT_VIEW) {
+            return;
+          }
+          VIEW_HISTORY_LOCK = true;
+          navigateTo(state.shiftflowView, { animate: false, skipScroll: true, skipHistory: true });
+          LAST_VIEW_HISTORY = state.shiftflowView;
+          setTimeout(function () {
+            VIEW_HISTORY_LOCK = false;
+          }, 0);
+          return;
+        }
+        if (!state || state.shiftflowBase) {
+          VIEW_HISTORY_LOCK = true;
+          var fallbackView =
+            (state && state.shiftflowView) || (typeof CURRENT_VIEW === 'string' ? CURRENT_VIEW : 'home');
+          navigateTo(fallbackView, { animate: false, skipScroll: true, skipHistory: true });
+          replaceBaseViewState(fallbackView);
+          pushViewHistoryState(fallbackView, true);
+          setTimeout(function () {
+            VIEW_HISTORY_LOCK = false;
+          }, 0);
+        }
+      }
+      if (VIEW_HISTORY_SUPPORTED) {
+        window.addEventListener('popstate', handleViewHistoryPop);
       }
 
       function refreshCurrentView(options) {
@@ -15626,45 +15731,6 @@
             inst.hide();
           } catch (_err) {
             closingViaPopstateId = null;
-          }
-        });
-      })();
-
-      (function installBrowserBackGuard() {
-        if (!window.history || typeof window.history.pushState !== 'function') {
-          return;
-        }
-        ensureBaseHistoryState();
-        var baseGuardState = {
-          shiftflowGuard: true,
-          ts: Date.now(),
-        };
-        try {
-          window.history.pushState(
-            Object.assign({}, baseGuardState),
-            document.title,
-            window.location.href
-          );
-        } catch (_err) {
-          return;
-        }
-        window.addEventListener('popstate', function (event) {
-          if (HISTORY_GUARD_ACTIVE) {
-            HISTORY_GUARD_ACTIVE = false;
-            return;
-          }
-          var state = event && event.state;
-          if (state && (state.shiftflowModal || state.modalLock)) {
-            return;
-          }
-          try {
-            window.history.pushState(
-              Object.assign({}, baseGuardState, { ts: Date.now() }),
-              document.title,
-              window.location.href
-            );
-          } catch (_err) {
-            /* noop */
           }
         });
       })();
