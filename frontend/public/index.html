@@ -3403,6 +3403,14 @@
         text-align: center;
         line-height: 1.6;
       }
+      .auth-card__version {
+        margin: 0;
+        font-size: 0.78rem;
+        color: rgba(226, 232, 240, 0.55);
+        text-align: center;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
       .auth-card__hint {
         font-size: 0.82rem;
         color: rgba(226, 232, 240, 0.6);
@@ -3659,6 +3667,7 @@
           </div>
           <h1 class="auth-card__title">サインイン</h1>
           <p class="auth-card__subtitle">Google アカウントで認証します。</p>
+          <p class="auth-card__version" id="authVersionText" aria-live="polite"></p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-request-id" id="auth-request-id" hidden>
             <span class="auth-request-id__label">エラー ID:</span>
@@ -15473,6 +15482,16 @@
         }, 60);
       }
 
+      function renderAuthVersionLabel() {
+        var versionEl = byId('authVersionText');
+        if (!versionEl) return;
+        var config = window.SHIFT_FLOW_CONFIG || {};
+        var version = config.APP_VERSION || 'dev';
+        versionEl.textContent = 'バージョン ' + version;
+        versionEl.dataset.version = version;
+        versionEl.setAttribute('title', '現在のアプリバージョン: ' + version);
+      }
+
       function handleModalShown(event) {
         var target = event && event.target;
         if (!target) return;
@@ -15575,6 +15594,7 @@
 
       // ===== 初期化 =====
       window.addEventListener('load', function () {
+        renderAuthVersionLabel();
         // GAS組み込み認証では、このスクリプトが実行される時点で
         // 常に認証済みのため、ログイン画面の表示切り替えは不要。
 
