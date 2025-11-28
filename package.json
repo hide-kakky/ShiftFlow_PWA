@@ -2,6 +2,7 @@
   "name": "shiftflow-pwa",
   "private": true,
   "scripts": {
+    "dev": "wrangler pages dev frontend/public",
     "etl:users": "node scripts/etl/normalize.js --kind users --input data/templates/users.csv",
     "etl:memberships": "node scripts/etl/normalize.js --kind memberships --input data/templates/memberships.csv",
     "etl:messages": "node scripts/etl/normalize.js --kind messages --input data/templates/messages.csv",
