@@ -8700,6 +8700,10 @@
           if (inst) inst.hide();
           return;
         }
+        if (last.tag === 'admin-view') {
+          closeAdminView(true);
+          return;
+        }
       });
       function setupMessageModalHistoryHooks() {
         var modalEl = byId('messageDetailModal');
@@ -9747,6 +9751,9 @@
         var adminView = byId('view-admin');
         if (!adminView) return;
         ADMIN_STATE.active = true;
+        if (peekOverlayHistoryTag() !== 'admin-view') {
+          pushOverlayHistory('admin-view');
+        }
         if (document.body) {
           document.body.classList.add('admin-view-active');
         }
@@ -9769,9 +9776,12 @@
           }
         }
       }
-      function closeAdminView() {
+      function closeAdminView(fromHistory) {
         ensureAdminViewHidden();
-        navigateTo('home');
+        navigateTo('home', { skipHistory: !!fromHistory });
+        if (!fromHistory && peekOverlayHistoryTag() === 'admin-view') {
+          popOverlayHistory('admin-view');
+        }
       }
       function debounce(fn, ms) {
         var t = null;
@@ -15588,6 +15598,45 @@
             inst.hide();
           } catch (_err) {
             closingViaPopstateId = null;
+          }
+        });
+      })();
+
+      (function installBrowserBackGuard() {
+        if (!window.history || typeof window.history.pushState !== 'function') {
+          return;
+        }
+        ensureBaseHistoryState();
+        var baseGuardState = {
+          shiftflowGuard: true,
+          ts: Date.now(),
+        };
+        try {
+          window.history.pushState(
+            Object.assign({}, baseGuardState),
+            document.title,
+            window.location.href
+          );
+        } catch (_err) {
+          return;
+        }
+        window.addEventListener('popstate', function (event) {
+          if (HISTORY_GUARD_ACTIVE) {
+            HISTORY_GUARD_ACTIVE = false;
+            return;
+          }
+          var state = event && event.state;
+          if (state && (state.shiftflowModal || state.modalLock)) {
+            return;
+          }
+          try {
+            window.history.pushState(
+              Object.assign({}, baseGuardState, { ts: Date.now() }),
+              document.title,
+              window.location.href
+            );
+          } catch (_err) {
+            /* noop */
           }
         });
       })();
