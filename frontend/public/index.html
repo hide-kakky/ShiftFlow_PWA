@@ -5902,7 +5902,7 @@
       function markUpdateDismissed(key) {
         if (!key) return;
         try {
-          sessionStorage.setItem(key, '1');
+          localStorage.setItem(key, '1');
         } catch (_err) {
           /* noop */
         }
@@ -8624,7 +8624,7 @@
         var pendingVersion = (data && data.version) || APP_VERSION_LABEL || 'unknown';
         var dismissKey = APP_UPDATE_DISMISS_PREFIX + pendingVersion;
         try {
-          if (sessionStorage.getItem(dismissKey)) {
+          if (localStorage.getItem(dismissKey)) {
             return;
           }
         } catch (_err) {
