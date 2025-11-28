@@ -1,8 +1,9 @@
 {
   "name": "ShiftFlow",
   "short_name": "ShiftFlow",
+  "id": "/?source=pwa",
   "description": "引き継ぎ・タスク管理アプリ",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -20,6 +21,22 @@
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "デスクトップ: ダッシュボード"
+    },
+    {
+      "src": "/screenshots/dashboard-mobile.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "モバイル: ダッシュボード"
     }
   ]
 }

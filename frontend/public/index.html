@@ -3495,12 +3495,12 @@
         display: none;
         font-size: 0.88rem;
         line-height: 1.6;
-        color: #92400e;
-        background: rgba(251, 191, 36, 0.12);
-        border: 1px solid rgba(251, 191, 36, 0.45);
+        color: #fff8eb;
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.28), rgba(217, 119, 6, 0.28));
+        border: 1px solid rgba(251, 191, 36, 0.7);
         border-radius: 14px;
         padding: 12px 16px;
-        box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.18);
+        box-shadow: 0 12px 28px rgba(217, 119, 6, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
       }
       .auth-error.is-visible {
         display: block;
@@ -3653,9 +3653,7 @@
             </div>
           </div>
           <h1 class="auth-card__title">サインイン</h1>
-          <p class="auth-card__subtitle">
-            個人の Google アカウントで認証します。下のボタンから認証を行ってください。
-          </p>
+          <p class="auth-card__subtitle">Google アカウントで認証します。</p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-request-id" id="auth-request-id" hidden>
             <span class="auth-request-id__label">エラー ID:</span>
@@ -9018,7 +9016,8 @@
         const cached = LAST_AUTH_SESSION;
         const cacheAge = now - LAST_AUTH_SESSION_AT;
         const cachedExpiry = Number(cached && cached.expiresAt ? cached.expiresAt : 0);
-        const cachedNearExpiry = cachedExpiry && cachedExpiry <= now + AUTH_SESSION_EXPIRY_BUFFER_MS;
+        const cachedNearExpiry =
+          cachedExpiry && cachedExpiry <= now + AUTH_SESSION_EXPIRY_BUFFER_MS;
         if (cached && cacheAge < AUTH_SESSION_CACHE_MS && !cachedNearExpiry && !opts.force) {
           if (cached.authenticated) {
             setAuthToken('SESSION');
@@ -11975,19 +11974,19 @@
             }
             google.script.run
               .withSuccessHandler(function (res) {
-                  notify(
-                    res && res.message ? res.message : '既読にしました',
-                    res && res.success !== false
-                  );
-                  btn.disabled = false;
-                  btn.innerHTML = originalHTML;
-                  loadMessages({ force: true });
-                  loadHome({ force: true });
-                })
-                .withFailureHandler(function (e) {
-                  notify('Failed to mark messages as read: ' + e.message, false);
-                  btn.disabled = false;
-                  btn.innerHTML = originalHTML;
+                notify(
+                  res && res.message ? res.message : '既読にしました',
+                  res && res.success !== false
+                );
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+                loadMessages({ force: true });
+                loadHome({ force: true });
+              })
+              .withFailureHandler(function (e) {
+                notify('Failed to mark messages as read: ' + e.message, false);
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
               })
               .markMemosReadBulk(ids);
           })
@@ -12257,18 +12256,18 @@
       on('deleteTaskButton', 'click', function () {
         if (!CURRENT_TASK_ID) return;
         if (!confirm('このタスクを削除します。よろしいですか？')) return;
-            google.script.run
-              .withSuccessHandler(function (res) {
-                notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
-                var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
-                if (inst) inst.hide();
-                loadHome({ force: true });
-                loadMyTasks({ force: true });
-              })
-              .withFailureHandler(function (e) {
-                notify('削除に失敗: ' + e.message, false);
-              })
-              .deleteTaskById(CURRENT_TASK_ID);
+        google.script.run
+          .withSuccessHandler(function (res) {
+            notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+            var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
+            if (inst) inst.hide();
+            loadHome({ force: true });
+            loadMyTasks({ force: true });
+          })
+          .withFailureHandler(function (e) {
+            notify('削除に失敗: ' + e.message, false);
+          })
+          .deleteTaskById(CURRENT_TASK_ID);
       });
       var CURRENT_MEMO_ID = null;
       var CURRENT_MEMO_IS_READ = false;
