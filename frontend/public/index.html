@@ -173,6 +173,11 @@
     />
 
     <style>
+      /* iOS標準の端スワイプ戻るを無効化 */
+      html,
+      body {
+        overscroll-behavior-x: none;
+      }
       /* ===== Light theme design tokens and global variables ===== */
       :root {
         color-scheme: light;
