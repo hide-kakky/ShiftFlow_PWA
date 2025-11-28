@@ -8623,13 +8623,41 @@
             window.location.reload();
             return;
           }
-          if (registration.waiting) {
-            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-            waitForControllerChange();
+          var waitingWorker = registration.waiting;
+          if (waitingWorker) {
+            requestSkipWaiting(waitingWorker);
+            return;
+          }
+          var installingWorker = registration.installing;
+          if (installingWorker) {
+            if (installingWorker.state === 'installed' && registration.waiting) {
+              requestSkipWaiting(registration.waiting);
+              return;
+            }
+            var handleStateChange = function () {
+              if (installingWorker.state === 'installed' && registration.waiting) {
+                installingWorker.removeEventListener('statechange', handleStateChange);
+                requestSkipWaiting(registration.waiting);
+              } else if (installingWorker.state === 'redundant') {
+                installingWorker.removeEventListener('statechange', handleStateChange);
+                window.location.reload();
+              }
+            };
+            installingWorker.addEventListener('statechange', handleStateChange);
             return;
           }
           window.location.reload();
         });
+      }
+
+      function requestSkipWaiting(worker) {
+        try {
+          worker.postMessage({ type: 'SKIP_WAITING' });
+        } catch (_err) {
+          window.location.reload();
+          return;
+        }
+        waitForControllerChange();
       }
 
       function waitForControllerChange() {
