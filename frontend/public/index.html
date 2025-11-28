@@ -5899,6 +5899,15 @@
       let APP_UPDATE_PROMPTED = false;
       let APP_UPDATE_REFRESHING = false;
 
+      function markUpdateDismissed(key) {
+        if (!key) return;
+        try {
+          sessionStorage.setItem(key, '1');
+        } catch (_err) {
+          /* noop */
+        }
+      }
+
       function cloneDeep(value) {
         try {
           return JSON.parse(JSON.stringify(value));
@@ -8626,15 +8635,14 @@
         var versionLabel = data && data.version ? '（' + data.version + '）' : '';
         notify('最新版がリリースされました' + versionLabel + '。更新しますか？', true, {
           actionLabel: '更新する',
-          onAction: applyAppShellUpdate,
+          onAction: function () {
+            markUpdateDismissed(dismissKey);
+            applyAppShellUpdate();
+          },
           duration: 0,
           position: 'center',
           onClose: function () {
-            try {
-              sessionStorage.setItem(dismissKey, '1');
-            } catch (_err2) {
-              /* noop */
-            }
+            markUpdateDismissed(dismissKey);
           },
         });
       }
