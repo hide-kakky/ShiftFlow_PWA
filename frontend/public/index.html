@@ -15487,6 +15487,92 @@
 
       document.addEventListener('shown.bs.modal', handleModalShown);
 
+      (function () {
+        if (!window.history || !window.history.pushState) {
+          return;
+        }
+        var modalHistoryStack = [];
+        var skipNextPopstate = false;
+        var closingViaPopstateId = null;
+
+        function findStackIndex(modalId) {
+          for (var i = modalHistoryStack.length - 1; i >= 0; i--) {
+            if (modalHistoryStack[i] && modalHistoryStack[i].modalId === modalId) {
+              return i;
+            }
+          }
+          return -1;
+        }
+
+        function pushModalState(modalId) {
+          var stateObj = {
+            modalLock: true,
+            modalId: modalId,
+            ts: Date.now(),
+          };
+          modalHistoryStack.push(stateObj);
+          try {
+            window.history.pushState(stateObj, document.title, window.location.href);
+          } catch (_err) {
+            /* noop */
+          }
+        }
+
+        function removeModalState(modalId, isFromPopstate) {
+          var idx = findStackIndex(modalId);
+          if (idx === -1) return;
+          modalHistoryStack.splice(idx, 1);
+          if (isFromPopstate) return;
+          skipNextPopstate = true;
+          setTimeout(function () {
+            try {
+              window.history.back();
+            } catch (_err) {
+              skipNextPopstate = false;
+            }
+          }, 0);
+        }
+
+        document.addEventListener('shown.bs.modal', function (event) {
+          var modalId = event && event.target && event.target.id;
+          if (!modalId) return;
+          pushModalState(modalId);
+        });
+
+        document.addEventListener('hidden.bs.modal', function (event) {
+          var modalId = event && event.target && event.target.id;
+          if (!modalId) return;
+          var isFromPopstate = closingViaPopstateId === modalId;
+          if (isFromPopstate) {
+            closingViaPopstateId = null;
+          }
+          removeModalState(modalId, isFromPopstate);
+        });
+
+        window.addEventListener('popstate', function (event) {
+          if (skipNextPopstate) {
+            skipNextPopstate = false;
+            return;
+          }
+          var state = event && event.state;
+          if (!state || !state.modalLock) {
+            return;
+          }
+          var modalId = state.modalId;
+          var modalEl = modalId && document.getElementById(modalId);
+          if (!modalEl) {
+            return;
+          }
+          closingViaPopstateId = modalId;
+          try {
+            var inst = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+            inst.hide();
+          } catch (_err) {
+            closingViaPopstateId = null;
+          }
+        });
+      })();
+
       // ===== 初期化 =====
       window.addEventListener('load', function () {
         // GAS組み込み認証では、このスクリプトが実行される時点で
