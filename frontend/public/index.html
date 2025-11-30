@@ -67,7 +67,8 @@
           "name": "ゲストユーザー",
           "email": "",
           "imageUrl": "/icons/icon-192.png",
-          "theme": "light"
+          "theme": "light",
+          "language": "ja"
         },
         "users": [],
         "folders": [],
@@ -87,6 +88,7 @@
             email: '',
             imageUrl: '/icons/icon-192.png',
             theme: 'light',
+            language: 'ja',
           },
           users: [],
           folders: [],
@@ -104,6 +106,7 @@
         }
         var merged = Object.assign({}, defaults, parsed);
         merged.userInfo = Object.assign({}, defaults.userInfo, parsed.userInfo || {});
+        merged.userInfo.language = merged.userInfo.language || 'ja';
         window.__SHIFT_FLOW_BOOTSTRAP__ = merged;
         window.userInfo = merged.userInfo;
         window.users = Array.isArray(merged.users) ? merged.users : [];
@@ -1295,6 +1298,9 @@
           align-items: center;
         }
       }
+      .home-hero__grid > * {
+        min-width: 0;
+      }
       .home-hero__intro {
         display: flex;
         flex-direction: column;
@@ -1358,6 +1364,13 @@
         color: #f8fbff;
         box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
       }
+      .home-panel,
+      .home-stat-card {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
       :root[data-theme='dark'] .home-stat-card {
         background: rgba(7, 16, 36, 0.45);
         border-color: rgba(157, 182, 255, 0.4);
@@ -1373,6 +1386,7 @@
         gap: 6px;
         font-size: 1.6rem;
         font-weight: 800;
+        flex-wrap: wrap;
       }
       .home-stat-card__value small {
         font-size: 0.9rem;
@@ -3889,31 +3903,11 @@
               <div class="dropdown-divider"></div>
               <div class="px-3 py-2">
                 <small
-                  class="text-muted d-block mb-2"
-                  data-i18n="user_menu_lang"
+                  class="text-muted d-block"
+                  data-i18n="user_menu_lang_hint"
                   style="font-size: 0.75rem; font-weight: 700; opacity: 0.8;"
-                  >言語設定</small
+                  >言語設定は「設定」で変更できます。</small
                 >
-                <div class="btn-group w-100" role="group">
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary lang-selector-item"
-                    data-lang="ja"
-                    data-i18n="lang_ja"
-                    onclick="I18n.setLanguage('ja')"
-                  >
-                    日本語
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary lang-selector-item"
-                    data-lang="en"
-                    data-i18n="lang_en"
-                    onclick="I18n.setLanguage('en')"
-                  >
-                    English
-                  </button>
-                </div>
               </div>
             </div>
           </div>
@@ -4306,6 +4300,21 @@
                         <span data-i18n="settings_profile_image_note"
                           >最大8MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span
                         >
+                      </div>
+                      <div class="mt-3">
+                        <label class="form-label" for="setting-language" data-i18n="settings_language_label"
+                          >表示言語</label
+                        >
+                        <select class="form-select" id="setting-language">
+                          <option value="ja" data-i18n="settings_language_option_ja">日本語</option>
+                          <option value="en" data-i18n="settings_language_option_en">English</option>
+                        </select>
+                        <div class="settings-upload-note">
+                          <span class="material-icons-outlined align-middle">translate</span>
+                          <span data-i18n="settings_language_note"
+                            >保存すると、次回以降もこの言語で表示されます。</span
+                          >
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -6485,6 +6494,7 @@
           imageUrl: testAvatar,
           theme: 'light',
           role: profile,
+          language: 'ja',
         };
         var pinnedMap = {};
         messages.forEach(function (msg) {
@@ -6530,6 +6540,7 @@
             role: profile,
             email: testEmail,
             theme: 'light',
+            language: 'ja',
           },
           counters: {
             task: 1000 + tasks.length,
@@ -6830,6 +6841,13 @@
             var settingsPayload = Array.isArray(args) && args[0] ? args[0] : {};
             if (settingsPayload.name) data.settings.name = settingsPayload.name;
             if (settingsPayload.theme) data.settings.theme = settingsPayload.theme;
+            if (settingsPayload.language) {
+              data.settings.language = settingsPayload.language;
+              data.userInfo.language = settingsPayload.language;
+              if (data.bootstrap && data.bootstrap.userInfo) {
+                data.bootstrap.userInfo.language = settingsPayload.language;
+              }
+            }
             if (settingsPayload.imageData) {
               data.settings.imageUrl = settingsPayload.imageData;
               data.settings.imageName = 'uploaded-from-test.png';
@@ -6840,6 +6858,7 @@
               imageUrl: data.settings.imageUrl,
               imageName: data.settings.imageName,
               theme: data.settings.theme,
+              language: data.settings.language,
             };
           }
           case 'adminListUsers': {
@@ -8008,6 +8027,14 @@
         var themeValue = userInfo.theme || normalized.theme || themePreference;
         applyThemePreference(themeValue);
         updateThemeStatus(themeValue);
+        if (
+          userInfo.language &&
+          window.I18n &&
+          typeof window.I18n.setLanguage === 'function' &&
+          window.I18n.currentLang !== userInfo.language
+        ) {
+          window.I18n.setLanguage(userInfo.language);
+        }
 
         toggleManagerUI();
         updateTestMenuShortcut();
@@ -13591,6 +13618,31 @@
           applyThemePreference(themeVal);
           updateThemeStatus(themeVal);
         }
+        var langInput = byId('setting-language');
+        var langVal = typeof s.language === 'string' ? s.language.trim().toLowerCase() : '';
+        if (langVal !== 'ja' && langVal !== 'en') {
+          langVal = (window.userInfo && window.userInfo.language) || 'ja';
+        }
+        if (langInput) {
+          langInput.value = langVal;
+        }
+        if (
+          window.I18n &&
+          typeof window.I18n.setLanguage === 'function' &&
+          langVal &&
+          window.I18n.currentLang !== langVal
+        ) {
+          window.I18n.setLanguage(langVal);
+        }
+        if (window.userInfo) {
+          window.userInfo.language = langVal;
+        }
+        if (
+          window.__SHIFT_FLOW_BOOTSTRAP__ &&
+          window.__SHIFT_FLOW_BOOTSTRAP__.userInfo
+        ) {
+          window.__SHIFT_FLOW_BOOTSTRAP__.userInfo.language = langVal;
+        }
       }
       on('btn-settings-save', 'click', function () {
         var btn = byId('btn-settings-save');
@@ -13599,10 +13651,13 @@
         btn.disabled = true;
         if (lbl) lbl.classList.add('d-none');
         if (sp) sp.classList.remove('d-none');
+        var langInput = byId('setting-language');
+        var selectedLang = (langInput && langInput.value) || (window.userInfo && window.userInfo.language) || 'ja';
         var payload = {
           name: byId('setting-name').value || '',
           imageData: pendingProfileImage ? pendingProfileImage.dataUri : '',
           theme: byId('setting-theme').value || 'light',
+          language: selectedLang,
         };
         google.script.run
           .withSuccessHandler(function (res) {
@@ -13612,6 +13667,23 @@
             if (sp) sp.classList.add('d-none');
             if (res && res.success) {
               ProfileImageController.applySaveResult(res);
+              var nextLanguage = res.language || payload.language;
+              if (nextLanguage && window.I18n && typeof window.I18n.setLanguage === 'function') {
+                window.I18n.setLanguage(nextLanguage);
+              }
+              if (window.userInfo) {
+                window.userInfo.language = nextLanguage;
+              }
+              if (
+                window.__SHIFT_FLOW_BOOTSTRAP__ &&
+                window.__SHIFT_FLOW_BOOTSTRAP__.userInfo
+              ) {
+                window.__SHIFT_FLOW_BOOTSTRAP__.userInfo.language = nextLanguage;
+              }
+              var languageControl = byId('setting-language');
+              if (languageControl) {
+                languageControl.value = nextLanguage;
+              }
             }
           })
           .withFailureHandler(function (e) {

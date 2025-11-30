@@ -3,7 +3,7 @@
  * Handles language switching and text updates.
  */
 (function (globalScope) {
-  var translations = {
+    var translations = {
     ja: {
       app_title: 'ShiftFlow',
       nav_home: 'ホーム',
@@ -13,37 +13,19 @@
       nav_files: 'ファイル',
       nav_settings: '設定',
       user_menu_profile: 'プロフィール設定',
-      user_menu_theme: 'テーマ設定',
-      user_menu_lang: '言語設定',
       user_menu_logout: 'ログアウト',
-      lang_ja: '日本語',
-      lang_en: 'English',
-      section_today_tasks: '今日のタスク',
-      section_unread_messages: '未読メッセージ',
-      task_search_placeholder: 'タスクを検索...',
-      filter_all_tasks: 'すべてのタスク',
-      filter_my_tasks: '自分のタスク',
-      filter_assigned_tasks: '依頼したタスク',
-      status_todo: '未着手',
-      status_doing: '進行中',
-      status_done: '完了',
-      priority_high: '高',
-      priority_medium: '中',
-      priority_low: '低',
-      btn_create_task: 'タスク作成',
-      btn_login_google: 'Google でログイン',
-      guest_user: 'ゲストユーザー',
+      user_menu_lang_hint: '言語設定は「設定」で変更できます。',
       home_welcome_suffix: 'さん、おかえりなさい。',
       home_action_open_tasks: 'タスクを開く',
       home_action_new_task: '新規タスク',
       home_action_new_message: '新規メッセージ',
       home_stat_today_label: '今日のタスク',
-      unit_items: '件',
       home_stat_today_hint: '直近のカードがここに並びます',
       home_stat_unread_label: '未読',
       home_stat_unread_hint: '未読メッセージの合計',
       home_stat_overdue_label: '期限超過リスク',
       home_stat_overdue_hint: '今日時点での見逃せない件数',
+      unit_items: '件',
       home_recent_tasks_title: '直近のタスク',
       home_recent_messages_title: '新着メッセージ',
       link_view_all: '一覧へ',
@@ -60,10 +42,14 @@
       settings_profile_title: 'プロフィール',
       settings_profile_desc: 'メンバーに表示される名前とプロフィール画像を管理します。',
       settings_profile_choose_image: '画像を選択',
-      settings_profile_image_empty: '未設定',
       settings_profile_display_name_label: '表示名',
       settings_profile_display_name_placeholder: 'チームで表示される名前',
       settings_profile_image_note: '最大8MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。',
+      settings_profile_image_empty: '未設定',
+      settings_language_label: '表示言語',
+      settings_language_option_ja: '日本語',
+      settings_language_option_en: '英語',
+      settings_language_note: '保存すると、次回以降もこの言語で表示されます。',
       settings_theme_title: '外観設定',
       settings_theme_desc: 'アプリの配色テーマを切り替えて見やすさを調整します。',
       settings_theme_label: 'テーマ',
@@ -97,6 +83,12 @@
       label_name: '名称',
       label_color: 'カラー',
       label_source_message: '元メッセージ：',
+      status_todo: '未着手',
+      status_doing: '進行中',
+      status_done: '完了',
+      priority_high: '高',
+      priority_medium: '中',
+      priority_low: '低',
       assignee_select_all: 'すべて選択',
       assignee_clear_all: 'すべて解除',
       assignee_note: 'タスクの担当者を1名以上選択してください。自分自身も選択できます。',
@@ -144,60 +136,46 @@
       nav_members: 'Members',
       nav_files: 'Files',
       nav_settings: 'Settings',
-      user_menu_profile: 'Profile',
-      user_menu_theme: 'Theme',
-      user_menu_lang: 'Language',
-      user_menu_logout: 'Logout',
-      lang_ja: 'Japanese',
-      lang_en: 'English',
-      section_today_tasks: 'Today\'s Tasks',
-      section_unread_messages: 'Unread Messages',
-      task_search_placeholder: 'Search tasks...',
-      filter_all_tasks: 'All Tasks',
-      filter_my_tasks: 'My Tasks',
-      filter_assigned_tasks: 'Assigned Tasks',
-      status_todo: 'To Do',
-      status_doing: 'In Progress',
-      status_done: 'Done',
-      priority_high: 'High',
-      priority_medium: 'Medium',
-      priority_low: 'Low',
-      btn_create_task: 'Create Task',
-      btn_login_google: 'Sign in with Google',
-      guest_user: 'Guest User',
+      user_menu_profile: 'Profile settings',
+      user_menu_logout: 'Sign out',
+      user_menu_lang_hint: 'Change the interface language from Settings.',
       home_welcome_suffix: ', welcome back!',
       home_action_open_tasks: 'Open tasks',
       home_action_new_task: 'New task',
       home_action_new_message: 'New message',
-      home_stat_today_label: 'Today\'s Tasks',
-      unit_items: 'items',
-      home_stat_today_hint: 'Recent cards appear here',
+      home_stat_today_label: "Today's tasks",
+      home_stat_today_hint: 'Recent tasks appear here',
       home_stat_unread_label: 'Unread',
       home_stat_unread_hint: 'Total unread messages',
       home_stat_overdue_label: 'Overdue risk',
-      home_stat_overdue_hint: 'Can\'t-miss items as of today',
-      home_recent_tasks_title: 'Recent Tasks',
-      home_recent_messages_title: 'Recent Messages',
+      home_stat_overdue_hint: 'High-priority items due today',
+      unit_items: 'items',
+      home_recent_tasks_title: 'Recent tasks',
+      home_recent_messages_title: 'New messages',
       link_view_all: 'View all',
-      btn_reload: 'Reload',
+      btn_reload: 'Refresh',
       task_tab_my: 'Your tasks',
       task_tab_created: 'Assigned by you',
       task_tab_all: 'All tasks',
-      placeholder_keyword_search: 'Keyword search',
+      placeholder_keyword_search: 'Search by keyword',
       task_filter_assignee: 'Filter by assignee',
       messages_filter_folder: 'Folder',
       filter_all: 'All',
       messages_filter_unread_only: 'Unread only',
-      messages_mark_all_read: 'Mark all as read',
+      messages_mark_all_read: 'Mark all read',
       settings_profile_title: 'Profile',
-      settings_profile_desc: 'Manage the name and avatar shown to teammates.',
+      settings_profile_desc: 'Manage the name and photo shown to teammates.',
       settings_profile_choose_image: 'Choose image',
-      settings_profile_image_empty: 'Not set',
       settings_profile_display_name_label: 'Display name',
       settings_profile_display_name_placeholder: 'Name shown to the team',
-      settings_profile_image_note: 'Images up to 8MB are uploaded and stored securely in Drive.',
+      settings_profile_image_note: 'Images up to 8MB are uploaded securely to Drive.',
+      settings_profile_image_empty: 'Not set',
+      settings_language_label: 'Language',
+      settings_language_option_ja: 'Japanese',
+      settings_language_option_en: 'English',
+      settings_language_note: 'Your preference applies immediately and is saved for future visits.',
       settings_theme_title: 'Appearance',
-      settings_theme_desc: 'Switch the color theme for better visibility.',
+      settings_theme_desc: 'Switch the color theme to suit your environment.',
       settings_theme_label: 'Theme',
       settings_theme_option_light: 'Light',
       settings_theme_option_dark: 'Dark',
@@ -206,11 +184,11 @@
       settings_theme_status_dark: 'Dark theme active',
       settings_theme_status_system: 'Following system setting',
       settings_theme_guide_intro: 'Changes apply immediately.',
-      settings_theme_light_desc: 'Bright, fresh tones ideal for daytime work.',
-      settings_theme_dark_desc: 'Protects your eyes in dark rooms or long sessions.',
+      settings_theme_light_desc: 'Bright, refreshing tones ideal for daytime work.',
+      settings_theme_dark_desc: 'Protects your eyes in darker rooms or long sessions.',
       settings_theme_system_desc: 'Automatically follows your device preference.',
       btn_save_changes: 'Save changes',
-      section_basic_info: 'Basic Info',
+      section_basic_info: 'Basic info',
       section_details: 'Advanced settings',
       label_title: 'Title',
       label_due: 'Due date',
@@ -229,15 +207,21 @@
       label_name: 'Name',
       label_color: 'Color',
       label_source_message: 'Source message:',
+      status_todo: 'To do',
+      status_doing: 'In progress',
+      status_done: 'Done',
+      priority_high: 'High',
+      priority_medium: 'Medium',
+      priority_low: 'Low',
       assignee_select_all: 'Select all',
       assignee_clear_all: 'Clear all',
-      assignee_note: 'Pick at least one assignee. You can include yourself.',
+      assignee_note: 'Select at least one assignee. You can include yourself.',
       repeat_none: 'One-time (no repeat)',
       repeat_daily: 'Daily',
       repeat_weekly: 'Weekly',
       repeat_monthly: 'Monthly',
       repeat_note: 'Automatically schedules the next task after completion.',
-      messages_select_folder: 'Select a folder',
+      messages_select_folder: 'Choose a folder',
       attachments_add: 'Add images',
       attachments_hint: 'Up to 5 files, 10MB each',
       btn_cancel: 'Cancel',
@@ -246,15 +230,15 @@
       btn_delete: 'Delete',
       btn_close: 'Close',
       btn_back: 'Back',
-      modal_task_new_title: 'New Task',
-      modal_message_new_title: 'New Message',
-      modal_task_detail_title: 'Task Detail',
-      modal_message_detail_title: 'Message Detail',
-      modal_folder_create_title: 'Create Folder',
+      modal_task_new_title: 'New task',
+      modal_message_new_title: 'New message',
+      modal_task_detail_title: 'Task details',
+      modal_message_detail_title: 'Message details',
+      modal_folder_create_title: 'Create folder',
       modal_unread_status_title: 'Unread status',
       message_convert_task: 'Create task from message',
       message_mark_read: 'Mark as read',
-      message_unread_status: 'Unread status',
+      message_unread_status: 'Unread overview',
       comments_placeholder: 'Type a comment...',
       comments_post: 'Post comment',
       fab_task: 'Task',
@@ -263,7 +247,7 @@
       task_mark_complete: 'Mark complete',
       folder_name_placeholder: 'Main',
       folder_public_label: 'Visible to everyone',
-      folder_members_label: 'Members (if private)',
+      folder_members_label: 'Members (when private)',
       folder_member_placeholder: 'Filter by name or email',
       assignee_count_prefix: 'Selected ',
       assignee_count_suffix: ' items',
@@ -274,19 +258,39 @@
   var STORAGE_KEY = 'shiftflow_lang';
   var LANGUAGE_EVENT = 'shiftflow:languagechange';
 
-  function initI18n() {
-    // Load persisted language or default to browser language or 'ja'
-    var saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && translations[saved]) {
-      currentLang = saved;
-    } else {
-      var browserLang = (navigator.language || navigator.userLanguage || '').split('-')[0];
-      if (translations[browserLang]) {
-        currentLang = browserLang;
-      } else {
-        currentLang = 'ja';
-      }
+  function persistLanguage(lang) {
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (_err) {
+      /* noop */
     }
+  }
+
+  function resolveInitialLanguage() {
+    var bootstrap = globalScope.__SHIFT_FLOW_BOOTSTRAP__ || {};
+    var bootstrapLang =
+      bootstrap.userInfo && typeof bootstrap.userInfo.language === 'string'
+        ? bootstrap.userInfo.language.trim().toLowerCase()
+        : '';
+    if (bootstrapLang && translations[bootstrapLang]) {
+      return bootstrapLang;
+    }
+    try {
+      var saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && translations[saved]) {
+        return saved;
+      }
+    } catch (_err) {}
+    var browserLang = (navigator.language || navigator.userLanguage || '').split('-')[0];
+    if (translations[browserLang]) {
+      return browserLang;
+    }
+    return 'ja';
+  }
+
+  function initI18n() {
+    currentLang = resolveInitialLanguage();
+    persistLanguage(currentLang);
     updateUI();
     updateHtmlLang();
     updateLangSelectorState();
@@ -294,16 +298,21 @@
   }
 
   function setLanguage(lang) {
-    if (translations[lang]) {
-      currentLang = lang;
-      localStorage.setItem(STORAGE_KEY, lang);
-      updateUI();
-      updateHtmlLang();
-
-      // Update active state in language selector if it exists
-      updateLangSelectorState();
-      emitLanguageChange();
+    if (!translations[lang]) {
+      return;
     }
+    if (currentLang === lang) {
+      persistLanguage(lang);
+      updateHtmlLang();
+      updateLangSelectorState();
+      return;
+    }
+    currentLang = lang;
+    persistLanguage(lang);
+    updateUI();
+    updateHtmlLang();
+    updateLangSelectorState();
+    emitLanguageChange();
   }
 
   function t(key) {
@@ -381,19 +390,22 @@
 
   function updateLangSelectorState() {
     var items = document.querySelectorAll('.lang-selector-item');
-    if (!items.length) {
-      return;
+    if (items.length) {
+      items.forEach(function (item) {
+        var targetLang = item.getAttribute('data-lang');
+        var isActive = targetLang === currentLang;
+        item.classList.toggle('active', isActive);
+        if (item.classList.contains('btn')) {
+          item.classList.toggle('btn-primary', isActive);
+          item.classList.toggle('btn-outline-secondary', !isActive);
+        }
+        item.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
     }
-    items.forEach(function (item) {
-      var targetLang = item.getAttribute('data-lang');
-      var isActive = targetLang === currentLang;
-      item.classList.toggle('active', isActive);
-      if (item.classList.contains('btn')) {
-        item.classList.toggle('btn-primary', isActive);
-        item.classList.toggle('btn-outline-secondary', !isActive);
-      }
-      item.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    });
+    var select = document.getElementById('setting-language');
+    if (select && select.value !== currentLang) {
+      select.value = currentLang;
+    }
   }
 
   // Expose to global

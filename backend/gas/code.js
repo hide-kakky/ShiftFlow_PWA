@@ -17,6 +17,7 @@ const USER_SHEET_COLUMNS = [
   'Role',
   'IsActive',
   'Theme',
+  'Language',
   'AuthSubject',
   'Status',
   'FirstLoginAt',
@@ -447,6 +448,13 @@ function _normalizeUserStatus(status) {
   if (value === 'disabled' || value === 'inactive') return 'suspended';
   if (value === 'revoked') return 'revoked';
   return 'pending';
+}
+
+function _normalizeLanguage(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return normalized === 'en' || normalized === 'ja' ? normalized : 'ja';
 }
 
 function _isManagerRole(role) {
@@ -1494,6 +1502,7 @@ function getLoggedInUserInfo() {
   const userSheet = _openSheet('M_Users');
   const header = _ensureColumns(userSheet, USER_SHEET_COLUMNS);
   const THEME_COL = header['Theme'];
+  const LANGUAGE_COL = header['Language'];
   const EMAIL_COL = header['Email'];
   const DISPLAY_COL = header['DisplayName'];
   const ROLE_COL = header['Role'];
@@ -1507,6 +1516,7 @@ function getLoggedInUserInfo() {
     role: 'guest',
     email: email,
     theme: 'light',
+    language: 'ja',
   };
 
   if (EMAIL_COL != null && lastRow >= 2 && lastColumn >= 1) {
@@ -1523,6 +1533,7 @@ function getLoggedInUserInfo() {
         role: _normalizeRole(rawRole),
         email: email,
         theme: THEME_COL != null ? row[THEME_COL] || 'light' : 'light',
+        language: LANGUAGE_COL != null ? _normalizeLanguage(row[LANGUAGE_COL]) : 'ja',
       };
       break;
     }
@@ -2946,6 +2957,10 @@ function saveUserSettings(payload) {
           rowValues[hdr['Theme']] = payload.theme;
           rowChanged = true;
         }
+        if (payload.language != null && hdr['Language'] != null) {
+          rowValues[hdr['Language']] = _normalizeLanguage(payload.language);
+          rowChanged = true;
+        }
         if (rowChanged) {
           _writeRow(sh, i + 1, rowValues);
         }
@@ -2956,6 +2971,10 @@ function saveUserSettings(payload) {
           response.imageUrl = resultMeta.imageUrl;
           response.imageName = resultMeta.imageName;
         }
+        if (hdr['Language'] != null) {
+          response.language = _normalizeLanguage(rowValues[hdr['Language']]);
+        }
+        response.theme = hdr['Theme'] != null ? String(rowValues[hdr['Theme']] || 'light') : 'light';
         return response;
       }
     }

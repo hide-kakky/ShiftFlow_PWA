@@ -32,6 +32,7 @@ const DEFAULT_ORG_COLOR = '#517CB2';
 const DEFAULT_ORG_TIMEZONE = 'Asia/Tokyo';
 const DEFAULT_FOLDER_COLOR = '#517CB2';
 const DEFAULT_SYSTEM_FOLDER_NAME = 'Main';
+const DEFAULT_LANGUAGE = 'ja';
 const PINNED_MESSAGE_LIMIT = 5;
 const HEX_COLOR_REGEX = /^#?([0-9a-fA-F]{6})$/;
 const SUPPORTED_TIMEZONES = [
@@ -429,6 +430,19 @@ function normalizeUserStatusValue(status) {
   if (value === 'revoked') return 'revoked';
   if (value === 'disabled' || value === 'inactive') return 'suspended';
   return 'pending';
+}
+
+function normalizeLanguageInput(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'ja' || normalized === 'en') {
+    return normalized;
+  }
+  return null;
+}
+
+function resolveLanguageValue(value) {
+  return normalizeLanguageInput(value) || DEFAULT_LANGUAGE;
 }
 
 function computeEffectiveStatus(userStatusRaw, membershipStatusRaw, membershipId, isActiveFlag) {
@@ -1824,6 +1838,13 @@ function interceptRequestBodyForRoute(route, body, context) {
       imageData: typeof payload.imageData === 'string' ? payload.imageData : undefined,
       hasImageData: typeof payload.imageData === 'string' && payload.imageData.length > 0,
     };
+    const nextLanguage = normalizeLanguageInput(payload.language);
+    if (nextLanguage) {
+      payload.language = nextLanguage;
+      sanitizedContext.language = nextLanguage;
+    } else if (payload.language !== undefined) {
+      delete payload.language;
+    }
     return {
       body: mutatedBody,
       mutated: false,
@@ -1898,7 +1919,8 @@ async function maybeHandleRouteWithD1(options) {
                    email,
                    display_name,
                    profile_image_url,
-                   theme
+                   theme,
+                   language
               FROM users
              WHERE lower(email) = ?1
           `
@@ -1916,6 +1938,7 @@ async function maybeHandleRouteWithD1(options) {
         imageUrl: userRow?.profile_image_url || PROFILE_PLACEHOLDER_URL,
         theme: userRow?.theme || 'light',
         role: resolvedRole,
+        language: resolveLanguageValue(userRow?.language),
       };
       const bootstrap = {
         userInfo,
@@ -3250,7 +3273,8 @@ async function maybeHandleRouteWithD1(options) {
                  email,
                  display_name,
                  profile_image_url,
-                 theme
+                 theme,
+                 language
             FROM users
            WHERE lower(email) = ?1
         `
@@ -3269,6 +3293,7 @@ async function maybeHandleRouteWithD1(options) {
               role: accessContext?.role || 'guest',
               email: tokenDetails?.email || '',
               theme: 'light',
+              language: DEFAULT_LANGUAGE,
             },
           },
           allowedOrigin,
@@ -3295,6 +3320,7 @@ async function maybeHandleRouteWithD1(options) {
         role,
         email: tokenDetails?.email || user.email || '',
         theme: user.theme || 'light',
+        language: resolveLanguageValue(user.language),
       };
       captureDiagnostics(config, 'info', 'd1_route_served', {
         event: 'd1_route_served',
@@ -3444,6 +3470,7 @@ async function maybeHandleRouteWithD1(options) {
           email: actorEmail,
           name: payload.name,
           theme: payload.theme,
+          language: payload.language,
           imageUrl: payload.imageUrl,
           timestampMs,
         });
@@ -3476,7 +3503,7 @@ async function maybeHandleRouteWithD1(options) {
       const updatedUser = await db
         .prepare(
           `
-          SELECT profile_image_url, theme
+          SELECT profile_image_url, theme, language
             FROM users
            WHERE lower(email) = ?1
         `
@@ -3489,6 +3516,7 @@ async function maybeHandleRouteWithD1(options) {
         imageUrl: updatedUser?.profile_image_url || payload.imageUrl || PROFILE_PLACEHOLDER_URL,
         imageName: newAttachmentUploaded ? attachmentFileName : payload.imageName || '',
         theme: updatedUser?.theme || payload.theme || 'light',
+        language: resolveLanguageValue(updatedUser?.language || payload.language),
       };
       captureDiagnostics(config, 'info', 'd1_user_settings_saved', {
         event: 'd1_user_settings_saved',
@@ -6287,6 +6315,11 @@ async function updateUserSettingsInD1(db, context) {
   if (context.imageUrl) {
     updates.push(`profile_image_url = ?${bindIndex++}`);
     values.push(context.imageUrl);
+  }
+  const nextLanguage = normalizeLanguageInput(context.language);
+  if (nextLanguage) {
+    updates.push(`language = ?${bindIndex++}`);
+    values.push(nextLanguage);
   }
   const timestamp = context.timestampMs || Date.now();
   updates.push(`updated_at_ms = ?${bindIndex++}`);
