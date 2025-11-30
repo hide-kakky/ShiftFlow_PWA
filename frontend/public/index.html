@@ -57,6 +57,7 @@
     <script src="/config"></script>
     <!-- ===== Static application constants ===== -->
     <script src="/app-config.js"></script>
+    <script src="/i18n.js"></script>
     <!-- ===== Google Identity Services (One Tap / FedCM support) ===== -->
     <!-- TODO: manifest 動的補完スクリプトと静的 manifest の整合性を確認 -->
     <!-- ===== Initial bootstrap payload rendered by backend ===== -->
@@ -3875,7 +3876,7 @@
                 data-user-menu="settings"
               >
                 <span class="material-icons-outlined">settings</span>
-                ユーザー設定
+                <span data-i18n="user_menu_profile">ユーザー設定</span>
               </button>
               <button
                 class="dropdown-item d-flex align-items-center gap-2"
@@ -3883,8 +3884,16 @@
                 data-user-menu="logout"
               >
                 <span class="material-icons-outlined">logout</span>
-                サインアウト
+                <span data-i18n="user_menu_logout">サインアウト</span>
               </button>
+              <div class="dropdown-divider"></div>
+              <div class="px-3 py-2">
+                <small class="text-muted d-block mb-2" data-i18n="user_menu_lang" style="font-size: 0.75rem; font-weight: 700; opacity: 0.8;">言語設定</small>
+                <div class="btn-group w-100" role="group">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="I18n.setLanguage('ja')">日本語</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="I18n.setLanguage('en')">English</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3900,13 +3909,13 @@
             <li class="nav-item">
               <a class="nav-link active" href="#" data-view="home" title="Home">
                 <span class="material-icons-outlined" aria-hidden="true">home</span>
-                <span class="nav-label">ホーム</span>
+                <span class="nav-label" data-i18n="nav_home">ホーム</span>
               </a>
             </li>
             <li class="nav-item">
               <a class="nav-link nav-icon" href="#" data-view="tasks" title="Tasks">
                 <span class="material-icons-outlined" aria-hidden="true">send</span>
-                <span class="nav-label">タスク</span>
+                <span class="nav-label" data-i18n="nav_tasks">タスク</span>
                 <span
                   class="badge badge-overdue nav-icon-badge d-none"
                   id="badge-task-overdue-top"
@@ -3918,7 +3927,7 @@
             <li class="nav-item">
               <a class="nav-link nav-icon" href="#" data-view="messages" title="Messages">
                 <span class="material-icons-outlined" aria-hidden="true">mail</span>
-                <span class="nav-label">メッセージ</span>
+                <span class="nav-label" data-i18n="nav_messages">メッセージ</span>
                 <span
                   class="badge badge-unread nav-icon-badge d-none"
                   id="badge-unread-top"
@@ -3930,7 +3939,7 @@
             <li class="nav-item">
               <a class="nav-link" href="#" data-view="settings" title="Settings">
                 <span class="material-icons-outlined" aria-hidden="true">settings</span>
-                <span class="nav-label">設定</span>
+                <span class="nav-label" data-i18n="nav_settings">設定</span>
               </a>
             </li>
             <li class="nav-item d-none" data-manager-only>
