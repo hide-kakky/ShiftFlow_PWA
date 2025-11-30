@@ -3888,10 +3888,31 @@
               </button>
               <div class="dropdown-divider"></div>
               <div class="px-3 py-2">
-                <small class="text-muted d-block mb-2" data-i18n="user_menu_lang" style="font-size: 0.75rem; font-weight: 700; opacity: 0.8;">言語設定</small>
+                <small
+                  class="text-muted d-block mb-2"
+                  data-i18n="user_menu_lang"
+                  style="font-size: 0.75rem; font-weight: 700; opacity: 0.8;"
+                  >言語設定</small
+                >
                 <div class="btn-group w-100" role="group">
-                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="I18n.setLanguage('ja')">日本語</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="I18n.setLanguage('en')">English</button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary lang-selector-item"
+                    data-lang="ja"
+                    data-i18n="lang_ja"
+                    onclick="I18n.setLanguage('ja')"
+                  >
+                    日本語
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary lang-selector-item"
+                    data-lang="en"
+                    data-i18n="lang_en"
+                    onclick="I18n.setLanguage('en')"
+                  >
+                    English
+                  </button>
                 </div>
               </div>
             </div>
@@ -3965,7 +3986,8 @@
                 <div class="home-hero__grid">
                   <div class="home-hero__intro">
                     <h2 class="home-hero__title">
-                      <span data-bind-user-name>ゲストユーザー</span>さん、おかえりなさい。
+                      <span data-bind-user-name>ゲストユーザー</span>
+                      <span data-i18n="home_welcome_suffix">さん、おかえりなさい。</span>
                     </h2>
                     <div class="home-hero__actions">
                       <button
@@ -3974,39 +3996,52 @@
                         data-view="tasks"
                       >
                         <span class="material-icons" aria-hidden="true">checklist</span>
-                        タスクを開く
+                        <span data-i18n="home_action_open_tasks">タスクを開く</span>
                       </button>
                       <button class="home-hero__action" type="button" id="home-quick-new-task">
                         <span class="material-icons-outlined" aria-hidden="true">add_task</span>
-                        新規タスク
+                        <span data-i18n="home_action_new_task">新規タスク</span>
                       </button>
                       <button class="home-hero__action" type="button" id="home-quick-new-msg">
                         <span class="material-icons-outlined" aria-hidden="true">mail</span>
-                        新規メッセージ
+                        <span data-i18n="home_action_new_message">新規メッセージ</span>
                       </button>
                     </div>
                   </div>
                   <div class="home-hero__stats" aria-live="polite">
                     <div class="home-stat-card">
-                      <p class="home-stat-card__label">今日のタスク</p>
+                      <p class="home-stat-card__label" data-i18n="home_stat_today_label">
+                        今日のタスク
+                      </p>
                       <div class="home-stat-card__value">
-                        <span id="home-stat-today">0</span><small>件</small>
+                        <span id="home-stat-today">0</span
+                        ><small data-i18n="unit_items">件</small>
                       </div>
-                      <p class="home-stat-card__hint">直近のカードがここに並びます</p>
+                      <p class="home-stat-card__hint" data-i18n="home_stat_today_hint">
+                        直近のカードがここに並びます
+                      </p>
                     </div>
                     <div class="home-stat-card">
-                      <p class="home-stat-card__label">未読</p>
+                      <p class="home-stat-card__label" data-i18n="home_stat_unread_label">未読</p>
                       <div class="home-stat-card__value">
-                        <span id="home-stat-unread">0</span><small>件</small>
+                        <span id="home-stat-unread">0</span
+                        ><small data-i18n="unit_items">件</small>
                       </div>
-                      <p class="home-stat-card__hint">未読メッセージの合計</p>
+                      <p class="home-stat-card__hint" data-i18n="home_stat_unread_hint">
+                        未読メッセージの合計
+                      </p>
                     </div>
                     <div class="home-stat-card">
-                      <p class="home-stat-card__label">期限超過リスク</p>
+                      <p class="home-stat-card__label" data-i18n="home_stat_overdue_label">
+                        期限超過リスク
+                      </p>
                       <div class="home-stat-card__value">
-                        <span id="home-stat-overdue">0</span><small>件</small>
+                        <span id="home-stat-overdue">0</span
+                        ><small data-i18n="unit_items">件</small>
                       </div>
-                      <p class="home-stat-card__hint">今日時点での見逃せない件数</p>
+                      <p class="home-stat-card__hint" data-i18n="home_stat_overdue_hint">
+                        今日時点での見逃せない件数
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -4019,11 +4054,11 @@
                       <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                         >calendar_month</span
                       >
-                      <h3 class="m-0">直近のタスク</h3>
+                      <h3 class="m-0" data-i18n="home_recent_tasks_title">直近のタスク</h3>
                     </div>
                     <a href="#" class="link-soft" data-view="tasks">
                       <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                      一覧へ
+                      <span data-i18n="link_view_all">一覧へ</span>
                     </a>
                   </div>
                   <!-- Mount point for the "today's tasks" card list -->
@@ -4036,11 +4071,11 @@
                       <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                         >mark_email_unread</span
                       >
-                      <h3 class="m-0">新着メッセージ</h3>
+                      <h3 class="m-0" data-i18n="home_recent_messages_title">新着メッセージ</h3>
                     </div>
                     <a href="#" class="link-soft" data-view="messages">
                       <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                      一覧へ
+                      <span data-i18n="link_view_all">一覧へ</span>
                     </a>
                   </div>
                   <!-- Mount point for unread message cards -->
@@ -4054,23 +4089,24 @@
               <div class="task-header mt-0">
                 <div class="task-title-wrap">
                   <span class="material-icons-outlined task-title-icon">send</span>
-                  <h3 class="view-title">タスク</h3>
+                  <h3 class="view-title" data-i18n="nav_tasks">タスク</h3>
                 </div>
                 <button
                   class="btn btn-outline-primary d-flex align-items-center gap-1"
                   id="task-reload"
                   type="button"
                 >
-                  <span class="material-icons align-middle">refresh</span>再読込
+                  <span class="material-icons align-middle">refresh</span>
+                  <span data-i18n="btn_reload">再読込</span>
                 </button>
               </div>
 
               <div class="task-tabs" id="taskTabs">
                 <button class="task-tab-btn active" data-task-tab="my" type="button">
-                  あなたのタスク
+                  <span data-i18n="task_tab_my">あなたのタスク</span>
                 </button>
                 <button class="task-tab-btn" data-task-tab="from" type="button">
-                  依頼したタスク
+                  <span data-i18n="task_tab_created">依頼したタスク</span>
                 </button>
                 <button
                   class="task-tab-btn d-none"
@@ -4078,7 +4114,8 @@
                   data-manager-only="true"
                   type="button"
                 >
-                  <span class="material-icons-outlined">admin_panel_settings</span>全タスク
+                  <span class="material-icons-outlined">admin_panel_settings</span>
+                  <span data-i18n="task_tab_all">全タスク</span>
                 </button>
               </div>
 
@@ -4092,6 +4129,7 @@
                         id="task-search-my"
                         placeholder="キーワード検索"
                         aria-label="自分のタスクを検索"
+                        data-i18n="placeholder_keyword_search"
                       />
                     </div>
                   </div>
@@ -4108,11 +4146,12 @@
                         id="task-search-from"
                         placeholder="キーワード検索"
                         aria-label="自分が依頼したタスクを検索"
+                        data-i18n="placeholder_keyword_search"
                       />
                     </div>
                     <div class="task-filter-row">
                       <select class="task-filter-select" id="task-filter-from-assignee">
-                        <option value="">担当者で絞り込み</option>
+                        <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
                       </select>
                     </div>
                   </div>
@@ -4129,11 +4168,12 @@
                         id="task-search-all"
                         placeholder="キーワード検索"
                         aria-label="すべてのタスクを検索"
+                        data-i18n="placeholder_keyword_search"
                       />
                     </div>
                     <div class="task-filter-row">
                       <select class="task-filter-select" id="task-filter-all-assignee">
-                        <option value="">担当者で絞り込み</option>
+                        <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
                       </select>
                     </div>
                   </div>
@@ -4149,32 +4189,35 @@
               <div class="task-header mt-0">
                 <div class="task-title-wrap">
                   <span class="material-icons-outlined task-title-icon">mail</span>
-                  <h3 class="view-title">メッセージ</h3>
+                  <h3 class="view-title" data-i18n="nav_messages">メッセージ</h3>
                 </div>
               </div>
               <div class="subhead-bar mt-2">
                 <div class="input-group">
                   <span class="input-group-text material-icons-outlined">search</span>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="msg-search-box"
-                    placeholder="キーワード検索"
-                  />
+                    <input
+                      type="text"
+                      class="form-control"
+                      id="msg-search-box"
+                      placeholder="キーワード検索"
+                      data-i18n="placeholder_keyword_search"
+                    />
                 </div>
               </div>
               <div class="row g-2 align-items-end mt-2">
                 <div class="col-auto">
-                  <label class="form-label">フォルダ</label>
+                  <label class="form-label" data-i18n="messages_filter_folder">フォルダ</label>
                   <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
-                    <option value="">全て</option>
+                    <option value="" data-i18n="filter_all">全て</option>
                   </select>
                 </div>
                 <div class="col-auto">
                   <label class="form-label d-block">&nbsp;</label>
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                    <label class="form-check-label" for="flt-msg-unread">未読のみ</label>
+                    <label class="form-check-label" for="flt-msg-unread" data-i18n="messages_filter_unread_only"
+                      >未読のみ</label
+                    >
                   </div>
                 </div>
                 <div class="col-auto">
@@ -4185,7 +4228,8 @@
                     type="button"
                     aria-label="未読をすべて既読にする"
                   >
-                    <span class="material-icons align-middle me-1">done_all</span>全て既読にする
+                    <span class="material-icons align-middle me-1">done_all</span>
+                    <span data-i18n="messages_mark_all_read">全て既読にする</span>
                   </button>
                 </div>
               </div>
@@ -4196,7 +4240,8 @@
             <!-- ----- Settings view panel ----- -->
             <section class="view-panel fade-container is-hidden" id="view-settings">
               <h3 class="mt-0">
-                <span class="material-icons align-middle me-1">settings</span>設定
+                <span class="material-icons align-middle me-1">settings</span>
+                <span data-i18n="nav_settings">設定</span>
               </h3>
               <!-- Settings form wrapper (profile, appearance, etc.) -->
               <form class="settings-layout" id="form-settings">
@@ -4206,8 +4251,10 @@
                       <span class="material-icons-outlined">badge</span>
                     </div>
                     <div>
-                      <h5>プロフィール</h5>
-                      <p>メンバーに表示される名前とプロフィール画像を管理します。</p>
+                      <h5 data-i18n="settings_profile_title">プロフィール</h5>
+                      <p data-i18n="settings_profile_desc">
+                        メンバーに表示される名前とプロフィール画像を管理します。
+                      </p>
                     </div>
                   </div>
                   <div class="settings-profile-body">
@@ -4226,10 +4273,16 @@
                         type="button"
                         id="btn-setting-image"
                       >
-                        <span class="material-icons-outlined align-middle me-1">image</span
-                        >画像を選択
+                        <span class="material-icons-outlined align-middle me-1">image</span>
+                        <span data-i18n="settings_profile_choose_image">画像を選択</span>
                       </button>
-                      <div class="settings-image-meta" id="setting-image-name">未設定</div>
+                      <div
+                        class="settings-image-meta"
+                        id="setting-image-name"
+                        data-i18n="settings_profile_image_empty"
+                      >
+                        未設定
+                      </div>
                       <input
                         type="file"
                         accept="image/*"
@@ -4239,15 +4292,18 @@
                       />
                     </div>
                     <div>
-                      <label class="form-label" for="setting-name">表示名</label>
+                      <label class="form-label" for="setting-name" data-i18n="settings_profile_display_name_label"
+                        >表示名</label
+                      >
                       <input
                         class="form-control"
                         id="setting-name"
                         placeholder="チームで表示される名前"
+                        data-i18n="settings_profile_display_name_placeholder"
                       />
                       <div class="settings-upload-note">
                         <span class="material-icons-outlined align-middle">info</span>
-                        <span
+                        <span data-i18n="settings_profile_image_note"
                           >最大8MBの画像ファイルがアップロードされ、ドライブに安全に保存されます。</span
                         >
                       </div>
@@ -4261,29 +4317,50 @@
                       <span class="material-icons-outlined">dark_mode</span>
                     </div>
                     <div>
-                      <h5>外観設定</h5>
-                      <p>アプリの配色テーマを切り替えて見やすさを調整します。</p>
+                      <h5 data-i18n="settings_theme_title">外観設定</h5>
+                      <p data-i18n="settings_theme_desc">
+                        アプリの配色テーマを切り替えて見やすさを調整します。
+                      </p>
                     </div>
                   </div>
                   <div class="settings-theme-grid">
                     <div>
-                      <label class="form-label" for="setting-theme">テーマ</label>
+                      <label class="form-label" for="setting-theme" data-i18n="settings_theme_label"
+                        >テーマ</label
+                      >
                       <select class="form-select" id="setting-theme">
-                        <option value="light">ライト</option>
-                        <option value="dark">ダーク</option>
-                        <option value="system">システムに合わせる</option>
+                        <option value="light" data-i18n="settings_theme_option_light">ライト</option>
+                        <option value="dark" data-i18n="settings_theme_option_dark">ダーク</option>
+                        <option value="system" data-i18n="settings_theme_option_system">システムに合わせる</option>
                       </select>
                       <div class="theme-status" id="setting-theme-display">
-                        <span class="material-icons-outlined align-middle">light_mode</span
-                        >ライトテーマを適用中
+                        <span class="material-icons-outlined align-middle">light_mode</span>
+                        <span data-i18n="settings_theme_status_light">ライトテーマを適用中</span>
                       </div>
                     </div>
                     <div class="settings-theme-guide">
-                      <p class="mb-2">選択したテーマはすぐに反映されます。</p>
+                      <p class="mb-2" data-i18n="settings_theme_guide_intro">
+                        選択したテーマはすぐに反映されます。
+                      </p>
                       <ul class="mb-0">
-                        <li><strong>ライト:</strong> 明るく爽やかなトーンで日中の作業に最適。</li>
-                        <li><strong>ダーク:</strong> 暗い環境や長時間の閲覧で目を保護。</li>
-                        <li><strong>システム:</strong> ご利用端末のテーマ設定に自動追従します。</li>
+                        <li>
+                          <strong data-i18n="settings_theme_option_light">ライト</strong>:
+                          <span data-i18n="settings_theme_light_desc"
+                            >明るく爽やかなトーンで日中の作業に最適。</span
+                          >
+                        </li>
+                        <li>
+                          <strong data-i18n="settings_theme_option_dark">ダーク</strong>:
+                          <span data-i18n="settings_theme_dark_desc"
+                            >暗い環境や長時間の閲覧で目を保護。</span
+                          >
+                        </li>
+                        <li>
+                          <strong data-i18n="settings_theme_option_system">システム</strong>:
+                          <span data-i18n="settings_theme_system_desc"
+                            >ご利用端末のテーマ設定に自動追従します。</span
+                          >
+                        </li>
                       </ul>
                     </div>
                   </div>
@@ -4292,7 +4369,8 @@
                 <div class="settings-actions">
                   <button class="btn btn-primary" type="button" id="btn-settings-save">
                     <span class="label">
-                      <span class="material-icons align-middle me-1">save</span>変更を保存
+                      <span class="material-icons align-middle me-1">save</span>
+                      <span data-i18n="btn_save_changes">変更を保存</span>
                     </span>
                     <span
                       class="spinner-border spinner-border-sm d-none"
@@ -5155,12 +5233,14 @@
       <ul class="dropdown-menu" aria-labelledby="fabButton">
         <li>
           <button class="dropdown-item" type="button" id="btn-open-new-task">
-            <span class="material-icons-outlined">send</span> タスク
+            <span class="material-icons-outlined">send</span>
+            <span data-i18n="fab_task">タスク</span>
           </button>
         </li>
         <li>
           <button class="dropdown-item" type="button" id="btn-open-new-msg">
-            <span class="material-icons-outlined">mail</span> メッセージ
+            <span class="material-icons-outlined">mail</span>
+            <span data-i18n="fab_message">メッセージ</span>
           </button>
         </li>
       </ul>
@@ -5300,7 +5380,7 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="modal-title m-0">新しいタスク</h6>
+            <h6 class="modal-title m-0" data-i18n="modal_task_new_title">新しいタスク</h6>
           </div>
           <div class="modal-body">
             <!-- COMPONENT: 申請フォーム（新規タスク作成） -->
@@ -5313,25 +5393,25 @@
                   style="border-radius: 10px"
                 >
                   <span class="material-icons align-middle me-1">link</span>
-                  <strong>元メッセージ：</strong
+                  <strong data-i18n="label_source_message">元メッセージ：</strong
                   ><a href="#" id="backToMsgLink" class="text-decoration-none">—</a>
                 </div>
-                <div class="form-section-title">基本情報</div>
+                <div class="form-section-title" data-i18n="section_basic_info">基本情報</div>
                 <div class="mb-3">
-                  <label class="form-label">タイトル</label>
+                  <label class="form-label" data-i18n="label_title">タイトル</label>
                   <input type="text" class="form-control" id="taskTitle" required />
                 </div>
                 <div class="row g-3">
                   <div class="col-12 col-md-6">
-                    <label class="form-label">期限</label>
+                    <label class="form-label" data-i18n="label_due">期限</label>
                     <input type="date" class="form-control" id="taskDueDate" required />
                   </div>
                   <div class="col-12 col-md-6">
-                    <label class="form-label">優先度</label>
+                    <label class="form-label" data-i18n="label_priority">優先度</label>
                     <select class="form-select" id="taskPriority">
-                      <option>中</option>
-                      <option>高</option>
-                      <option>低</option>
+                      <option data-i18n="priority_medium">中</option>
+                      <option data-i18n="priority_high">高</option>
+                      <option data-i18n="priority_low">低</option>
                     </select>
                   </div>
                 </div>
@@ -5339,7 +5419,7 @@
 
               <div class="form-section">
                 <div class="form-section-title d-flex align-items-center justify-content-between">
-                  担当者
+                  <span data-i18n="label_assignees">担当者</span>
                   <span class="ms-2 badge badge-counter" id="assignee-count-badge">選択 0 件</span>
                 </div>
                 <div class="assignees-wrap">
@@ -5349,34 +5429,36 @@
                       class="btn btn-sm btn-outline-primary"
                       id="btn-assignee-selectall"
                     >
-                      すべて選択
+                      <span data-i18n="assignee_select_all">すべて選択</span>
                     </button>
                     <button
                       type="button"
                       class="btn btn-sm btn-outline-secondary"
                       id="btn-assignee-clear"
                     >
-                      すべて解除
+                      <span data-i18n="assignee_clear_all">すべて解除</span>
                     </button>
                   </div>
                   <div id="assignee-list" class="assignees-list"></div>
                 </div>
                 <div class="section-note">
-                  タスクの担当者を1名以上選択してください。自分自身も選択できます。
+                  <span data-i18n="assignee_note"
+                    >タスクの担当者を1名以上選択してください。自分自身も選択できます。</span
+                  >
                 </div>
               </div>
 
               <div class="form-section">
-                <div class="form-section-title">繰り返し</div>
+                <div class="form-section-title" data-i18n="label_recurrence">繰り返し</div>
                 <div class="mb-3">
-                  <label class="form-label">パターン</label>
+                  <label class="form-label" data-i18n="label_pattern">パターン</label>
                   <select class="form-select" id="taskRepeatType">
-                    <option value="none">単発（繰り返しなし）</option>
-                    <option value="daily">毎日</option>
-                    <option value="weekly">毎週</option>
-                    <option value="monthly">毎月</option>
+                    <option value="none" data-i18n="repeat_none">単発（繰り返しなし）</option>
+                    <option value="daily" data-i18n="repeat_daily">毎日</option>
+                    <option value="weekly" data-i18n="repeat_weekly">毎週</option>
+                    <option value="monthly" data-i18n="repeat_monthly">毎月</option>
                   </select>
-                  <div class="section-note">完了時に次回タスクを自動で生成します。</div>
+                  <div class="section-note" data-i18n="repeat_note">完了時に次回タスクを自動で生成します。</div>
                 </div>
               </div>
             </form>
@@ -5384,10 +5466,10 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              キャンセル
+              <span data-i18n="btn_cancel">キャンセル</span>
             </button>
             <button type="button" class="btn btn-primary" id="saveTaskButton">
-              <span class="label">保存する</span>
+              <span class="label" data-i18n="btn_save">保存する</span>
               <span
                 class="spinner-border spinner-border-sm d-none"
                 role="status"
@@ -5407,29 +5489,29 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="modal-title m-0">新しいメッセージ</h6>
+            <h6 class="modal-title m-0" data-i18n="modal_message_new_title">新しいメッセージ</h6>
           </div>
           <div class="modal-body">
             <form id="newMessageForm" class="modal-form">
               <div class="form-section">
-                <div class="form-section-title">基本情報</div>
+                <div class="form-section-title" data-i18n="section_basic_info">基本情報</div>
                 <div class="mb-3">
-                  <label class="form-label">件名</label>
+                  <label class="form-label" data-i18n="label_subject">件名</label>
                   <input type="text" class="form-control" id="messageTitle" required />
                 </div>
                 <div class="mb-3">
-                  <label class="form-label">本文</label>
+                  <label class="form-label" data-i18n="label_body">本文</label>
                   <textarea class="form-control" id="messageBody" rows="5" required></textarea>
                 </div>
               </div>
               <div class="form-section">
-                <div class="form-section-title">詳細設定</div>
+                <div class="form-section-title" data-i18n="section_details">詳細設定</div>
                 <div class="row g-3">
                   <div class="col-12 col-md-6">
-                    <label class="form-label">フォルダ</label>
+                    <label class="form-label" data-i18n="messages_filter_folder">フォルダ</label>
                     <div class="input-group">
                       <select class="form-select" id="messageFolder" data-folder-select="compose">
-                        <option value="">フォルダを選択</option>
+                        <option value="" data-i18n="messages_select_folder">フォルダを選択</option>
                       </select>
                       <button
                         class="btn btn-outline-secondary d-none"
@@ -5443,28 +5525,30 @@
                     </div>
                   </div>
                   <div class="col-12 col-md-6">
-                    <label class="form-label">優先度</label>
+                    <label class="form-label" data-i18n="label_priority">優先度</label>
                     <select class="form-select" id="messagePriority">
-                      <option>中</option>
-                      <option>高</option>
-                      <option>低</option>
+                      <option data-i18n="priority_medium">中</option>
+                      <option data-i18n="priority_high">高</option>
+                      <option data-i18n="priority_low">低</option>
                     </select>
                   </div>
                   <div class="col-12">
                     <div class="template-chip-row d-none" id="templateChipRow">
-                      <small>定型文</small>
+                      <small data-i18n="label_templates">定型文</small>
                       <div class="template-chip-list" id="templateChipList"></div>
                     </div>
                   </div>
                 </div>
               </div>
               <div class="form-section">
-                <div class="form-section-title">添付画像</div>
+                <div class="form-section-title" data-i18n="label_attachments">添付画像</div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                   <button class="btn btn-outline-secondary" type="button" id="btn-message-attach">
-                    画像を追加
+                    <span data-i18n="attachments_add">画像を追加</span>
                   </button>
-                  <span class="small text-muted" id="message-attach-hint">最大5件・各10MBまで</span>
+                  <span class="small text-muted" id="message-attach-hint" data-i18n="attachments_hint"
+                    >最大5件・各10MBまで</span
+                  >
                 </div>
                 <input
                   type="file"
@@ -5480,10 +5564,10 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              キャンセル
+              <span data-i18n="btn_cancel">キャンセル</span>
             </button>
             <button type="button" class="btn btn-primary" id="saveMessageButton">
-              <span class="label">投稿する</span>
+              <span class="label" data-i18n="btn_post">投稿する</span>
               <span
                 class="spinner-border spinner-border-sm d-none"
                 role="status"
@@ -5503,7 +5587,7 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="m-0">タスク詳細</h6>
+            <h6 class="m-0" data-i18n="modal_task_detail_title">タスク詳細</h6>
           </div>
           <div class="modal-body">
             <div id="task-detail-loading" class="skeleton mb-3"></div>
@@ -5513,7 +5597,8 @@
               <div id="taskAttachments" class="mb-3 d-none">
                 <div class="form-section">
                   <h6 class="mb-2">
-                    <span class="material-icons align-middle me-1">attach_file</span>添付
+                    <span class="material-icons align-middle me-1">attach_file</span>
+                    <span data-i18n="label_attachments">添付画像</span>
                   </h6>
                   <ul class="list-group attach-list" id="taskAttachList"></ul>
                 </div>
@@ -5521,29 +5606,29 @@
               <div class="form-section mb-2">
                 <div class="row g-2">
                   <div class="col-12 col-md-4">
-                    <label class="form-label">ステータス</label>
+                    <label class="form-label" data-i18n="label_status">ステータス</label>
                     <select id="detailStatus" class="form-select">
-                      <option>未着手</option>
-                      <option>対応中</option>
-                      <option>完了</option>
+                      <option data-i18n="status_todo">未着手</option>
+                      <option data-i18n="status_doing">進行中</option>
+                      <option data-i18n="status_done">完了</option>
                     </select>
                   </div>
                   <div class="col-6 col-md-4">
-                    <label class="form-label">期限</label>
+                    <label class="form-label" data-i18n="label_due">期限</label>
                     <input id="detailDue" type="date" class="form-control" />
                   </div>
                   <div class="col-6 col-md-4">
-                    <label class="form-label">優先度</label>
+                    <label class="form-label" data-i18n="label_priority">優先度</label>
                     <select id="detailPriority" class="form-select">
-                      <option>中</option>
-                      <option>高</option>
-                      <option>低</option>
+                      <option data-i18n="priority_medium">中</option>
+                      <option data-i18n="priority_high">高</option>
+                      <option data-i18n="priority_low">低</option>
                     </select>
                   </div>
                 </div>
                 <div class="mt-3 d-flex gap-2 flex-wrap">
                   <button class="btn btn-primary" id="btnTaskQuickSave">
-                    <span class="label">この内容で更新</span>
+                    <span class="label" data-i18n="task_update_now">この内容で更新</span>
                     <span
                       class="spinner-border spinner-border-sm d-none"
                       role="status"
@@ -5551,10 +5636,10 @@
                     ></span>
                   </button>
                   <button class="btn btn-success" id="btnTaskComplete">
-                    <span class="label"
-                      ><span class="material-icons align-middle me-1">task_alt</span
-                      >完了にする</span
-                    >
+                    <span class="label">
+                      <span class="material-icons align-middle me-1">task_alt</span>
+                      <span data-i18n="task_mark_complete">完了にする</span>
+                    </span>
                     <span
                       class="spinner-border spinner-border-sm d-none"
                       role="status"
@@ -5567,9 +5652,11 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-danger me-auto d-none" id="deleteTaskButton">
-              削除
+              <span data-i18n="btn_delete">削除</span>
             </button>
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              <span data-i18n="btn_close">閉じる</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5584,7 +5671,7 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="m-0">メッセージ詳細</h6>
+            <h6 class="m-0" data-i18n="modal_message_detail_title">メッセージ詳細</h6>
           </div>
           <div class="modal-body">
             <div id="msg-detail-loading" class="skeleton mb-3"></div>
@@ -5596,7 +5683,8 @@
               <div id="msgAttachments" class="mb-3 d-none">
                 <div class="form-section">
                   <h6 class="mb-2">
-                    <span class="material-icons align-middle me-1">attach_file</span>添付
+                    <span class="material-icons align-middle me-1">attach_file</span>
+                    <span data-i18n="label_attachments">添付画像</span>
                   </h6>
                   <div class="image-preview-grid d-none" id="msgImagePreview"></div>
                   <ul class="list-group attach-list" id="msgAttachList"></ul>
@@ -5605,7 +5693,8 @@
               <div class="d-flex flex-wrap gap-2 mb-3">
                 <button class="btn btn-outline-primary" id="btnMsgToTask">
                   <span class="label">
-                    <span class="material-icons align-middle me-1">send</span>この内容でタスク
+                    <span class="material-icons align-middle me-1">send</span>
+                    <span data-i18n="message_convert_task">この内容でタスク</span>
                   </span>
                   <span
                     class="spinner-border spinner-border-sm d-none"
@@ -5618,7 +5707,7 @@
                     <span class="material-icons align-middle me-1 js-msg-read-icon"
                       >mark_email_read</span
                     >
-                    <span class="label-text">既読にする</span>
+                    <span class="label-text" data-i18n="message_mark_read">既読にする</span>
                   </span>
                   <span
                     class="spinner-border spinner-border-sm d-none"
@@ -5632,31 +5721,37 @@
                   data-manager-only
                   type="button"
                 >
-                  <span class="material-icons align-middle me-1">visibility</span>未読状況確認
+                  <span class="material-icons align-middle me-1">visibility</span>
+                  <span data-i18n="message_unread_status">未読状況確認</span>
                 </button>
               </div>
-              <h5 class="mt-4">コメント</h5>
+              <h5 class="mt-4" data-i18n="label_comments">コメント</h5>
               <div id="comments-list" class="mb-2"></div>
               <textarea
                 id="newCommentBody"
                 class="form-control"
                 rows="3"
                 placeholder="コメントを入力..."
+                data-i18n="comments_placeholder"
               ></textarea>
-              <button class="btn btn-secondary mt-2" id="btnCommentPost">コメントを投稿</button>
+              <button class="btn btn-secondary mt-2" id="btnCommentPost" data-i18n="comments_post">
+                コメントを投稿
+              </button>
               <div class="mt-4">
-                <p class="mb-2"><strong>既読</strong></p>
+                <p class="mb-2"><strong data-i18n="label_read">既読</strong></p>
                 <div class="user-chip-list" id="msgReadUsers"></div>
-                <p class="mb-2 mt-3"><strong>未読</strong></p>
+                <p class="mb-2 mt-3"><strong data-i18n="label_unread">未読</strong></p>
                 <div class="user-chip-list" id="msgUnreadUsers"></div>
               </div>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-danger me-auto d-none" id="deleteMessageButton">
-              削除
+              <span data-i18n="btn_delete">削除</span>
             </button>
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              <span data-i18n="btn_close">閉じる</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5669,16 +5764,24 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="m-0" id="quickFolderModalTitle">フォルダを作成</h6>
+            <h6 class="m-0" id="quickFolderModalTitle" data-i18n="modal_folder_create_title">
+              フォルダを作成
+            </h6>
           </div>
           <div class="modal-body">
             <div class="alert alert-danger d-none" id="quickFolderError"></div>
             <div class="mb-3">
-              <label class="form-label" for="quickFolderName">名称</label>
-              <input type="text" class="form-control" id="quickFolderName" placeholder="メイン" />
+              <label class="form-label" for="quickFolderName" data-i18n="label_name">名称</label>
+              <input
+                type="text"
+                class="form-control"
+                id="quickFolderName"
+                placeholder="メイン"
+                data-i18n="folder_name_placeholder"
+              />
             </div>
             <div class="mb-3">
-              <label class="form-label" for="quickFolderColor">カラー</label>
+              <label class="form-label" for="quickFolderColor" data-i18n="label_color">カラー</label>
               <input
                 type="color"
                 class="form-control form-control-color"
@@ -5688,10 +5791,12 @@
             </div>
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" id="quickFolderPublic" checked />
-              <label class="form-check-label" for="quickFolderPublic">全員に公開</label>
+              <label class="form-check-label" for="quickFolderPublic" data-i18n="folder_public_label"
+                >全員に公開</label
+              >
             </div>
             <div class="mb-3" id="quickFolderMemberWrap">
-              <label class="form-label">メンバー (限定公開時)</label>
+              <label class="form-label" data-i18n="folder_members_label">メンバー (限定公開時)</label>
               <div class="input-group input-group-sm mb-2">
                 <span class="input-group-text">
                   <span class="material-icons-outlined fs-6" aria-hidden="true">search</span>
@@ -5701,6 +5806,7 @@
                   class="form-control"
                   id="quickFolderMemberSearch"
                   placeholder="名前・メールで絞り込み"
+                  data-i18n="folder_member_placeholder"
                 />
               </div>
               <div class="border rounded p-2 member-list" id="quickFolderMemberList"></div>
@@ -5708,10 +5814,10 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              キャンセル
+              <span data-i18n="btn_cancel">キャンセル</span>
             </button>
             <button type="button" class="btn btn-primary" id="btnQuickFolderSave">
-              <span class="label">保存</span>
+              <span class="label" data-i18n="btn_save">保存する</span>
               <span class="spinner-border spinner-border-sm d-none" role="status"></span>
             </button>
           </div>
@@ -5726,7 +5832,7 @@
             <button type="button" class="btn btn-link" data-bs-dismiss="modal">
               <span class="material-icons">arrow_back</span>
             </button>
-            <h6 class="m-0">未読状況</h6>
+            <h6 class="m-0" data-i18n="modal_unread_status_title">未読状況</h6>
           </div>
           <div class="modal-body">
             <div id="unreadStatusLoading" class="skeleton"></div>
@@ -5736,7 +5842,9 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              <span data-i18n="btn_close">閉じる</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5757,7 +5865,7 @@
             data-image-viewer-close
           >
             <span class="material-icons">arrow_back</span>
-            <span>戻る</span>
+            <span data-i18n="btn_back">戻る</span>
           </button>
           <div class="image-viewer__meta">
             <span class="image-viewer__title" id="imageViewerTitle"></span>
@@ -8437,13 +8545,28 @@
       }
 
       function describeThemeValue(value) {
+        var key;
         switch ((value || '').toLowerCase()) {
           case 'dark':
-            return 'ダークテーマ';
+            key = 'settings_theme_option_dark';
+            break;
           case 'system':
-            return 'システム設定に連動';
+            key = 'settings_theme_option_system';
+            break;
           default:
-            return 'ライトテーマ';
+            key = 'settings_theme_option_light';
+            break;
+        }
+        if (globalThis.I18n && typeof globalThis.I18n.t === 'function') {
+          return globalThis.I18n.t(key);
+        }
+        switch (key) {
+          case 'settings_theme_option_dark':
+            return 'ダーク';
+          case 'settings_theme_option_system':
+            return 'システム';
+          default:
+            return 'ライト';
         }
       }
       function getThemeStatusIcon(value) {
@@ -8456,11 +8579,36 @@
             return 'light_mode';
         }
       }
+      function getThemeStatusLabel(value) {
+        var key;
+        switch ((value || '').toLowerCase()) {
+          case 'dark':
+            key = 'settings_theme_status_dark';
+            break;
+          case 'system':
+            key = 'settings_theme_status_system';
+            break;
+          default:
+            key = 'settings_theme_status_light';
+            break;
+        }
+        if (globalThis.I18n && typeof globalThis.I18n.t === 'function') {
+          return globalThis.I18n.t(key);
+        }
+        switch (key) {
+          case 'settings_theme_status_dark':
+            return 'ダークテーマを適用中';
+          case 'settings_theme_status_system':
+            return 'システム設定に連動中';
+          default:
+            return 'ライトテーマを適用中';
+        }
+      }
       function updateThemeStatus(value) {
         var display = byId('setting-theme-display');
         if (!display) return;
         var icon = getThemeStatusIcon(value);
-        var label = describeThemeValue(value) + ' を適用中';
+        var label = getThemeStatusLabel(value);
         display.innerHTML =
           '<span class="material-icons-outlined align-middle">' +
           esc(icon) +
@@ -8468,6 +8616,11 @@
           esc(label) +
           '</span>';
       }
+      document.addEventListener('shiftflow:languagechange', function () {
+        var select = byId('setting-theme');
+        var current = select ? select.value : themePreference;
+        updateThemeStatus(current || themePreference);
+      });
 
       // ===== ヘルパ =====
       function $$(selector, root) {
@@ -13516,7 +13669,11 @@
       function updateSelectedCount() {
         var cnt = selectedAssignees.size;
         var badge = byId('assignee-count-badge');
-        if (badge) badge.textContent = '選択 ' + cnt + ' 件';
+        if (!badge) return;
+        var hasI18n = globalThis.I18n && typeof globalThis.I18n.t === 'function';
+        var prefix = hasI18n ? globalThis.I18n.t('assignee_count_prefix') : '選択 ';
+        var suffix = hasI18n ? globalThis.I18n.t('assignee_count_suffix') : ' 件';
+        badge.textContent = prefix + cnt + suffix;
       }
       function getSelectedAssignees() {
         return Array.from(selectedAssignees);
@@ -13549,6 +13706,9 @@
           toggleSelectAll(false);
         });
       })();
+      document.addEventListener('shiftflow:languagechange', function () {
+        updateSelectedCount();
+      });
 
       function setButtonLoading(btn, loading) {
         if (!btn) return;
