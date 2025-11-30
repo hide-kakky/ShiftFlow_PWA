@@ -13619,10 +13619,12 @@
           updateThemeStatus(themeVal);
         }
         var langInput = byId('setting-language');
-        var langVal = typeof s.language === 'string' ? s.language.trim().toLowerCase() : '';
-        if (langVal !== 'ja' && langVal !== 'en') {
-          langVal = (window.userInfo && window.userInfo.language) || 'ja';
-        }
+        var serverLang = typeof s.language === 'string' ? s.language.trim().toLowerCase() : '';
+        var fallbackLang =
+          (window.userInfo && window.userInfo.language) ||
+          (window.I18n && window.I18n.currentLang) ||
+          'ja';
+        var langVal = serverLang && (serverLang === 'ja' || serverLang === 'en') ? serverLang : fallbackLang;
         if (langInput) {
           langInput.value = langVal;
         }
