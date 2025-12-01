@@ -3903,10 +3903,11 @@
               <div class="dropdown-divider"></div>
               <div class="px-3 py-2">
                 <small
-                  class="text-muted d-block"
-                  data-i18n="user_menu_lang_hint"
-                  style="font-size: 0.75rem; font-weight: 700; opacity: 0.8;"
-                  >言語設定は「設定」で変更できます。</small
+                  class="text-muted d-block mt-1"
+                  data-app-version-label
+                  title="現在のアプリバージョン: dev"
+                  style="font-size: 0.75rem; font-weight: 700; opacity: 0.8"
+                  >v. dev</small
                 >
               </div>
             </div>
@@ -4008,8 +4009,7 @@
                         今日のタスク
                       </p>
                       <div class="home-stat-card__value">
-                        <span id="home-stat-today">0</span
-                        ><small data-i18n="unit_items">件</small>
+                        <span id="home-stat-today">0</span><small data-i18n="unit_items">件</small>
                       </div>
                       <p class="home-stat-card__hint" data-i18n="home_stat_today_hint">
                         直近のカードがここに並びます
@@ -4018,8 +4018,7 @@
                     <div class="home-stat-card">
                       <p class="home-stat-card__label" data-i18n="home_stat_unread_label">未読</p>
                       <div class="home-stat-card__value">
-                        <span id="home-stat-unread">0</span
-                        ><small data-i18n="unit_items">件</small>
+                        <span id="home-stat-unread">0</span><small data-i18n="unit_items">件</small>
                       </div>
                       <p class="home-stat-card__hint" data-i18n="home_stat_unread_hint">
                         未読メッセージの合計
@@ -4189,13 +4188,13 @@
               <div class="subhead-bar mt-2">
                 <div class="input-group">
                   <span class="input-group-text material-icons-outlined">search</span>
-                    <input
-                      type="text"
-                      class="form-control"
-                      id="msg-search-box"
-                      placeholder="キーワード検索"
-                      data-i18n="placeholder_keyword_search"
-                    />
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="msg-search-box"
+                    placeholder="キーワード検索"
+                    data-i18n="placeholder_keyword_search"
+                  />
                 </div>
               </div>
               <div class="row g-2 align-items-end mt-2">
@@ -4209,7 +4208,10 @@
                   <label class="form-label d-block">&nbsp;</label>
                   <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                    <label class="form-check-label" for="flt-msg-unread" data-i18n="messages_filter_unread_only"
+                    <label
+                      class="form-check-label"
+                      for="flt-msg-unread"
+                      data-i18n="messages_filter_unread_only"
                       >未読のみ</label
                     >
                   </div>
@@ -4286,7 +4288,10 @@
                       />
                     </div>
                     <div>
-                      <label class="form-label" for="setting-name" data-i18n="settings_profile_display_name_label"
+                      <label
+                        class="form-label"
+                        for="setting-name"
+                        data-i18n="settings_profile_display_name_label"
                         >表示名</label
                       >
                       <input
@@ -4302,12 +4307,17 @@
                         >
                       </div>
                       <div class="mt-3">
-                        <label class="form-label" for="setting-language" data-i18n="settings_language_label"
+                        <label
+                          class="form-label"
+                          for="setting-language"
+                          data-i18n="settings_language_label"
                           >表示言語</label
                         >
                         <select class="form-select" id="setting-language">
                           <option value="ja" data-i18n="settings_language_option_ja">日本語</option>
-                          <option value="en" data-i18n="settings_language_option_en">English</option>
+                          <option value="en" data-i18n="settings_language_option_en">
+                            English
+                          </option>
                         </select>
                         <div class="settings-upload-note">
                           <span class="material-icons-outlined align-middle">translate</span>
@@ -4338,9 +4348,13 @@
                         >テーマ</label
                       >
                       <select class="form-select" id="setting-theme">
-                        <option value="light" data-i18n="settings_theme_option_light">ライト</option>
+                        <option value="light" data-i18n="settings_theme_option_light">
+                          ライト
+                        </option>
                         <option value="dark" data-i18n="settings_theme_option_dark">ダーク</option>
-                        <option value="system" data-i18n="settings_theme_option_system">システムに合わせる</option>
+                        <option value="system" data-i18n="settings_theme_option_system">
+                          システムに合わせる
+                        </option>
                       </select>
                       <div class="theme-status" id="setting-theme-display">
                         <span class="material-icons-outlined align-middle">light_mode</span>
@@ -5467,7 +5481,9 @@
                     <option value="weekly" data-i18n="repeat_weekly">毎週</option>
                     <option value="monthly" data-i18n="repeat_monthly">毎月</option>
                   </select>
-                  <div class="section-note" data-i18n="repeat_note">完了時に次回タスクを自動で生成します。</div>
+                  <div class="section-note" data-i18n="repeat_note">
+                    完了時に次回タスクを自動で生成します。
+                  </div>
                 </div>
               </div>
             </form>
@@ -5555,7 +5571,10 @@
                   <button class="btn btn-outline-secondary" type="button" id="btn-message-attach">
                     <span data-i18n="attachments_add">画像を追加</span>
                   </button>
-                  <span class="small text-muted" id="message-attach-hint" data-i18n="attachments_hint"
+                  <span
+                    class="small text-muted"
+                    id="message-attach-hint"
+                    data-i18n="attachments_hint"
                     >最大5件・各10MBまで</span
                   >
                 </div>
@@ -5790,7 +5809,9 @@
               />
             </div>
             <div class="mb-3">
-              <label class="form-label" for="quickFolderColor" data-i18n="label_color">カラー</label>
+              <label class="form-label" for="quickFolderColor" data-i18n="label_color"
+                >カラー</label
+              >
               <input
                 type="color"
                 class="form-control form-control-color"
@@ -5800,12 +5821,17 @@
             </div>
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" id="quickFolderPublic" checked />
-              <label class="form-check-label" for="quickFolderPublic" data-i18n="folder_public_label"
+              <label
+                class="form-check-label"
+                for="quickFolderPublic"
+                data-i18n="folder_public_label"
                 >全員に公開</label
               >
             </div>
             <div class="mb-3" id="quickFolderMemberWrap">
-              <label class="form-label" data-i18n="folder_members_label">メンバー (限定公開時)</label>
+              <label class="form-label" data-i18n="folder_members_label"
+                >メンバー (限定公開時)</label
+              >
               <div class="input-group input-group-sm mb-2">
                 <span class="input-group-text">
                   <span class="material-icons-outlined fs-6" aria-hidden="true">search</span>
@@ -10495,7 +10521,8 @@
         if (!state || state.shiftflowBase) {
           VIEW_HISTORY_LOCK = true;
           var fallbackView =
-            (state && state.shiftflowView) || (typeof CURRENT_VIEW === 'string' ? CURRENT_VIEW : 'home');
+            (state && state.shiftflowView) ||
+            (typeof CURRENT_VIEW === 'string' ? CURRENT_VIEW : 'home');
           navigateTo(fallbackView, { animate: false, skipScroll: true, skipHistory: true });
           replaceBaseViewState(fallbackView);
           pushViewHistoryState(fallbackView, true);
@@ -13624,7 +13651,8 @@
           (window.userInfo && window.userInfo.language) ||
           (window.I18n && window.I18n.currentLang) ||
           'ja';
-        var langVal = serverLang && (serverLang === 'ja' || serverLang === 'en') ? serverLang : fallbackLang;
+        var langVal =
+          serverLang && (serverLang === 'ja' || serverLang === 'en') ? serverLang : fallbackLang;
         if (langInput) {
           langInput.value = langVal;
         }
@@ -13639,10 +13667,7 @@
         if (window.userInfo) {
           window.userInfo.language = langVal;
         }
-        if (
-          window.__SHIFT_FLOW_BOOTSTRAP__ &&
-          window.__SHIFT_FLOW_BOOTSTRAP__.userInfo
-        ) {
+        if (window.__SHIFT_FLOW_BOOTSTRAP__ && window.__SHIFT_FLOW_BOOTSTRAP__.userInfo) {
           window.__SHIFT_FLOW_BOOTSTRAP__.userInfo.language = langVal;
         }
       }
@@ -13654,7 +13679,8 @@
         if (lbl) lbl.classList.add('d-none');
         if (sp) sp.classList.remove('d-none');
         var langInput = byId('setting-language');
-        var selectedLang = (langInput && langInput.value) || (window.userInfo && window.userInfo.language) || 'ja';
+        var selectedLang =
+          (langInput && langInput.value) || (window.userInfo && window.userInfo.language) || 'ja';
         var payload = {
           name: byId('setting-name').value || '',
           imageData: pendingProfileImage ? pendingProfileImage.dataUri : '',
@@ -13676,10 +13702,7 @@
               if (window.userInfo) {
                 window.userInfo.language = nextLanguage;
               }
-              if (
-                window.__SHIFT_FLOW_BOOTSTRAP__ &&
-                window.__SHIFT_FLOW_BOOTSTRAP__.userInfo
-              ) {
+              if (window.__SHIFT_FLOW_BOOTSTRAP__ && window.__SHIFT_FLOW_BOOTSTRAP__.userInfo) {
                 window.__SHIFT_FLOW_BOOTSTRAP__.userInfo.language = nextLanguage;
               }
               var languageControl = byId('setting-language');
@@ -15877,13 +15900,20 @@
       }
 
       function renderAuthVersionLabel() {
-        var versionEl = byId('authVersionText');
-        if (!versionEl) return;
         var config = window.SHIFT_FLOW_CONFIG || {};
         var version = config.APP_VERSION || 'dev';
-        versionEl.textContent = 'バージョン ' + version;
-        versionEl.dataset.version = version;
-        versionEl.setAttribute('title', '現在のアプリバージョン: ' + version);
+        var label = 'バージョン ' + version;
+        var versionEl = byId('authVersionText');
+        if (versionEl) {
+          versionEl.textContent = label;
+          versionEl.dataset.version = version;
+          versionEl.setAttribute('title', '現在のアプリバージョン: ' + version);
+        }
+        document.querySelectorAll('[data-app-version-label]').forEach(function (el) {
+          el.textContent = label;
+          el.dataset.version = version;
+          el.setAttribute('title', '現在のアプリバージョン: ' + version);
+        });
       }
 
       function handleModalShown(event) {
