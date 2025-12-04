@@ -1545,17 +1545,24 @@ async function buildMessagesForUser(db, options = {}) {
              m.title,
              m.body,
              m.folder_id,
+             m.priority,
              m.created_at_ms,
              m.updated_at_ms,
              m.is_pinned,
              f.name AS folder_name,
              f.color AS folder_color,
+             author_user.email AS author_email,
+             COALESCE(author_user.display_name, author_user.email) AS author_name,
              CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read
         FROM messages m
         JOIN folders f ON f.id = m.folder_id
         LEFT JOIN message_reads mr
           ON mr.message_id = m.message_id
          AND mr.membership_id = ?3
+        LEFT JOIN memberships author_ms
+          ON author_ms.membership_id = m.author_membership_id
+        LEFT JOIN users author_user
+          ON author_user.user_id = author_ms.user_id
         LEFT JOIN folder_members fm_user
           ON fm_user.folder_id = f.id
          AND fm_user.user_id = ?4
@@ -1580,6 +1587,7 @@ async function buildMessagesForUser(db, options = {}) {
         ? row.created_at_ms
         : 0;
     const priority = mapD1PriorityToLegacy(row?.priority);
+    const authorLabel = buildUserLabel(row?.author_email, row?.author_name);
     return {
       id: row?.message_id || '',
       title: row?.title || '',
@@ -1593,6 +1601,9 @@ async function buildMessagesForUser(db, options = {}) {
       isPinned: row?.is_pinned ? true : false,
       createdAt: createdAtMs,
       updatedAt: row?.updated_at_ms || 0,
+      createdAtLabel: createdAtMs ? formatJst(createdAtMs, true) : '',
+      createdBy: row?.author_email || '',
+      createdByLabel: authorLabel,
     };
   });
 }
@@ -5429,12 +5440,20 @@ async function maybeHandleRouteWithD1(options) {
       const canDelete =
         (currentEmail && authorEmail && currentEmail === authorEmail) ||
         isManagerRole(accessContext?.role);
+      const createdAtMs =
+        typeof messageRow?.created_at_ms === 'number' && Number.isFinite(messageRow.created_at_ms)
+          ? messageRow.created_at_ms
+          : null;
+      const createdAtLabel = createdAtMs ? formatJst(createdAtMs, true) : '';
+      const authorLabel = buildUserLabel(messageRow?.author_email, messageRow?.author_display_name);
+      const priority = mapD1PriorityToLegacy(messageRow?.priority);
       const detail = {
         id: messageRow?.message_id || messageId,
         createdBy: messageRow?.author_email || '',
+        createdByLabel: authorLabel,
         title: messageRow?.title || '',
         body: typeof messageRow?.body === 'string' ? messageRow.body.replace(/\r\n/g, '\n') : '',
-        priority: '中',
+        priority: priority || '中',
         comments: [],
         readUsers,
         unreadUsers,
@@ -5442,6 +5461,8 @@ async function maybeHandleRouteWithD1(options) {
         unreadEmails,
         canDelete,
         attachments,
+        createdAt: createdAtMs,
+        createdAtLabel,
       };
       return jsonResponseFromD1(
         200,

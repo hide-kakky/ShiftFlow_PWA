@@ -1647,6 +1647,57 @@
       .msg-title-line .msg-title {
         font-weight: 700;
       }
+      .msg-meta-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .msg-meta-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        line-height: 1.2;
+      }
+      .msg-meta-author {
+        font-weight: 600;
+        color: var(--text-900);
+      }
+      :root[data-theme='dark'] .msg-meta-author {
+        color: var(--text-700);
+      }
+      .msg-meta-time {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .msg-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(81, 124, 178, 0.18);
+        color: var(--text-900);
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-transform: uppercase;
+      }
+      :root[data-theme='dark'] .msg-avatar {
+        background: rgba(255, 255, 255, 0.16);
+        color: #f8fafc;
+      }
+      .msg-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .msg-avatar--lg {
+        width: 44px;
+        height: 44px;
+      }
+      .msg-avatar--initials {
+        letter-spacing: 0.05em;
+      }
       .msg-card .pin-indicator {
         display: inline-flex;
         align-items: center;
@@ -2376,6 +2427,12 @@
         align-items: center;
         gap: 6px;
         margin-top: 4px;
+      }
+      .task-meta-line--author .material-icons-outlined {
+        font-size: 18px;
+      }
+      .msg-detail-meta {
+        color: var(--muted);
       }
       .badge-soft {
         display: inline-flex;
@@ -5705,6 +5762,15 @@
             <div id="msg-detail-loading" class="skeleton mb-3"></div>
             <div id="msg-detail-content" class="d-none">
               <h4 id="msgDetailTitle" class="mb-3"></h4>
+              <div class="msg-detail-meta mb-3 d-none" id="msgDetailMeta">
+                <div class="msg-meta-line">
+                  <div id="msgDetailAvatar"></div>
+                  <div class="msg-meta-text">
+                    <div class="msg-meta-author" id="msgDetailAuthor"></div>
+                    <div class="msg-meta-time" id="msgDetailTimestamp"></div>
+                  </div>
+                </div>
+              </div>
               <div id="msgDetailBody" class="form-section mb-3">
                 <div class="section-body"></div>
               </div>
@@ -6108,6 +6174,10 @@
         options = options || {};
         var createdAt = Date.now() - (options.createdOffsetHours || 0) * 3600 * 1000;
         var body = options.body || 'テスト用のメッセージ本文です。ここに連絡事項が入ります。';
+        var createdBy = options.createdBy || TEST_USER_EMAIL;
+        var createdByLabel =
+          options.createdByLabel || options.createdByName || (createdBy ? createdBy : '');
+        var createdAtLabel = new Date(createdAt).toLocaleString('ja-JP', { hour12: false });
         var summary = {
           id: options.id || 'MSG-' + Math.floor(Math.random() * 10000),
           title: options.title || 'テストのお知らせ',
@@ -6118,6 +6188,9 @@
           isRead: !!options.isRead,
           isPinned: !!options.isPinned,
           createdAt: createdAt,
+          createdAtLabel: createdAtLabel,
+          createdBy: createdBy,
+          createdByLabel: createdByLabel,
         };
         summary.detail = {
           id: summary.id,
@@ -6132,6 +6205,10 @@
           priority: summary.priority,
           folderId: summary.folderId,
           isPinned: summary.isPinned,
+          createdAt: summary.createdAt,
+          createdAtLabel: summary.createdAtLabel,
+          createdBy: summary.createdBy,
+          createdByLabel: summary.createdByLabel,
         };
         return summary;
       }
@@ -11293,6 +11370,13 @@
           esc(r.title) +
           '</strong>' +
           '</div>';
+        var createdByMe =
+          r.createdBy &&
+          CURRENT_USER_EMAIL &&
+          String(r.createdBy).toLowerCase() === CURRENT_USER_EMAIL.toLowerCase();
+        var authorLabel = '';
+        if (r.createdByLabel) authorLabel = r.createdByLabel;
+        else if (r.createdBy) authorLabel = getNameByEmail(r.createdBy);
         if (showAssignee) {
           var assigneesText = displayAssignees(r);
           text +=
@@ -11300,10 +11384,15 @@
             (assigneesText ? '@' + esc(assigneesText) : '担当者未設定') +
             '</div>';
         }
-        var createdByMe =
-          r.createdBy &&
-          CURRENT_USER_EMAIL &&
-          String(r.createdBy).toLowerCase() === CURRENT_USER_EMAIL.toLowerCase();
+        if (authorLabel && !createdByMe) {
+          text +=
+            '<div class="task-meta-line task-meta-line--author">' +
+            '<span class="material-icons-outlined" aria-hidden="true">person</span>' +
+            '<span>' +
+            esc(authorLabel) +
+            ' からの依頼</span>' +
+            '</div>';
+        }
         if (createdByMe) {
           text +=
             '<div class="task-meta-line"><span class="badge-soft"><span class="material-icons">outgoing_mail</span>あなたが作成</span></div>';
@@ -12036,9 +12125,77 @@
       })();
 
       // ===== Messages =====
+      function sanitizePersonLabel(value) {
+        var text = typeof value === 'string' ? value.trim() : '';
+        if (!text) return '';
+        if (text.indexOf('@') !== -1) return '';
+        return text;
+      }
+      function resolveMessageAuthorLabel(message) {
+        if (!message) return '投稿者';
+        var label = sanitizePersonLabel(message.createdByLabel);
+        if (!label && message.createdBy) {
+          var profile = getUserProfile(message.createdBy);
+          if (profile) {
+            label = sanitizePersonLabel(profile.name);
+          }
+        }
+        if (!label) label = '投稿者';
+        return label;
+      }
+      function resolveMessageTimestampLabel(message) {
+        if (!message) return '';
+        if (message.createdAtLabel) return message.createdAtLabel;
+        if (message.createdAt) {
+          return formatJst(message.createdAt, true);
+        }
+        return '';
+      }
+      function renderAuthorAvatar(email, label, options) {
+        var variant = (options && options.variant) || 'md';
+        var classes = ['msg-avatar'];
+        if (variant === 'lg') classes.push('msg-avatar--lg');
+        var profile = email ? getUserProfile(email) : null;
+        var imageUrl = '';
+        if (profile && profile.imageUrl && profile.imageUrl !== PROFILE_PLACEHOLDER_URL) {
+          imageUrl = profile.imageUrl;
+        }
+        if (options && options.imageUrl) {
+          imageUrl = options.imageUrl;
+        }
+        var safeLabel = sanitizePersonLabel(label) || '投稿者';
+        var initialsSource = sanitizePersonLabel(label);
+        if (!initialsSource && profile) {
+          initialsSource = sanitizePersonLabel(profile.name);
+        }
+        var initials = (initialsSource || safeLabel).slice(0, 2) || '？';
+        if (imageUrl) {
+          return (
+            '<span class="' +
+            classes.join(' ') +
+            '"><img src="' +
+            esc(imageUrl) +
+            '" alt="' +
+            esc(safeLabel) +
+            '" loading="lazy"></span>'
+          );
+        }
+        classes.push('msg-avatar--initials');
+        return (
+          '<span class="' +
+          classes.join(' ') +
+          '" aria-label="' +
+          esc(safeLabel) +
+          '">' +
+          esc(initials) +
+          '</span>'
+        );
+      }
       function renderMessageCard(m, options) {
         var opts = options || {};
         var isRead = !!m.isRead;
+        var authorLabel = resolveMessageAuthorLabel(m);
+        var timestampLabel = resolveMessageTimestampLabel(m);
         var classes = ['card', 'app-card', 'msg-card', 'mb-2'];
         if (!isRead) classes.push('unread');
         if (m.isPinned) classes.push('msg-card--pinned');
@@ -12095,6 +12252,18 @@
               : '') +
             '</div>';
         }
+        var metaHtml = '';
+        if (authorLabel || timestampLabel) {
+          var avatarHtml = renderAuthorAvatar(m.createdBy, authorLabel);
+          metaHtml =
+            '<div class="msg-meta-line">' +
+            avatarHtml +
+            '<div class="msg-meta-text">' +
+            (authorLabel ? '<div class="msg-meta-author">' + esc(authorLabel) + '</div>' : '') +
+            (timestampLabel ? '<div class="msg-meta-time">' + esc(timestampLabel) + '</div>' : '') +
+            '</div>' +
+            '</div>';
+        }
         return (
           '<div class="' +
           classes.join(' ') +
@@ -12126,6 +12295,7 @@
           '<div class="msg-preview">' +
           previewHtml +
           '</div>' +
+          metaHtml +
           '</div>' +
           '</div>' +
           '</a>' +
@@ -12674,6 +12844,18 @@
         CURRENT_MEMO_IS_READ = false;
         var titleEl = byId('msgDetailTitle');
         if (titleEl) titleEl.textContent = data.title || '';
+        var authorLabel = resolveMessageAuthorLabel(data);
+        var timestampLabel = resolveMessageTimestampLabel(data);
+        var avatarSlot = byId('msgDetailAvatar');
+        if (avatarSlot) {
+          avatarSlot.innerHTML = renderAuthorAvatar(data.createdBy, authorLabel, { variant: 'lg' });
+        }
+        var authorEl = byId('msgDetailAuthor');
+        if (authorEl) authorEl.textContent = authorLabel || '投稿者';
+        var timeEl = byId('msgDetailTimestamp');
+        if (timeEl) timeEl.textContent = timestampLabel || '—';
+        var metaWrap = byId('msgDetailMeta');
+        if (metaWrap) metaWrap.classList.remove('d-none');
         var bodySlot = byId('msgDetailBody');
         if (bodySlot) {
           var section = bodySlot.querySelector('.section-body');

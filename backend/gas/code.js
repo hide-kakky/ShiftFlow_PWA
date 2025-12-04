@@ -83,6 +83,10 @@ const PROXY_LOG_COLUMNS = [
   'CfRay',
   'CreatedAt',
 ];
+const DEFAULT_TIMEZONE =
+  typeof Session !== 'undefined' && Session.getScriptTimeZone
+    ? Session.getScriptTimeZone()
+    : 'Asia/Tokyo';
 const GOOGLE_TOKENINFO_ENDPOINT = 'https://oauth2.googleapis.com/tokeninfo';
 const GOOGLE_OAUTH_CLIENT_ID =
   PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '';
@@ -2505,6 +2509,7 @@ function getMessages(opt) {
   const email = _getCurrentEmail();
   const memoSh = _openSheet('T_Memos');
   const readSh = _openSheet('T_MemoReads');
+  const userSh = _openSheet('M_Users');
 
   const requestedFolderRaw = opt && typeof opt.folderId !== 'undefined' ? opt.folderId : '';
   const requestedFolder = String(requestedFolderRaw || '').trim();
@@ -2512,12 +2517,33 @@ function getMessages(opt) {
 
   _ensureColumns(memoSh, MEMO_SHEET_COLUMNS);
   _ensureColumns(readSh, ['MRID', 'MemoID', 'UserEmail', 'ReadAt']);
+  _ensureColumns(userSh, USER_SHEET_COLUMNS);
 
   const memos = memoSh.getDataRange().getValues();
   const reads = readSh.getDataRange().getValues();
+  const users = userSh.getDataRange().getValues();
 
   const mHdr = _getHeaderMap(memoSh);
   const rHdr = _getHeaderMap(readSh);
+  const uHdr = _getHeaderMap(userSh);
+
+  const userDisplayMap = {};
+  for (let i = 1; i < users.length; i++) {
+    const entryEmail = users[i][uHdr['Email']];
+    const normalized = _normalizeEmail(entryEmail);
+    if (!normalized) continue;
+    const displayName = String(users[i][uHdr['DisplayName']] || '').trim();
+    if (displayName) {
+      userDisplayMap[normalized] = displayName;
+    } else if (!userDisplayMap[normalized] && entryEmail) {
+      userDisplayMap[normalized] = String(entryEmail).trim();
+    }
+  }
+  function resolveUserLabel(address) {
+    const normalized = _normalizeEmail(address);
+    if (normalized && userDisplayMap[normalized]) return userDisplayMap[normalized];
+    return address ? String(address).trim() : '';
+  }
 
   const myReadMemoIds = new Set();
   for (let i = 1; i < reads.length; i++) {
@@ -2531,6 +2557,11 @@ function getMessages(opt) {
     const preview = fullBody.length > 80 ? fullBody.substring(0, 78).trimEnd() + '...' : fullBody;
     const createdAtVal = memos[i][mHdr['CreatedAt']];
     const createdAtDate = createdAtVal ? new Date(createdAtVal) : null;
+    const createdAtLabel =
+      createdAtDate instanceof Date && !isNaN(createdAtDate.getTime())
+        ? Utilities.formatDate(createdAtDate, DEFAULT_TIMEZONE, 'yyyy/MM/dd HH:mm')
+        : '';
+    const createdBy = memos[i][mHdr['CreatedBy']] || '';
     const obj = {
       id: id,
       title: memos[i][mHdr['Title']],
@@ -2540,6 +2571,9 @@ function getMessages(opt) {
       folderId: memos[i][mHdr['FolderID']] || '',
       isRead: myReadMemoIds.has(id),
       createdAt: createdAtDate ? createdAtDate.getTime() : 0,
+      createdAtLabel: createdAtLabel,
+      createdBy: createdBy,
+      createdByLabel: resolveUserLabel(createdBy),
     };
     list.push(obj);
   }
@@ -2632,10 +2666,30 @@ function getMessageById(memoId) {
     if (memos[i][mHdr['MemoID']] === memoId) {
       const createdBy = memos[i][mHdr['CreatedBy']];
       const canDelete = createdBy === current || isManagerUser();
+      const createdAtValue = memos[i][mHdr['CreatedAt']];
+      let createdAtLabel = '';
+      let createdAtMs = 0;
+      if (createdAtValue) {
+        const createdAtDate =
+          createdAtValue instanceof Date ? createdAtValue : new Date(createdAtValue);
+        if (createdAtDate instanceof Date && !isNaN(createdAtDate.getTime())) {
+          createdAtMs = createdAtDate.getTime();
+          createdAtLabel = Utilities.formatDate(
+            createdAtDate,
+            DEFAULT_TIMEZONE,
+            'yyyy/MM/dd HH:mm'
+          );
+        }
+      }
+      const normalizedCreator = _normalizeEmail(createdBy);
+      const createdByLabel =
+        (normalizedCreator && userDisplayMap[normalizedCreator]) ||
+        (createdBy ? String(createdBy).trim() : '');
       const attachIds = _parseAttachmentIds(memos[i][mHdr['AttachmentIDs']]);
       message = {
         id: memos[i][mHdr['MemoID']],
         createdBy: createdBy,
+        createdByLabel: createdByLabel,
         title: memos[i][mHdr['Title']],
         body: String(memos[i][mHdr['Body']] || '').replace(/\n/g, '\n'),
         priority: memos[i][mHdr['Priority']] || '中',
@@ -2643,6 +2697,8 @@ function getMessageById(memoId) {
         readUsers: [],
         unreadUsers: [],
         canDelete: canDelete,
+        createdAt: createdAtMs,
+        createdAtLabel: createdAtLabel,
         attachments: _getAttachmentMetas(attachIds),
       };
       break;
