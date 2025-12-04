@@ -19,6 +19,6 @@
     "qc:prod": "wrangler d1 execute app_d1_prod --remote --file migrations/999_qc_checks.sql"
   },
   "devDependencies": {
-    "wrangler": "^4.45.4"
+    "wrangler": "^4.52.1"
   }
 }
