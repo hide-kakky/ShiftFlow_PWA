@@ -5795,19 +5795,6 @@
                     aria-hidden="true"
                   ></span>
                 </button>
-                <button class="btn btn-primary" id="btnMsgMarkRead" data-read-state="unread">
-                  <span class="label">
-                    <span class="material-icons align-middle me-1 js-msg-read-icon"
-                      >mark_email_read</span
-                    >
-                    <span class="label-text" data-i18n="message_mark_read">既読にする</span>
-                  </span>
-                  <span
-                    class="spinner-border spinner-border-sm d-none"
-                    role="status"
-                    aria-hidden="true"
-                  ></span>
-                </button>
                 <button
                   class="btn btn-outline-secondary d-none"
                   id="btnUnreadStatus"
@@ -12820,27 +12807,11 @@
           .deleteTaskById(CURRENT_TASK_ID);
       });
       var CURRENT_MEMO_ID = null;
-      var CURRENT_MEMO_IS_READ = false;
       var CURRENT_MESSAGE_ATTACHMENTS = [];
       var CURRENT_IMAGE_ATTACHMENTS = [];
       var CURRENT_IMAGE_INDEX = 0;
-      function updateMessageReadButton(isRead) {
-        var btn = byId('btnMsgMarkRead');
-        if (!btn) return;
-        var nextClass = isRead ? 'btn-outline-primary' : 'btn-primary';
-        btn.classList.remove('btn-primary', 'btn-outline-primary');
-        btn.classList.add(nextClass);
-        btn.setAttribute('data-read-state', isRead ? 'read' : 'unread');
-        var text = isRead ? '未読に戻す' : '既読にする';
-        btn.setAttribute('aria-label', text);
-        var iconEl = btn.querySelector('.js-msg-read-icon');
-        if (iconEl) iconEl.textContent = isRead ? 'mark_email_unread' : 'mark_email_read';
-        var textEl = btn.querySelector('.label-text');
-        if (textEl) textEl.textContent = text;
-      }
       function renderMessageDetail(data) {
         if (!data) return;
-        CURRENT_MEMO_IS_READ = false;
         var titleEl = byId('msgDetailTitle');
         if (titleEl) titleEl.textContent = data.title || '';
         var authorLabel = resolveMessageAuthorLabel(data);
@@ -12925,33 +12896,6 @@
         renderUserChips('msgUnreadUsers', data.unreadUsers);
         var deleteBtn = byId('deleteMessageButton');
         if (deleteBtn) deleteBtn.classList.toggle('d-none', !data.canDelete);
-        var normalizedCurrent = normalizeEmailValue(CURRENT_USER_EMAIL);
-        if (normalizedCurrent && Array.isArray(data.readEmails) && data.readEmails.length) {
-          CURRENT_MEMO_IS_READ = data.readEmails.some(function (email) {
-            return normalizeEmailValue(email) === normalizedCurrent;
-          });
-        } else if (Array.isArray(data.readUsers) && data.readUsers.length) {
-          CURRENT_MEMO_IS_READ = data.readUsers.some(function (entry) {
-            if (!entry) return false;
-            if (typeof entry === 'string') {
-              var displayName = getNameByEmail(CURRENT_USER_EMAIL);
-              return displayName ? entry === displayName : entry === CURRENT_USER_EMAIL;
-            }
-            var candidate = entry.email ? normalizeEmailValue(entry.email) : '';
-            if (candidate && normalizedCurrent) {
-              return candidate === normalizedCurrent;
-            }
-            if (entry.label) {
-              var label = entry.label;
-              var displayName = getNameByEmail(CURRENT_USER_EMAIL);
-              return displayName ? label === displayName : false;
-            }
-            return false;
-          });
-        } else {
-          CURRENT_MEMO_IS_READ = false;
-        }
-        updateMessageReadButton(CURRENT_MEMO_IS_READ);
       }
       function openImageViewer(index) {
         if (!Array.isArray(CURRENT_IMAGE_ATTACHMENTS) || !CURRENT_IMAGE_ATTACHMENTS.length) return;
@@ -13153,7 +13097,6 @@
 
       function openMessageModal(memoId) {
         CURRENT_MEMO_ID = memoId;
-        CURRENT_MEMO_IS_READ = false;
         var modalEl = byId('messageDetailModal');
         if (!modalEl) {
           notify('メッセージ詳細モーダルが見つかりません', false);
@@ -13198,18 +13141,6 @@
             notify(res.message || '完了', res.success !== false);
           })
           .addNewComment({ memoId: CURRENT_MEMO_ID, body: body });
-      });
-      on('btnMsgMarkRead', 'click', function () {
-        if (!CURRENT_MEMO_ID) return;
-        var btn = byId('btnMsgMarkRead');
-        if (!btn) return;
-        var shouldRead = !CURRENT_MEMO_IS_READ;
-        toggleRead(btn, CURRENT_MEMO_ID, shouldRead, function (err) {
-          if (err) return;
-          CURRENT_MEMO_IS_READ = shouldRead;
-          updateMessageReadButton(CURRENT_MEMO_IS_READ);
-          refreshMessageDetail();
-        });
       });
       on('btnMsgToTask', 'click', function () {
         if (!CURRENT_MEMO_ID) return;
