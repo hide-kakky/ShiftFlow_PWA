@@ -1582,30 +1582,6 @@
         pointer-events: none;
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
       }
-      .msg-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        background: rgba(81, 124, 178, 0.16);
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
-        color: var(--primary);
-        font-size: 22px;
-        flex-shrink: 0;
-      }
-      .msg-card.unread .msg-icon {
-        color: var(--warn);
-        background: rgba(229, 57, 53, 0.16);
-      }
-      :root[data-theme='dark'] .msg-icon {
-        background: rgba(91, 135, 224, 0.32);
-        color: #cad6ff;
-      }
-      :root[data-theme='dark'] .msg-card.unread .msg-icon {
-        background: rgba(229, 98, 82, 0.34);
-        color: var(--warn);
-      }
       .msg-card .priority-pill {
         font-size: 0.7rem;
         padding: 2px 8px;
@@ -12198,7 +12174,6 @@
           : '';
         var preview = m.preview || m.body || '';
         var previewHtml = esc(preview || '').replace(/\n/g, '<br>');
-        var icon = isRead ? 'mark_email_read' : 'mark_email_unread';
         var linkClasses = ['msg-link', 'link-surface', 'flex-grow-1'];
         var bodyClasses = ['card-body', 'app-card-body'];
         var actionHtml = '';
@@ -12253,9 +12228,6 @@
           m.id +
           '">' +
           '<div class="msg-content">' +
-          '<span class="msg-icon material-icons">' +
-          icon +
-          '</span>' +
           '<div class="msg-lines app-card-main flex-grow-1">' +
           '<div class="msg-title-line">' +
           pinIndicator +
