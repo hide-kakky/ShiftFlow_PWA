@@ -5593,6 +5593,10 @@
                 </div>
               </div>
               <div class="form-section">
+                <div class="template-chip-row d-none" id="templateChipRow">
+                  <small data-i18n="label_templates">定型文</small>
+                  <div class="template-chip-list" id="templateChipList"></div>
+                </div>
                 <div class="mb-3">
                   <label class="form-label" data-i18n="label_subject">件名</label>
                   <input type="text" class="form-control" id="messageTitle" required />
@@ -5601,9 +5605,10 @@
                   <label class="form-label" data-i18n="label_body">本文</label>
                   <textarea class="form-control" id="messageBody" rows="5" required></textarea>
                 </div>
-                <div class="template-chip-row d-none" id="templateChipRow">
-                  <small data-i18n="label_templates">定型文</small>
-                  <div class="template-chip-list" id="templateChipList"></div>
+                <div class="d-flex justify-content-end">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-message-clear">
+                    件名・本文をクリア
+                  </button>
                 </div>
               </div>
               <div class="form-section">
@@ -13645,6 +13650,7 @@
           body: 'messageBody',
           priority: 'messagePriority',
           folder: 'messageFolder',
+          clear: 'btn-message-clear',
         };
         const MODAL_ID = 'newMessageModal';
         let lastFolderId = '';
@@ -13720,6 +13726,27 @@
           MessageDraftController.handleFolderChange(folderId);
         }
 
+        function handleClearFields(event) {
+          if (event) event.preventDefault();
+          var titleEl = byId(SELECTORS.title);
+          var bodyEl = byId(SELECTORS.body);
+          if (!titleEl && !bodyEl) return;
+          var shouldClear = confirm('件名と本文をクリアします。よろしいですか？');
+          if (!shouldClear) return;
+          if (titleEl) {
+            titleEl.value = '';
+            titleEl.focus();
+          }
+          if (bodyEl) {
+            bodyEl.value = '';
+          }
+          var folderEl = byId(SELECTORS.folder);
+          var folderId = folderEl ? folderEl.value : '';
+          if (folderId) {
+            MessageDraftController.clear(folderId);
+          }
+        }
+
         function bindTemplateRefresh() {
           const folderEl = byId(SELECTORS.folder);
           if (folderEl) {
@@ -13731,6 +13758,7 @@
 
         function init() {
           on(SELECTORS.save, 'click', handleSave);
+          on(SELECTORS.clear, 'click', handleClearFields);
           MessageDraftController.init();
           bindTemplateRefresh();
           const quickFolderBtn = byId('btnQuickFolder');
