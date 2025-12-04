@@ -5,7 +5,7 @@
 (function attachShiftFlowConfig(globalScope) {
   var existing = globalScope.SHIFT_FLOW_CONFIG || {};
   var config = Object.assign({}, existing, {
-    APP_VERSION: '1.3.7',
+    APP_VERSION: '1.3.8',
     PROFILE_PLACEHOLDER_URL: 'https://placehold.jp/150x150.png',
     PROFILE_IMAGE_MAX_BYTES: 8 * 1024 * 1024,
     MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,

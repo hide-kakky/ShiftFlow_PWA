@@ -12203,25 +12203,10 @@
         var bodyClasses = ['card-body', 'app-card-body'];
         var actionHtml = '';
         if (!opts.hideAction) {
-          var lab = isRead ? '未読にする' : '既読にする';
-          var style = isRead ? 'btn-outline-primary' : 'btn-primary';
-          var toggleFlag = isRead ? 'false' : 'true';
-          actionHtml =
-            '<div class="msg-actions flex-shrink-0">' +
-            '<button class="btn ' +
-            style +
-            ' btn-sm msg-action-btn" onclick="event.preventDefault(); toggleRead(this,\'' +
-            m.id +
-            "'," +
-            toggleFlag +
-            ')">' +
-            '<span class="label">' +
-            lab +
-            '</span>' +
-            '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>' +
-            '</button>' +
-            (IS_MANAGER
-              ? '<button class="btn btn-outline-secondary btn-sm msg-action-btn msg-action-btn--icon" onclick="event.preventDefault(); togglePin(this,\'' +
+          var actionButtons = [];
+          if (IS_MANAGER) {
+            actionButtons.push(
+              '<button class="btn btn-outline-secondary btn-sm msg-action-btn msg-action-btn--icon" onclick="event.preventDefault(); togglePin(this,\'' +
                 m.id +
                 "'," +
                 (m.isPinned ? 'false' : 'true') +
@@ -12235,8 +12220,11 @@
                 '" aria-hidden="true">push_pin</span>' +
                 '<span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>' +
                 '</button>'
-              : '') +
-            '</div>';
+            );
+          }
+          if (actionButtons.length) {
+            actionHtml = '<div class="msg-actions flex-shrink-0">' + actionButtons.join('') + '</div>';
+          }
         }
         var metaHtml = '';
         if (authorLabel || timestampLabel) {
@@ -12443,28 +12431,6 @@
       }
       attachMessageCardNavigation('msg-list');
       attachMessageCardNavigation('home-unread');
-      function toggleRead(btn, memoId, shouldRead, onComplete) {
-        setButtonLoading(btn, true);
-        google.script.run
-          .withSuccessHandler(function () {
-            setButtonLoading(btn, false);
-            if (typeof onComplete === 'function') onComplete(null, shouldRead);
-            loadMessages({ force: true });
-            loadHome({ force: true });
-          })
-          .withFailureHandler(function (e) {
-            setButtonLoading(btn, false);
-            notify('メッセージの更新に失敗しました。' + e.message, false);
-            if (typeof onComplete === 'function') {
-              var err =
-                e instanceof Error
-                  ? e
-                  : new Error(e && e.message ? e.message : String(e || 'Unknown error'));
-              onComplete(err);
-            }
-          })
-          .toggleMemoRead(memoId, shouldRead);
-      }
       function togglePin(btn, memoId, shouldPin) {
         if (!IS_MANAGER) {
           notify('ピン操作は管理者のみ可能です。', false);
