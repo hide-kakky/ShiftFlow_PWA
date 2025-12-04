@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS messages (
   author_membership_id TEXT,
   title TEXT,
   body TEXT,
+  priority TEXT NOT NULL DEFAULT 'medium',
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
   FOREIGN KEY (org_id) REFERENCES organizations(org_id),

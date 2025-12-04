@@ -39,7 +39,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 | `functions/utils/` | セッション・Google ID トークン検証などの共通ロジック。 |
 | `functions/config.js` | `/config` エンドポイントで `GAS_EXEC_URL` と `GOOGLE_CLIENT_ID` を埋め込む。 |
 | `backend/gas/` | Apps Script プロジェクト。現在は診断ログ受信 (`logAuthProxyEvent`) やレガシー互換のみに利用。 |
-| `migrations/` | D1 用スキーマ定義 (`000_init.sql` など) と QC (`qc_checks.sql`)。 |
+| `migrations/` | D1 用スキーマ定義 (`000_init.sql` など) と QC (`999_qc_checks.sql`)。 |
 | `scripts/etl/` | スプレッドシート CSV → 正規化 JSON → `seeds/*.sql` を生成する ETL ツール。 |
 | `scripts/predeploy-scan.js` | デプロイ前に `.clasp.json` など秘匿ファイルの混入をチェック。 |
 | `infra/r2/` | R2 ライフサイクルポリシー。 |
@@ -122,7 +122,7 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
 - `002_add_tasks_attachments_audit.sql`: `tasks`, `task_assignees`, `attachments`, `task_attachments`, `message_attachments`, `audit_logs`, `login_audits`, `auth_proxy_logs`.
 - `003_extend_organizations.sql`: `organizations` に短縮名・ブランドカラー・タイムゾーン・通知先メール・メタ情報列を追加。
 - `004_add_folders_features.sql`: `folders` / `folder_members` / `templates` を追加し、メッセージのフォルダ紐付けとピン留めをサポート。
-- `qc_checks.sql`: テーブル間の参照整合性・NULL チェック用。
+- `999_qc_checks.sql`: テーブル間の参照整合性・NULL チェック用。
 
 ### 運用コマンド
 
@@ -203,7 +203,7 @@ wrangler tail  --config workers/r2-backup/wrangler.toml
 
 - Cloudflare: `wrangler tail` で Functions / Auth / Cron Worker のログをリアルタイム確認。
 - Apps Script: `backend/gas` の `logAuthProxyEvent` で `T_AuthProxyLogs`, `T_LoginAudit` に書き込み。`requestId` と `route` を基点に突合。
-- D1: `wrangler d1 execute app_d1_dev --command "SELECT * FROM tasks LIMIT 5"` でデータ確認。`migrations/qc_checks.sql` を定期的に実行して参照整合性を担保。
+- D1: `wrangler d1 execute app_d1_dev --command "SELECT * FROM tasks LIMIT 5"` でデータ確認。`migrations/999_qc_checks.sql` を定期的に実行して参照整合性を担保。
 - 失敗時は `functions/api/[route].js` の `errorResponse(where='cf-api')` が JSON で理由 (`code`, `reason`, `requestId`) を返す。R2 関連は `code=attachment_upload_failed` 等で判別可能。
 
 ---
