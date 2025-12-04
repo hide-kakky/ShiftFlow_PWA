@@ -5,7 +5,7 @@
 (function attachShiftFlowConfig(globalScope) {
   var existing = globalScope.SHIFT_FLOW_CONFIG || {};
   var config = Object.assign({}, existing, {
-    APP_VERSION: '1.2.9',
+    APP_VERSION: '1.3.3',
     PROFILE_PLACEHOLDER_URL: 'https://placehold.jp/150x150.png',
     PROFILE_IMAGE_MAX_BYTES: 8 * 1024 * 1024,
     MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
@@ -24,12 +24,12 @@
     API_REVALIDATE_PATHS: ['/api/tasks', '/api/messages', '/api/home', '/api/templates'],
   });
   globalScope.SHIFT_FLOW_CONFIG = config;
-})(typeof globalThis !== 'undefined'
-  ? globalThis
-  : typeof self !== 'undefined'
-  ? self
-  : typeof window !== 'undefined'
-  ? window
-  : {});
-
-  
+})(
+  typeof globalThis !== 'undefined'
+    ? globalThis
+    : typeof self !== 'undefined'
+    ? self
+    : typeof window !== 'undefined'
+    ? window
+    : {}
+);
