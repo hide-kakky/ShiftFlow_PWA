@@ -5576,7 +5576,23 @@
           <div class="modal-body">
             <form id="newMessageForm" class="modal-form">
               <div class="form-section">
-                <div class="form-section-title" data-i18n="section_basic_info">基本情報</div>
+                <label class="form-label" data-i18n="messages_filter_folder">フォルダ</label>
+                <div class="input-group">
+                  <select class="form-select" id="messageFolder" data-folder-select="compose">
+                    <option value="" data-i18n="messages_select_folder">フォルダを選択</option>
+                  </select>
+                  <button
+                    class="btn btn-outline-secondary d-none"
+                    type="button"
+                    id="btnQuickFolder"
+                    data-manager-only
+                    title="フォルダを作成"
+                  >
+                    <span class="material-icons-outlined" aria-hidden="true">add</span>
+                  </button>
+                </div>
+              </div>
+              <div class="form-section">
                 <div class="mb-3">
                   <label class="form-label" data-i18n="label_subject">件名</label>
                   <input type="text" class="form-control" id="messageTitle" required />
@@ -5585,45 +5601,15 @@
                   <label class="form-label" data-i18n="label_body">本文</label>
                   <textarea class="form-control" id="messageBody" rows="5" required></textarea>
                 </div>
-              </div>
-              <div class="form-section">
-                <div class="form-section-title" data-i18n="section_details">詳細設定</div>
-                <div class="row g-3">
-                  <div class="col-12 col-md-6">
-                    <label class="form-label" data-i18n="messages_filter_folder">フォルダ</label>
-                    <div class="input-group">
-                      <select class="form-select" id="messageFolder" data-folder-select="compose">
-                        <option value="" data-i18n="messages_select_folder">フォルダを選択</option>
-                      </select>
-                      <button
-                        class="btn btn-outline-secondary d-none"
-                        type="button"
-                        id="btnQuickFolder"
-                        data-manager-only
-                        title="フォルダを作成"
-                      >
-                        <span class="material-icons-outlined" aria-hidden="true">add</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-6">
-                    <label class="form-label" data-i18n="label_priority">優先度</label>
-                    <select class="form-select" id="messagePriority">
-                      <option data-i18n="priority_medium">中</option>
-                      <option data-i18n="priority_high">高</option>
-                      <option data-i18n="priority_low">低</option>
-                    </select>
-                  </div>
-                  <div class="col-12">
-                    <div class="template-chip-row d-none" id="templateChipRow">
-                      <small data-i18n="label_templates">定型文</small>
-                      <div class="template-chip-list" id="templateChipList"></div>
-                    </div>
-                  </div>
+                <div class="template-chip-row d-none" id="templateChipRow">
+                  <small data-i18n="label_templates">定型文</small>
+                  <div class="template-chip-list" id="templateChipList"></div>
                 </div>
               </div>
               <div class="form-section">
-                <div class="form-section-title" data-i18n="label_attachments">添付画像</div>
+                <label class="form-label d-block" for="message-attachment-input" data-i18n="label_attachments"
+                  >添付画像</label
+                >
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                   <button class="btn btn-outline-secondary" type="button" id="btn-message-attach">
                     <span data-i18n="attachments_add">画像を追加</span>
@@ -5644,6 +5630,14 @@
                   aria-label="添付画像を選択"
                 />
                 <ul class="list-unstyled small mb-0 mt-2" id="message-attachment-list"></ul>
+              </div>
+              <div class="form-section">
+                <label class="form-label" data-i18n="label_priority">優先度</label>
+                <select class="form-select" id="messagePriority">
+                  <option data-i18n="priority_medium">中</option>
+                  <option data-i18n="priority_high">高</option>
+                  <option data-i18n="priority_low">低</option>
+                </select>
               </div>
             </form>
           </div>
