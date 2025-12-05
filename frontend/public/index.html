@@ -1635,6 +1635,7 @@
         line-height: 1.2;
       }
       .msg-meta-author {
+        font-size: 0.8rem;
         font-weight: 600;
         color: var(--text-900);
       }
@@ -1685,6 +1686,21 @@
       .msg-card .app-card-body {
         position: relative;
         padding-bottom: 20px;
+      }
+      .msg-title-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .msg-title-thumb {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        overflow: hidden;
+        flex-shrink: 0;
       }
       .msg-actions {
         display: inline-flex;
@@ -5597,13 +5613,20 @@
                   <textarea class="form-control" id="messageBody" rows="5" required></textarea>
                 </div>
                 <div class="d-flex justify-content-end">
-                  <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-message-clear">
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    id="btn-message-clear"
+                  >
                     件名・本文をクリア
                   </button>
                 </div>
               </div>
               <div class="form-section">
-                <label class="form-label d-block" for="message-attachment-input" data-i18n="label_attachments"
+                <label
+                  class="form-label d-block"
+                  for="message-attachment-input"
+                  data-i18n="label_attachments"
                   >添付画像</label
                 >
                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -12307,15 +12330,14 @@
             );
           }
           if (actionButtons.length) {
-            actionHtml = '<div class="msg-actions flex-shrink-0">' + actionButtons.join('') + '</div>';
+            actionHtml =
+              '<div class="msg-actions flex-shrink-0">' + actionButtons.join('') + '</div>';
           }
         }
         var metaHtml = '';
         if (authorLabel || timestampLabel) {
-          var avatarHtml = renderAuthorAvatar(m.createdBy, authorLabel);
           metaHtml =
             '<div class="msg-meta-line">' +
-            avatarHtml +
             '<div class="msg-meta-text">' +
             (authorLabel ? '<div class="msg-meta-author">' + esc(authorLabel) + '</div>' : '') +
             (timestampLabel ? '<div class="msg-meta-time">' + esc(timestampLabel) + '</div>' : '') +
@@ -12339,6 +12361,9 @@
           '<div class="msg-content">' +
           '<div class="msg-lines app-card-main flex-grow-1">' +
           '<div class="msg-title-line">' +
+          '<span class="msg-title-thumb">' +
+          renderAuthorAvatar(m.createdBy, authorLabel, { variant: 'lg' }) +
+          '</span>' +
           pinIndicator +
           '<span class="msg-title ' +
           (isRead ? 'text-muted' : '') +
