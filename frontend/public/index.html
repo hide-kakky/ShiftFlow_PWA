@@ -12278,13 +12278,6 @@
         if (!isRead) classes.push('unread');
         if (m.isPinned) classes.push('msg-card--pinned');
         if (opts.compact) classes.push('msg-card-compact');
-        var priority = m.priority || '中';
-        var priorityPill =
-          '<span class="priority-pill ' +
-          priorityClassName(priority) +
-          '">' +
-          esc(priority) +
-          '</span>';
         var pinIndicator = m.isPinned
           ? '<span class="pin-indicator material-icons-outlined" aria-hidden="true">push_pin</span>'
           : '';
@@ -12347,7 +12340,6 @@
           '<div class="msg-lines app-card-main flex-grow-1">' +
           '<div class="msg-title-line">' +
           pinIndicator +
-          priorityPill +
           '<span class="msg-title ' +
           (isRead ? 'text-muted' : '') +
           '">' +
