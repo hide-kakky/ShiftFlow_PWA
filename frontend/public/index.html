@@ -1682,13 +1682,18 @@
         height: 20px;
         color: #fbbc05;
       }
+      .msg-card .app-card-body {
+        position: relative;
+      }
       .msg-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-left: auto;
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 8px;
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        margin: 0;
         flex-shrink: 0;
-        align-self: center;
       }
       .msg-actions .btn {
         border-radius: 999px;
@@ -1772,6 +1777,7 @@
         align-items: flex-start;
         gap: 14px;
         min-width: 0;
+        padding-right: 56px;
       }
       .msg-card-compact .app-card-body {
         padding: 14px 18px;
@@ -10366,12 +10372,22 @@
         var monthDay = d.getMonth() + 1 + '/' + d.getDate();
         return day ? monthDay + '(' + day + ')' : monthDay;
       }
-      function formatJst(input, includeTime) {
-        if (input === null || input === undefined) return '—';
-        var date = typeof input === 'number' ? new Date(input) : new Date(String(input));
-        if (!(date instanceof Date) || isNaN(date.getTime())) {
-          return '—';
+      function coerceDate(value) {
+        if (value === null || value === undefined) return null;
+        if (value instanceof Date && !isNaN(value.getTime())) return value;
+        var num = Number(value);
+        if (!Number.isNaN(num) && Number.isFinite(num)) {
+          var millis = num > 1e12 ? num : num * 1000; // 13桁→ms、10桁程度→秒とみなす
+          var fromNum = new Date(millis);
+          if (!isNaN(fromNum.getTime())) return fromNum;
         }
+        var parsed = new Date(String(value));
+        if (!isNaN(parsed.getTime())) return parsed;
+        return null;
+      }
+      function formatJst(input, includeTime) {
+        var date = coerceDate(input);
+        if (!date) return '—';
         var year = date.getFullYear();
         var month = ('0' + (date.getMonth() + 1)).slice(-2);
         var day = ('0' + date.getDate()).slice(-2);
@@ -12107,11 +12123,13 @@
       }
       function resolveMessageTimestampLabel(message) {
         if (!message) return '';
-        if (message.createdAtLabel) return message.createdAtLabel;
-        if (message.createdAt) {
-          return formatJst(message.createdAt, true);
-        }
-        return '';
+        var source = message.createdAt != null ? message.createdAt : message.createdAtLabel;
+        var date = coerceDate(source);
+        if (date) return formatJst(date, true);
+        var label = String(source || '');
+        var match = label.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+        if (match) return match[1] + ' ' + match[2];
+        return label;
       }
       function renderAuthorAvatar(email, label, options) {
         var variant = (options && options.variant) || 'md';
