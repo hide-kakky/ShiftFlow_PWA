@@ -1698,7 +1698,7 @@
         justify-content: center;
         width: 32px;
         height: 32px;
-        border-radius: 10px;
+        border-radius: 50%;
         overflow: hidden;
         flex-shrink: 0;
       }
@@ -10509,10 +10509,11 @@
       function formatJst(input, includeTime) {
         var date = coerceDate(input);
         if (!date) return '—';
-        var year = date.getFullYear();
-        var month = ('0' + (date.getMonth() + 1)).slice(-2);
-        var day = ('0' + date.getDate()).slice(-2);
-        var base = year + '-' + month + '-' + day;
+        var month = date.getMonth() + 1;
+        var day = date.getDate();
+        var wdays = ['日', '月', '火', '水', '木', '金', '土'];
+        var w = wdays[date.getDay()] || '';
+        var base = month + '/' + day + (w ? ' (' + w + ')' : '');
         if (!includeTime) return base;
         var hours = ('0' + date.getHours()).slice(-2);
         var minutes = ('0' + date.getMinutes()).slice(-2);
