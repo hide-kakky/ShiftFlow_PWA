@@ -3935,6 +3935,14 @@
               <button
                 class="dropdown-item d-flex align-items-center gap-2"
                 type="button"
+                data-user-menu="force-refresh"
+              >
+                <span class="material-icons-outlined">restart_alt</span>
+                最新版を取得（再ログイン）
+              </button>
+              <button
+                class="dropdown-item d-flex align-items-center gap-2"
+                type="button"
                 data-user-menu="logout"
               >
                 <span class="material-icons-outlined">logout</span>
@@ -10354,6 +10362,95 @@
         });
       }
 
+      function deleteCacheDatabase() {
+        if (!SUPPORTS_IDB || !indexedDB || typeof indexedDB.deleteDatabase !== 'function') {
+          return Promise.resolve(false);
+        }
+        return new Promise(function (resolve) {
+          try {
+            var request = indexedDB.deleteDatabase(CACHE_DB_NAME);
+            var settle = function () {
+              resolve(true);
+            };
+            request.onsuccess = settle;
+            request.onerror = settle;
+            request.onblocked = settle;
+          } catch (_err) {
+            resolve(false);
+          }
+        });
+      }
+
+      async function clearAllAppCaches() {
+        try {
+          if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
+            var keys = await caches.keys();
+            await Promise.all(
+              keys.map(function (key) {
+                return caches.delete(key);
+              })
+            );
+          }
+        } catch (err) {
+          console.warn('[ShiftFlow] cache storage clear failed', err);
+        }
+        try {
+          await deleteCacheDatabase();
+        } catch (err) {
+          console.warn('[ShiftFlow] IndexedDB clear failed', err);
+        }
+        try {
+          localStorage.clear();
+        } catch (_err) {}
+        try {
+          sessionStorage.clear();
+        } catch (_err) {}
+      }
+
+      async function unregisterAllServiceWorkers() {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistrations) {
+          return;
+        }
+        try {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(
+            regs.map(function (reg) {
+              return reg.unregister().catch(function () {
+                return false;
+              });
+            })
+          );
+        } catch (err) {
+          console.warn('[ShiftFlow] Service worker unregister failed', err);
+        }
+      }
+
+      var HARD_REFRESH_IN_PROGRESS = false;
+      async function forceReloadLatestVersion() {
+        if (HARD_REFRESH_IN_PROGRESS) return;
+        var confirmed = window.confirm(
+          'キャッシュをすべて消去して最新版を読み込みます。再ログインが必要です。続行しますか？'
+        );
+        if (!confirmed) return;
+        HARD_REFRESH_IN_PROGRESS = true;
+        notify('最新版に更新しています。しばらくお待ちください…', true, {
+          duration: 0,
+          position: 'center',
+        });
+        try {
+          await performLogout();
+        } catch (err) {
+          console.warn('[ShiftFlow] logout during force reload failed', err);
+        }
+        await unregisterAllServiceWorkers();
+        await clearAllAppCaches();
+        try {
+          window.location.replace(window.location.origin + '/');
+        } catch (_err) {
+          window.location.reload();
+        }
+      }
+
       function priorityClassName(pr) {
         switch (String(pr || '中')) {
           case '高':
@@ -15908,6 +16005,8 @@
                 activateTestUserLogin({ profile: 'manager' });
               } else if (action === 'settings') {
                 navigateTo('settings', { animate: true, skipScroll: false });
+              } else if (action === 'force-refresh') {
+                forceReloadLatestVersion();
               } else if (action === 'logout') {
                 if (!confirmLogoutAction()) return;
                 performLogout();
