@@ -1236,6 +1236,13 @@
         font-size: 0.9rem;
         color: var(--muted);
       }
+      .card.app-card.task-card .app-card-meta {
+        min-width: auto;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
       @media (max-width: 640px) {
         .app-card-body {
           gap: 10px;
@@ -1462,7 +1469,10 @@
         box-shadow: 0 16px 34px rgba(3, 9, 24, 0.58);
       }
       .card.app-card.task-card .app-card-body {
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 10px;
       }
       .card.app-card.task-card .task-title-line strong {
         font-size: 1.05rem;
@@ -2445,11 +2455,20 @@
         font-weight: 600;
         padding: 2px 10px;
       }
-      .badge-soft .material-icons {
+      .badge-soft .material-icons,
+      .badge-soft .material-icons-outlined {
         font-size: 14px;
       }
       :root[data-theme='dark'] .badge-soft {
         background: rgba(122, 162, 255, 0.24);
+        color: #e0e7ff;
+      }
+      .badge-soft.badge-requester {
+        background: rgba(81, 124, 178, 0.16);
+        color: var(--text-700);
+      }
+      :root[data-theme='dark'] .badge-soft.badge-requester {
+        background: rgba(122, 162, 255, 0.28);
         color: #e0e7ff;
       }
       .card.app-card.task-card-completed {
@@ -10474,16 +10493,6 @@
         }
       }
 
-      function priorityClassName(pr) {
-        switch (String(pr || '中')) {
-          case '高':
-            return 'priority-high';
-          case '低':
-            return 'priority-low';
-          default:
-            return 'priority-middle';
-        }
-      }
       function formatDateLabel(iso) {
         if (!iso) return '—';
         var d = new Date(iso);
@@ -11428,23 +11437,24 @@
           .join(', ');
       }
 
+      function isTaskOverdue(row) {
+        if (!row) return false;
+        var statusLabel = String(row.status || '').trim();
+        if (row.isCompleted || statusLabel === '完了') return false;
+        if (!row.dueDate) return false;
+        var dueDateObj = new Date(row.dueDate);
+        if (isNaN(dueDateObj.getTime())) return false;
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDateObj.setHours(0, 0, 0, 0);
+        return dueDateObj.getTime() < today.getTime();
+      }
+
       function rowTask(r, showAssignee) {
-        var priority = r.priority || '中';
-        var priorityCls = priorityClassName(priority);
-        var priorityPill =
-          '<span class="priority-pill ' + priorityCls + '">' + esc(priority) + '</span>';
         var dueLabel = formatDateLabel(r.dueDate);
         var isCompleted = !!r.isCompleted || String(r.status || '').trim() === '完了';
         var statusLabel = String(r.status || '').trim();
-        var dueDateObj = r.dueDate ? new Date(r.dueDate) : null;
-        var today = new Date();
-        today.setHours(0, 0, 0, 0);
-        var isOverdue = false;
-        if (dueDateObj instanceof Date && !isNaN(dueDateObj.getTime())) {
-          var dueStart = new Date(dueDateObj.getTime());
-          dueStart.setHours(0, 0, 0, 0);
-          isOverdue = !isCompleted && dueStart.getTime() < today.getTime();
-        }
+        var isOverdue = isTaskOverdue(r);
 
         var cardClass = 'card app-card task-card mb-2 text-decoration-none link-surface';
         if (isCompleted) cardClass += ' task-card-completed';
@@ -11463,13 +11473,7 @@
           r.id +
           '\')">' +
           '<div class="card-body app-card-body">' +
-          '<div class="task-info-wrap app-card-main">' +
-          '<div class="task-title-line d-flex align-items-center gap-2 flex-wrap">' +
-          priorityPill +
-          '<strong>' +
-          esc(r.title) +
-          '</strong>' +
-          '</div>';
+          '<div class="task-info-wrap app-card-main">';
         var createdByMe =
           r.createdBy &&
           CURRENT_USER_EMAIL &&
@@ -11477,6 +11481,33 @@
         var authorLabel = '';
         if (r.createdByLabel) authorLabel = r.createdByLabel;
         else if (r.createdBy) authorLabel = getNameByEmail(r.createdBy);
+        var badgesTop = [];
+        if (isOverdue) {
+          badgesTop.push(
+            '<div class="task-meta-line"><span class="badge-soft badge-overdue"><span class="material-icons">warning</span>期限超過</span></div>'
+          );
+        }
+        if (authorLabel && !createdByMe) {
+          badgesTop.push(
+            '<div class="task-meta-line"><span class="badge-soft badge-requester"><span class="material-icons-outlined" aria-hidden="true">send</span>' +
+              esc(authorLabel) +
+              ' からの依頼</span></div>'
+          );
+        }
+        if (createdByMe) {
+          badgesTop.push(
+            '<div class="task-meta-line"><span class="badge-soft badge-requester"><span class="material-icons-outlined" aria-hidden="true">send</span>あなたが作成</span></div>'
+          );
+        }
+        if (badgesTop.length) {
+          text += badgesTop.join('');
+        }
+        text +=
+          '<div class="task-title-line d-flex align-items-center gap-2 flex-wrap">' +
+          '<strong>' +
+          esc(r.title) +
+          '</strong>' +
+          '</div>';
         if (showAssignee) {
           var assigneesText = displayAssignees(r);
           text +=
@@ -11484,33 +11515,12 @@
             (assigneesText ? '@' + esc(assigneesText) : '担当者未設定') +
             '</div>';
         }
-        if (authorLabel && !createdByMe) {
-          text +=
-            '<div class="task-meta-line task-meta-line--author">' +
-            '<span class="material-icons-outlined" aria-hidden="true">person</span>' +
-            '<span>' +
-            esc(authorLabel) +
-            ' からの依頼</span>' +
-            '</div>';
-        }
-        if (createdByMe) {
-          text +=
-            '<div class="task-meta-line"><span class="badge-soft"><span class="material-icons">outgoing_mail</span>あなたが作成</span></div>';
-        }
-        if (isCompleted) {
-          text +=
-            '<div class="task-meta-line"><span class="badge-soft badge-completed"><span class="material-icons">task_alt</span>完了</span></div>';
-        } else if (isOverdue) {
-          text +=
-            '<div class="task-meta-line"><span class="badge-soft badge-overdue"><span class="material-icons">warning</span>期限超過</span></div>';
-        }
         text +=
           '</div>' +
-          '<div class="task-meta app-card-meta text-end">' +
+          '<div class="task-meta app-card-meta">' +
           '<div>期限 ' +
           esc(dueLabel) +
           '</div>' +
-          (r.status ? '<div class="small text-muted">' + esc(r.status) + '</div>' : '') +
           '</div>' +
           '</div></a>';
         return text;
@@ -11591,6 +11601,37 @@
         return rows;
       }
 
+      function parseDueDate(value) {
+        if (!value) return null;
+        var d = new Date(value);
+        if (isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+
+      function sortTasksForDisplay(rows) {
+        return normalizeArray(rows)
+          .map(function (row, index) {
+            return { row: row, index: index };
+          })
+          .sort(function (a, b) {
+            var overdueA = isTaskOverdue(a.row);
+            var overdueB = isTaskOverdue(b.row);
+            if (overdueA !== overdueB) return overdueA ? -1 : 1;
+            var dueA = parseDueDate(a.row && a.row.dueDate);
+            var dueB = parseDueDate(b.row && b.row.dueDate);
+            if (dueA && dueB && dueA.getTime() !== dueB.getTime()) {
+              return dueA.getTime() - dueB.getTime();
+            }
+            if (dueA && !dueB) return -1;
+            if (!dueA && dueB) return 1;
+            return a.index - b.index;
+          })
+          .map(function (item) {
+            return item.row;
+          });
+      }
+
       function renderTaskList(scope) {
         if (scope === 'all' && TASK_STATE.all.restricted) {
           setTaskContent(scope, '<div class="task-empty">管理者権限が必要です。</div>');
@@ -11604,7 +11645,7 @@
           setTaskContent(scope, skel(6));
           return;
         }
-        var rows = filterTaskRows(scope);
+        var rows = sortTasksForDisplay(filterTaskRows(scope));
         if (!rows.length) {
           setTaskContent(scope, '<div class="task-empty">表示できるタスクはありません。</div>');
           return;
