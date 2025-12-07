@@ -5,7 +5,7 @@
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#517cb2" />
+    <meta name="theme-color" content="#557abb" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
@@ -137,7 +137,7 @@
           return readCSSVariable('--surface') || fallback;
         }
         function computePrimaryColor(theme) {
-          var fallback = theme === 'dark' ? '#4b67b3' : '#517cb2';
+          var fallback = theme === 'dark' ? '#4b67b3' : '#557abb';
           return readCSSVariable('--primary') || fallback;
         }
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
@@ -185,8 +185,8 @@
       /* ===== Light theme design tokens and global variables ===== */
       :root {
         color-scheme: light;
-        --primary: #517cb2;
-        --primary-700: #35567f;
+        --primary: #557abb;
+        --primary-700: #3d5c8a;
         --surface: #f2f4f9;
         --card: #ffffff;
         --card-border: #dfe6f2;
@@ -3075,7 +3075,7 @@
         border-radius: 6px;
         border: 1px solid rgba(0, 0, 0, 0.1);
         display: inline-block;
-        background: #517cb2;
+        background: #557abb;
       }
       .admin-placeholder-table {
         width: 100%;
@@ -5040,7 +5040,7 @@
                                   type="color"
                                   class="form-control form-control-color"
                                   id="adminOrgColor"
-                                  value="#517cb2"
+                                  value="#557abb"
                                   title="ブランドカラーを選択"
                                 />
                                 <span class="input-group-text" id="adminOrgColorText">#517CB2</span>
@@ -5942,7 +5942,7 @@
                 type="color"
                 class="form-control form-control-color"
                 id="quickFolderColor"
-                value="#517cb2"
+                value="#557abb"
               />
             </div>
             <div class="form-check form-switch mb-3">
@@ -6534,7 +6534,7 @@
           {
             id: '全体',
             name: '全体共有',
-            color: '#517cb2',
+            color: '#557abb',
             isPublic: true,
             isActive: true,
             isSystem: true,
@@ -7505,7 +7505,7 @@
                   ? window.__SHIFT_FLOW_GET_PRIMARY__
                   : function (mode) {
                       if (mode === 'dark') return '#4b67b3';
-                      return '#517cb2';
+                      return '#557abb';
                     };
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
               var statusBar =
@@ -7974,7 +7974,7 @@
             saveLabel.textContent = state.editingId ? '更新' : '保存';
           }
           if (nameInput) nameInput.value = (folder && folder.name) || '';
-          if (colorInput) colorInput.value = (folder && folder.color) || '#517cb2';
+          if (colorInput) colorInput.value = (folder && folder.color) || '#557abb';
           if (publicSwitch) {
             publicSwitch.checked =
               folder && Object.prototype.hasOwnProperty.call(folder, 'isPublic')
@@ -8112,7 +8112,7 @@
             showError('フォルダ名を入力してください。');
             return;
           }
-          const color = (byId('quickFolderColor') && byId('quickFolderColor').value) || '#517cb2';
+          const color = (byId('quickFolderColor') && byId('quickFolderColor').value) || '#557abb';
           const isPublic =
             byId('quickFolderPublic') && byId('quickFolderPublic').checked ? true : false;
           const members = isPublic ? [] : Array.from(state.selectedMembers);
@@ -8233,7 +8233,7 @@
           var icon = isPublic ? 'lock_open' : 'lock';
           var colorDot =
             '<span class="folder-color-dot" style="background:' +
-            esc(folder.color || '#517cb2') +
+            esc(folder.color || '#557abb') +
             '"></span>';
           var memberCount =
             folder.memberCount != null
@@ -8323,7 +8323,7 @@
               ? window.__SHIFT_FLOW_GET_PRIMARY__
               : function (mode) {
                   if (mode === 'dark') return '#4b67b3';
-                  return '#517cb2';
+                  return '#557abb';
                 };
           var primaryColor = getPrimary(resolvedPref);
           if (metaTheme && primaryColor) {
@@ -9841,7 +9841,7 @@
             var entry = {
               id: newFolderId,
               name: folderPayload.name || '新規フォルダ',
-              color: folderPayload.color || '#517cb2',
+              color: folderPayload.color || '#557abb',
               isPublic: !!folderPayload.isPublic,
               isActive: true,
               memberUserIds: Array.isArray(folderPayload.memberUserIds)
