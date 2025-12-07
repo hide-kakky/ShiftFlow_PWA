@@ -9121,18 +9121,19 @@
         if (APP_UPDATE_PROMPTED) return;
         APP_UPDATE_PROMPTED = true;
         var versionLabel = data && data.version ? '（' + data.version + '）' : '';
-        notify('最新版がリリースされました' + versionLabel + '。更新しますか？', true, {
-          actionLabel: '更新する',
-          onAction: function () {
-            markUpdateDismissed(dismissKey);
-            applyAppShellUpdate();
-          },
+        notify(
+          '最新版がリリースされました' +
+            versionLabel +
+            '。ヘッダーメニューの「最新版を取得（再ログイン）」から更新してください。',
+          true,
+          {
           duration: 0,
           position: 'center',
           onClose: function () {
             markUpdateDismissed(dismissKey);
           },
-        });
+          }
+        );
       }
 
       function applyAppShellUpdate() {
