@@ -3692,9 +3692,6 @@
         pointer-events: none !important;
         visibility: hidden;
       }
-      body.auth-screen .bootstrap-loading {
-        display: none !important;
-      }
       .bootstrap-loading {
         position: fixed;
         inset: 0;
@@ -3744,12 +3741,6 @@
       :root[data-theme='dark'] .bootstrap-loading__card {
         background: transparent;
         box-shadow: none;
-      }
-      .bootstrap-loading__text {
-        margin: 0;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        color: var(--on-primary);
       }
       .bootstrap-loading__logo {
         width: 96px;
@@ -3846,7 +3837,6 @@
         <div class="bootstrap-loading__logo" aria-hidden="true">
           <img src="/icons/icon-192.png" alt="ShiftFlow ロゴ" loading="lazy" />
         </div>
-        <p class="bootstrap-loading__text">ShiftFlow を読み込んでいます…</p>
       </div>
     </div>
 
@@ -10148,9 +10138,9 @@
 
       async function initializeAuthGateway() {
         attachAuthEventHandlers();
+        setBootstrapLoading(true);
         const returningFromAuth = isAuthPending();
         if (returningFromAuth) {
-          setBootstrapLoading(true);
           setAppShellHidden(true);
         }
         let session = null;
