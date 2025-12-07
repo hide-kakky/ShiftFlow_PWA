@@ -12,6 +12,8 @@ import {
   SESSION_ABSOLUTE_TIMEOUT_MS,
 } from '../utils/session';
 
+const REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 function resolveRequestId(request) {
   const header =
     request.headers.get('X-ShiftFlow-Request-Id') ||
@@ -132,9 +134,10 @@ export async function onRequest({ request, env }) {
 
   const expiresAt = Number(tokens.expiry || 0);
   const refreshToken = tokens.refreshToken || '';
-  const shouldRefresh = !!refreshToken && (!expiresAt || expiresAt <= now + 60_000);
+  const shouldRefresh = !!refreshToken && (!expiresAt || expiresAt <= now + REFRESH_THRESHOLD_MS);
 
   if (shouldRefresh) {
+    let refreshedOnce = false;
     try {
       const refreshed = await refreshGoogleTokens(env, refreshToken);
       const newIdToken = refreshed.id_token || tokens.idToken;
@@ -152,9 +155,35 @@ export async function onRequest({ request, env }) {
       updatedRecord = (await updateSessionTokens(env, verified.id, updatedRecord, mergedTokens)) || updatedRecord;
       tokens = updatedRecord.tokens || mergedTokens;
     } catch (err) {
-      console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens', err);
-      updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
-      tokens = updatedRecord.tokens || tokens;
+      if (!refreshedOnce) {
+        refreshedOnce = true;
+        try {
+          const retried = await refreshGoogleTokens(env, refreshToken);
+          const retryIdToken = retried.id_token || tokens.idToken;
+          const retryExpiry =
+            calculateIdTokenExpiry(retryIdToken) ||
+            (retried.expires_in ? now + retried.expires_in * 1000 : now + 3600 * 1000);
+          const mergedTokens = {
+            ...tokens,
+            idToken: retryIdToken,
+            accessToken: retried.access_token || tokens.accessToken || '',
+            expiry: retryExpiry,
+            scope: retried.scope || tokens.scope || '',
+            updatedAt: now,
+          };
+          updatedRecord =
+            (await updateSessionTokens(env, verified.id, updatedRecord, mergedTokens)) || updatedRecord;
+          tokens = updatedRecord.tokens || mergedTokens;
+        } catch (retryErr) {
+          console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens (retry)', retryErr);
+          updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
+          tokens = updatedRecord.tokens || tokens;
+        }
+      } else {
+        console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens', err);
+        updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
+        tokens = updatedRecord.tokens || tokens;
+      }
     }
   } else {
     updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;

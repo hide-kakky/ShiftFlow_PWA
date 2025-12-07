@@ -35,6 +35,7 @@ const DEFAULT_SYSTEM_FOLDER_NAME = 'Main';
 const DEFAULT_LANGUAGE = 'ja';
 const PINNED_MESSAGE_LIMIT = 5;
 const HEX_COLOR_REGEX = /^#?([0-9a-fA-F]{6})$/;
+const SESSION_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const SUPPORTED_TIMEZONES = [
   'Asia/Tokyo',
   'Asia/Singapore',
@@ -7405,8 +7406,10 @@ export async function onRequest(context) {
       let expiry = Number(sessionTokens.expiry || 0);
       const refreshToken = sessionTokens.refreshToken || '';
       const needsRefresh =
-        !!refreshToken && (!expiry || Number.isNaN(expiry) || expiry <= now + 60_000);
-      if ((!idToken || expiry <= now + 60_000) && refreshToken) {
+        !!refreshToken &&
+        (!expiry || Number.isNaN(expiry) || expiry <= now + SESSION_REFRESH_THRESHOLD_MS);
+      let refreshRetried = false;
+      if ((!idToken || expiry <= now + SESSION_REFRESH_THRESHOLD_MS) && refreshToken) {
         try {
           const refreshed = await refreshGoogleTokens(env, refreshToken);
           const newIdToken = refreshed.id_token || idToken;
@@ -7428,12 +7431,42 @@ export async function onRequest(context) {
           idToken = mergedTokens.idToken;
           expiry = mergedTokens.expiry;
         } catch (err) {
-          console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session', err);
-          idToken = '';
-          expiry = 0;
+          if (!refreshRetried) {
+            refreshRetried = true;
+            try {
+              const retried = await refreshGoogleTokens(env, refreshToken);
+              const retryIdToken = retried.id_token || idToken;
+              const retryExpiry =
+                calculateIdTokenExpiry(retryIdToken) ||
+                (typeof retried.expires_in === 'number'
+                  ? now + Number(retried.expires_in) * 1000
+                  : now + 3600 * 1000);
+              const mergedTokens = {
+                ...sessionTokens,
+                idToken: retryIdToken,
+                accessToken: retried.access_token || sessionTokens.accessToken || '',
+                scope: retried.scope || sessionTokens.scope || '',
+                expiry: retryExpiry,
+                updatedAt: now,
+              };
+              sessionRecord =
+                (await updateSessionTokens(env, sessionContext.id, sessionRecord, mergedTokens)) || sessionRecord;
+              sessionTokens = sessionRecord.tokens || mergedTokens;
+              idToken = mergedTokens.idToken;
+              expiry = mergedTokens.expiry;
+            } catch (retryErr) {
+              console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session (retry)', retryErr);
+              idToken = '';
+              expiry = 0;
+            }
+          } else {
+            console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session', err);
+            idToken = '';
+            expiry = 0;
+          }
         }
       }
-      if (idToken && expiry && expiry <= now + 60_000) {
+      if (idToken && expiry && expiry <= now + SESSION_REFRESH_THRESHOLD_MS) {
         idToken = '';
       }
       if (idToken) {
