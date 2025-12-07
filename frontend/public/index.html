@@ -8364,26 +8364,38 @@
         var loadingEl = byId('bootstrap-loading');
         if (!loadingEl) return;
         var fadeMs = 400;
+        var minShowMs = 900;
         if (loadingEl.__fadeTimer) {
           clearTimeout(loadingEl.__fadeTimer);
           loadingEl.__fadeTimer = null;
         }
         if (isLoading) {
+          loadingEl.__shownAt = Date.now();
           loadingEl.classList.remove('is-fading');
           loadingEl.classList.add('is-visible');
           loadingEl.removeAttribute('hidden');
           loadingEl.setAttribute('aria-hidden', 'false');
           loadingEl.setAttribute('aria-busy', 'true');
         } else {
-          loadingEl.classList.add('is-fading');
-          loadingEl.setAttribute('aria-hidden', 'true');
-          loadingEl.removeAttribute('aria-busy');
-          loadingEl.__fadeTimer = setTimeout(function () {
-            loadingEl.classList.remove('is-visible');
-            loadingEl.classList.remove('is-fading');
-            loadingEl.setAttribute('hidden', '');
-            loadingEl.__fadeTimer = null;
-          }, fadeMs);
+          var elapsed = loadingEl.__shownAt ? Date.now() - loadingEl.__shownAt : 0;
+          var waitMs = Math.max(0, minShowMs - elapsed);
+          var startHide = function () {
+            loadingEl.classList.add('is-fading');
+            loadingEl.setAttribute('aria-hidden', 'true');
+            loadingEl.removeAttribute('aria-busy');
+            loadingEl.__fadeTimer = setTimeout(function () {
+              loadingEl.classList.remove('is-visible');
+              loadingEl.classList.remove('is-fading');
+              loadingEl.setAttribute('hidden', '');
+              loadingEl.__fadeTimer = null;
+              loadingEl.__shownAt = null;
+            }, fadeMs);
+          };
+          if (waitMs > 0) {
+            loadingEl.__fadeTimer = setTimeout(startHide, waitMs);
+          } else {
+            startHide();
+          }
         }
       }
 
