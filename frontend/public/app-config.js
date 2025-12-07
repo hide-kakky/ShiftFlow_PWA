@@ -5,11 +5,7 @@
 (function attachShiftFlowConfig(globalScope) {
   var existing = globalScope.SHIFT_FLOW_CONFIG || {};
   var config = Object.assign({}, existing, {
-<<<<<<< HEAD
-    APP_VERSION: '1.4.5',
-=======
     APP_VERSION: '1.4.6',
->>>>>>> 2970e94 (スプラッシュをロゴだけのフェード表示に変更)
     PROFILE_PLACEHOLDER_URL: 'https://placehold.jp/150x150.png',
     PROFILE_IMAGE_MAX_BYTES: 8 * 1024 * 1024,
     MESSAGE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
