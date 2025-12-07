@@ -175,6 +175,7 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
+    <link rel="preload" as="image" href="/icons/splash-logo.png" />
 
     <style>
       /* iOS標準の端スワイプ戻るを無効化 */
@@ -3685,7 +3686,7 @@
       body.auth-screen {
         overflow: hidden;
       }
-      body.auth-screen [data-app-shell] {
+      body.auth-screen [data-app-shell]:not(.bootstrap-loading) {
         opacity: 0;
         pointer-events: none !important;
         visibility: hidden;
@@ -3832,10 +3833,16 @@
     </div>
 
     <!-- ===== Initial bootstrap loading mask ===== -->
-    <div id="bootstrap-loading" class="bootstrap-loading" aria-hidden="true" data-app-shell hidden>
+    <div
+      id="bootstrap-loading"
+      class="bootstrap-loading is-visible"
+      aria-hidden="false"
+      aria-busy="true"
+      data-app-shell
+    >
       <div class="bootstrap-loading__card" role="status" aria-live="polite">
         <div class="bootstrap-loading__logo" aria-hidden="true">
-          <img src="/icons/splash-logo.png" alt="ShiftFlow ロゴ" loading="lazy" />
+          <img src="/icons/splash-logo.png" alt="ShiftFlow ロゴ" />
         </div>
       </div>
     </div>
