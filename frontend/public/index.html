@@ -6152,6 +6152,50 @@
       let APP_UPDATE_PROMPTED = false;
       let APP_UPDATE_REFRESHING = false;
 
+      function parseVersionSegments(input) {
+        if (!input) return [];
+        return String(input)
+          .split('.')
+          .map(function (seg) {
+            var num = parseInt(seg, 10);
+            return isFinite(num) ? num : 0;
+          });
+      }
+
+      function isNewerVersion(pending, current) {
+        if (!pending) return false;
+        if (!current) return true;
+        var pendingSegs = parseVersionSegments(pending);
+        var currentSegs = parseVersionSegments(current);
+        var len = Math.max(pendingSegs.length, currentSegs.length);
+        for (var i = 0; i < len; i++) {
+          var next = pendingSegs[i] || 0;
+          var now = currentSegs[i] || 0;
+          if (next > now) return true;
+          if (next < now) return false;
+        }
+        return pending !== current;
+      }
+
+      function hasForceRefreshMenu() {
+        return !!document.querySelector('[data-user-menu="force-refresh"]');
+      }
+
+      function shouldDisplayAppUpdate(dismissKey, pendingVersion) {
+        if (!pendingVersion) return false;
+        if (!isNewerVersion(pendingVersion, APP_VERSION_LABEL)) return false;
+        try {
+          if (localStorage.getItem(dismissKey)) {
+            return false;
+          }
+        } catch (_err) {
+          /* noop */
+        }
+        if (!hasForceRefreshMenu()) return false;
+        if (APP_UPDATE_PROMPTED) return false;
+        return true;
+      }
+
       function markUpdateDismissed(key) {
         if (!key) return;
         try {
@@ -9109,18 +9153,12 @@
       }
 
       function promptForAppUpdate(data) {
-        var pendingVersion = (data && data.version) || APP_VERSION_LABEL || 'unknown';
-        var dismissKey = APP_UPDATE_DISMISS_PREFIX + pendingVersion;
-        try {
-          if (localStorage.getItem(dismissKey)) {
-            return;
-          }
-        } catch (_err) {
-          /* noop */
-        }
-        if (APP_UPDATE_PROMPTED) return;
+        var pendingVersion = (data && data.version) || '';
+        var versionKey = pendingVersion || APP_VERSION_LABEL || 'unknown';
+        var dismissKey = APP_UPDATE_DISMISS_PREFIX + versionKey;
+        if (!shouldDisplayAppUpdate(dismissKey, pendingVersion)) return;
         APP_UPDATE_PROMPTED = true;
-        var versionLabel = data && data.version ? '（' + data.version + '）' : '';
+        var versionLabel = pendingVersion ? '（' + pendingVersion + '）' : '';
         notify(
           '最新版がリリースされました' +
             versionLabel +
