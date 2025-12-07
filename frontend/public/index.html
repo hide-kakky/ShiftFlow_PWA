@@ -11398,9 +11398,37 @@
               return f && f.id === fid;
             })
           : null;
-        var folderName = folder && folder.name ? String(folder.name) : String(message.folderName || '');
-        if (folderName && folderName.indexOf('シフト') !== -1) return true;
-        return false;
+          var folderName = folder && folder.name ? String(folder.name) : String(message.folderName || '');
+          if (folderName && folderName.indexOf('シフト') !== -1) return true;
+          return false;
+      }
+
+      function renderShiftHomeCard(message) {
+        var isRead = !!message.isRead;
+        var timestampLabel = resolveMessageTimestampLabel(message);
+        var title = message && message.title ? message.title : '（無題のシフト）';
+        var classes = ['card', 'app-card', 'msg-card', 'msg-card-compact', 'mb-2'];
+        if (!isRead) classes.push('unread');
+        return (
+          '<div class="' +
+          classes.join(' ') +
+          '" data-memo="' +
+          message.id +
+          '">' +
+          '<div class="app-card-body d-flex flex-column gap-1">' +
+          '<a href="#" class="msg-link link-surface d-flex align-items-center gap-2" data-message-link="' +
+          message.id +
+          '">' +
+          '<span class="fw-bold">' +
+          esc(title) +
+          '</span>' +
+          '</a>' +
+          (timestampLabel
+            ? '<small class="text-muted">' + esc(timestampLabel) + '</small>'
+            : '') +
+          '</div>' +
+          '</div>'
+        );
       }
 
       function renderHomeView(data) {
@@ -11441,7 +11469,7 @@
           ? shiftMessages
               .slice(0, 3)
               .map(function (m) {
-                return renderMessageCard(m, { compact: true, hideAction: true });
+                return renderShiftHomeCard(m);
               })
               .join('')
           : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">シフト投稿はありません。</div></div>';
