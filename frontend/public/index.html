@@ -479,7 +479,7 @@
       /* Header */
       header.navbar {
         position: relative;
-        background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+        background: var(--primary);
         color: var(--on-primary);
         border-bottom: none;
         min-height: var(--header-h);
@@ -510,7 +510,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+        background: var(--primary);
         box-shadow: 0 16px 28px rgba(85, 122, 187, 0.32);
         overflow: hidden;
       }
@@ -578,7 +578,7 @@
           content: '';
           position: absolute;
           inset: 0;
-          background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+          background: var(--primary);
           opacity: 0.96;
           z-index: -1;
         }
@@ -747,14 +747,14 @@
       }
 
       :root[data-theme='dark'] header.navbar {
-        background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+        background: var(--primary);
       }
       :root[data-theme='dark'] .topbar {
         background: var(--card);
       }
       @media (max-width: 768px) {
         :root[data-theme='dark'] header.navbar::before {
-          background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+          background: var(--primary);
         }
       }
       :root[data-theme='dark'] .footer-nav {
@@ -789,7 +789,7 @@
           content: '';
           position: absolute;
           inset: 0;
-          background: linear-gradient(135deg, #4b5f8f 0%, #2d3f6b 48%, #1f2f55 100%);
+          background: var(--primary);
           opacity: 0.96;
           z-index: -1;
         }
