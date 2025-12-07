@@ -566,7 +566,7 @@
         .navbar-brand.app-brand .brand-text-main {
           font-size: 1.12rem;
         }
-      header.navbar {
+        header.navbar {
           position: sticky;
           top: 0;
           z-index: 1080;
@@ -3798,12 +3798,13 @@
               <span id="auth-session-email" class="auth-session__email"></span>
             </div>
           </div>
-          <h1 class="auth-card__title">サインイン</h1>
-          <p class="auth-card__subtitle">Google アカウントで認証します。</p>
+          <h1 class="auth-card__title">SHIFTFLOW</h1>
           <p class="auth-card__version" id="authVersionText" aria-live="polite"></p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-request-id" id="auth-request-id" hidden>
-            <span class="auth-request-id__icon material-icons-outlined" aria-hidden="true">info</span>
+            <span class="auth-request-id__icon material-icons-outlined" aria-hidden="true"
+              >info</span
+            >
             <span class="auth-request-id__label">エラー ID:</span>
             <code id="auth-request-id-value">—</code>
             <span class="auth-request-id__hint"
@@ -6631,7 +6632,8 @@
               id: 'TPL-2',
               name: 'ヘルプ依頼',
               titleFormat: '【ヘルプ】ピーク対応お願い',
-              bodyFormat: '◯◯席で応援お願いします。完了したらメモに記録してください。（最新データ）',
+              bodyFormat:
+                '◯◯席で応援お願いします。完了したらメモに記録してください。（最新データ）',
               updatedAt: now - 60 * 60 * 1000,
             },
           ],
@@ -9228,11 +9230,11 @@
             '。ヘッダーメニューの「最新版を取得（再ログイン）」から更新してください。',
           true,
           {
-          duration: 0,
-          position: 'center',
-          onClose: function () {
-            markUpdateDismissed(dismissKey);
-          },
+            duration: 0,
+            position: 'center',
+            onClose: function () {
+              markUpdateDismissed(dismissKey);
+            },
           }
         );
       }
@@ -9630,7 +9632,9 @@
 
       function applyAuthMetaTheme() {
         var metaTheme = document.querySelector('meta[name="theme-color"]');
-        var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        var appleStatus = document.querySelector(
+          'meta[name="apple-mobile-web-app-status-bar-style"]'
+        );
         var getPrimary =
           typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
             ? window.__SHIFT_FLOW_GET_PRIMARY__
@@ -11544,9 +11548,10 @@
               return f && f.id === fid;
             })
           : null;
-          var folderName = folder && folder.name ? String(folder.name) : String(message.folderName || '');
-          if (folderName && folderName.indexOf('シフト') !== -1) return true;
-          return false;
+        var folderName =
+          folder && folder.name ? String(folder.name) : String(message.folderName || '');
+        if (folderName && folderName.indexOf('シフト') !== -1) return true;
+        return false;
       }
 
       function tShift(key, fallback) {
@@ -11558,7 +11563,10 @@
       function renderShiftHomeCard(message) {
         var isRead = !!message.isRead;
         var timestampLabel = resolveMessageTimestampLabel(message);
-        var title = message && message.title ? message.title : tShift('home_shift_untitled', '（無題のシフト）');
+        var title =
+          message && message.title
+            ? message.title
+            : tShift('home_shift_untitled', '（無題のシフト）');
         var classes = ['card', 'app-card', 'msg-card', 'msg-card-compact', 'mb-2'];
         if (!isRead) classes.push('unread');
         return (
@@ -11575,9 +11583,7 @@
           esc(title) +
           '</span>' +
           '</a>' +
-          (timestampLabel
-            ? '<small class="text-muted">' + esc(timestampLabel) + '</small>'
-            : '') +
+          (timestampLabel ? '<small class="text-muted">' + esc(timestampLabel) + '</small>' : '') +
           '</div>' +
           '</div>'
         );
