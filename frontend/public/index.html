@@ -4128,22 +4128,6 @@
                   <div class="home-panel__head">
                     <div class="section-head">
                       <span class="section-head-icon material-icons-outlined" aria-hidden="true"
-                        >event_note</span
-                      >
-                      <h3 class="m-0">シフト</h3>
-                    </div>
-                    <a href="#" class="link-soft" id="home-shift-view-all">
-                      <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
-                      <span>過去シフト</span>
-                    </a>
-                  </div>
-                  <div id="home-shift-messages" class="mt-2"></div>
-                </article>
-
-                <article class="home-panel">
-                  <div class="home-panel__head">
-                    <div class="section-head">
-                      <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                         >calendar_month</span
                       >
                       <h3 class="m-0" data-i18n="home_recent_tasks_title">直近のタスク</h3>
@@ -4155,6 +4139,22 @@
                   </div>
                   <!-- Mount point for the "today's tasks" card list -->
                   <div id="home-today-tasks" class="mt-2"></div>
+                </article>
+
+                <article class="home-panel">
+                  <div class="home-panel__head">
+                    <div class="section-head">
+                      <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                        >event_note</span
+                      >
+                      <h3 class="m-0" data-i18n="home_shift_title">シフト</h3>
+                    </div>
+                    <a href="#" class="link-soft" id="home-shift-view-all">
+                      <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                      <span data-i18n="home_shift_link">過去シフト</span>
+                    </a>
+                  </div>
+                  <div id="home-shift-messages" class="mt-2"></div>
                 </article>
 
                 <article class="home-panel">
@@ -11403,10 +11403,16 @@
           return false;
       }
 
+      function tShift(key, fallback) {
+        var hasI18n = globalThis.I18n && typeof globalThis.I18n.t === 'function';
+        if (hasI18n) return globalThis.I18n.t(key);
+        return typeof fallback === 'string' ? fallback : key;
+      }
+
       function renderShiftHomeCard(message) {
         var isRead = !!message.isRead;
         var timestampLabel = resolveMessageTimestampLabel(message);
-        var title = message && message.title ? message.title : '（無題のシフト）';
+        var title = message && message.title ? message.title : tShift('home_shift_untitled', '（無題のシフト）');
         var classes = ['card', 'app-card', 'msg-card', 'msg-card-compact', 'mb-2'];
         if (!isRead) classes.push('unread');
         return (
@@ -11472,7 +11478,9 @@
                 return renderShiftHomeCard(m);
               })
               .join('')
-          : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">シフト投稿はありません。</div></div>';
+          : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">' +
+            esc(tShift('home_shift_empty', 'シフト投稿はありません。')) +
+            '</div></div>';
         byId('home-shift-messages').innerHTML = shiftHTML;
 
         var sourceRows =
