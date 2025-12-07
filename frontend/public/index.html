@@ -3450,9 +3450,9 @@
         align-items: center;
         justify-content: center;
         padding: clamp(24px, 5vw, 64px);
-        background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.26), transparent 55%),
-          radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.18), transparent 45%),
-          linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.75));
+        background: radial-gradient(circle at top right, rgba(85, 122, 187, 0.28), transparent 55%),
+          radial-gradient(circle at bottom left, rgba(85, 122, 187, 0.24), transparent 45%),
+          linear-gradient(135deg, #4f6fb8, #6489d3);
         backdrop-filter: blur(16px);
         z-index: 3000;
       }
@@ -3469,10 +3469,11 @@
       .auth-card {
         width: min(360px, 100%);
         margin: 0 auto;
-        background: rgba(15, 23, 42, 0.92);
+        background: rgba(255, 255, 255, 0.92);
         border-radius: 24px;
         padding: clamp(28px, 4vw, 40px);
-        box-shadow: 0 28px 72px rgba(2, 6, 23, 0.55);
+        box-shadow: 0 24px 64px rgba(85, 122, 187, 0.18);
+        border: 1px solid rgba(85, 122, 187, 0.18);
         display: flex;
         flex-direction: column;
         gap: 20px;
@@ -3482,29 +3483,33 @@
         margin: 0;
         font-size: 1.6rem;
         font-weight: 600;
-        color: #f8fafc;
+        color: var(--text-900);
         text-align: center;
       }
       .auth-card__subtitle {
         margin: 0;
         font-size: 0.96rem;
-        color: rgba(226, 232, 240, 0.75);
+        color: var(--muted);
         text-align: center;
         line-height: 1.6;
       }
       .auth-card__version {
         margin: 0;
         font-size: 0.78rem;
-        color: rgba(226, 232, 240, 0.55);
+        color: rgba(37, 99, 235, 0.7);
         text-align: center;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
       .auth-card__hint {
         font-size: 0.82rem;
-        color: rgba(226, 232, 240, 0.6);
+        color: rgba(15, 23, 42, 0.82);
         text-align: center;
         line-height: 1.6;
+        background: rgba(85, 122, 187, 0.1);
+        border: 1px solid rgba(85, 122, 187, 0.25);
+        border-radius: 14px;
+        padding: 10px 14px;
       }
       .auth-card__actions {
         display: grid;
@@ -3524,8 +3529,8 @@
         height: 52px;
         border-radius: 18px;
         object-fit: cover;
-        background: rgba(148, 163, 184, 0.25);
-        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(85, 122, 187, 0.12);
+        border: 1px solid rgba(85, 122, 187, 0.18);
       }
       .auth-session__meta {
         display: flex;
@@ -3538,7 +3543,7 @@
       }
       .auth-session__email {
         font-size: 0.9rem;
-        color: rgba(226, 232, 240, 0.7);
+        color: rgba(15, 23, 42, 0.7);
       }
       .auth-button {
         display: inline-flex;
@@ -3559,50 +3564,52 @@
         font-size: 1.3rem;
       }
       .auth-button--primary {
-        background: linear-gradient(135deg, #2563eb, #38bdf8);
-        color: #f8fafc;
-        box-shadow: 0 18px 36px rgba(37, 99, 235, 0.35);
+        background: linear-gradient(135deg, #3f5ea8, #6fb7ff);
+        color: var(--on-primary);
+        box-shadow: 0 18px 38px rgba(63, 94, 168, 0.45);
+        border: 1px solid rgba(42, 73, 139, 0.75);
       }
       .auth-button--primary:hover {
         transform: translateY(-1px);
-        box-shadow: 0 20px 45px rgba(37, 99, 235, 0.4);
+        box-shadow: 0 22px 52px rgba(63, 94, 168, 0.55);
+        filter: brightness(1.02);
       }
       .auth-button--secondary {
-        background: rgba(148, 163, 184, 0.15);
-        color: #e2e8f0;
-        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(85, 122, 187, 0.08);
+        color: var(--text-900);
+        border: 1px solid rgba(85, 122, 187, 0.2);
       }
       .auth-button--secondary:hover {
         transform: translateY(-1px);
-        border-color: rgba(148, 163, 184, 0.38);
+        border-color: rgba(85, 122, 187, 0.38);
       }
       .auth-button--ghost {
         background: transparent;
-        color: rgba(226, 232, 240, 0.85);
-        border: 1px dashed rgba(226, 232, 240, 0.45);
+        color: rgba(15, 23, 42, 0.85);
+        border: 1px dashed rgba(85, 122, 187, 0.4);
       }
       .auth-button--ghost:hover,
       .auth-button--ghost:focus {
-        color: #fff;
-        border-color: rgba(255, 255, 255, 0.85);
-        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-900);
+        border-color: rgba(85, 122, 187, 0.75);
+        background: rgba(85, 122, 187, 0.08);
       }
       .auth-meta {
         display: none;
       }
       .auth-meta strong {
-        color: #f8fafc;
+        color: var(--text-900);
       }
       .auth-error {
         display: none;
         font-size: 0.88rem;
         line-height: 1.6;
-        color: #fff8eb;
-        background: linear-gradient(135deg, rgba(251, 191, 36, 0.28), rgba(217, 119, 6, 0.28));
-        border: 1px solid rgba(251, 191, 36, 0.7);
+        color: #b42318;
+        background: linear-gradient(135deg, rgba(252, 165, 165, 0.25), rgba(248, 113, 113, 0.12));
+        border: 1px solid rgba(248, 113, 113, 0.6);
         border-radius: 14px;
         padding: 12px 16px;
-        box-shadow: 0 12px 28px rgba(217, 119, 6, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        box-shadow: 0 12px 28px rgba(248, 113, 113, 0.25), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
       }
       .auth-error.is-visible {
         display: block;
@@ -3612,21 +3619,32 @@
         padding: 10px 14px;
         border-radius: 14px;
         font-size: 0.9rem;
-        background: rgba(15, 23, 42, 0.05);
-        color: #0f172a;
+        background: rgba(85, 122, 187, 0.12);
+        color: var(--text-900);
+        border: 1px solid rgba(85, 122, 187, 0.45);
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 10px;
+        align-items: center;
+        box-shadow: 0 10px 28px rgba(85, 122, 187, 0.25);
       }
       .auth-request-id__label {
         font-weight: 600;
         margin-right: 8px;
+      }
+      .auth-request-id__icon {
+        font-size: 1.2rem;
+        color: rgba(42, 73, 139, 0.95);
       }
       .auth-request-id__hint {
         display: block;
         margin-top: 4px;
         font-size: 0.8rem;
         color: rgba(15, 23, 42, 0.6);
+        grid-column: 2 / span 1;
       }
       :root[data-theme='dark'] .auth-request-id {
-        background: rgba(226, 232, 240, 0.08);
+        background: rgba(85, 122, 187, 0.12);
         color: rgba(248, 250, 252, 0.94);
       }
       :root[data-theme='dark'] .auth-request-id__hint {
@@ -3785,6 +3803,7 @@
           <p class="auth-card__version" id="authVersionText" aria-live="polite"></p>
           <div class="auth-error" id="auth-error"></div>
           <div class="auth-request-id" id="auth-request-id" hidden>
+            <span class="auth-request-id__icon material-icons-outlined" aria-hidden="true">info</span>
             <span class="auth-request-id__label">エラー ID:</span>
             <code id="auth-request-id-value">—</code>
             <span class="auth-request-id__hint"
@@ -9521,10 +9540,20 @@
         BOOTSTRAP_STARTED = false;
       }
 
+      function isLoginPromptMessage(text) {
+        var trimmed = String(text || '').trim();
+        if (!trimmed) return false;
+        return (
+          trimmed === 'Google でログインしてください。' ||
+          trimmed === 'Google へサインインしてください。' ||
+          trimmed === 'ShiftFlow を利用するには Google アカウントでのサインインが必要です。'
+        );
+      }
+
       function setAuthOverlayMessage(text) {
         const errorEl = byId('auth-error');
         if (!errorEl) return;
-        if (text) {
+        if (text && !isLoginPromptMessage(text)) {
           errorEl.textContent = text;
           errorEl.classList.add('is-visible');
         } else {
@@ -9533,12 +9562,18 @@
         }
       }
 
-      function setAuthOverlayRequestId(requestId) {
+      function setAuthOverlayRequestId(requestId, message) {
         const wrap = byId('auth-request-id');
         const valueEl = byId('auth-request-id-value');
         if (!wrap || !valueEl) return;
         const normalized =
           typeof requestId === 'string' && requestId.trim() ? requestId.trim() : '';
+        var hideForLoginPrompt = isLoginPromptMessage(message);
+        if (hideForLoginPrompt) {
+          valueEl.textContent = '';
+          wrap.setAttribute('hidden', 'hidden');
+          return;
+        }
         if (normalized) {
           valueEl.textContent = normalized;
           wrap.removeAttribute('hidden');
@@ -9561,20 +9596,21 @@
         } else if (maybeOptions && typeof maybeOptions === 'object') {
           overlayOpts = maybeOptions;
         }
-        const overlayRequestId =
-          typeof overlayOpts.requestId === 'string' && overlayOpts.requestId.trim()
-            ? overlayOpts.requestId.trim()
-            : '';
-        setAuthOverlayRequestId(overlayRequestId);
-        const overlay = byId('auth-overlay');
         var displayMessage = resolvedMessage;
         if (!displayMessage && IS_MOBILE) {
           displayMessage = 'ShiftFlow を利用するには Google アカウントでのサインインが必要です。';
         }
+        const overlayRequestId =
+          typeof overlayOpts.requestId === 'string' && overlayOpts.requestId.trim()
+            ? overlayOpts.requestId.trim()
+            : '';
+        setAuthOverlayRequestId(overlayRequestId, displayMessage);
+        const overlay = byId('auth-overlay');
         if (document.body) {
           document.body.classList.add('auth-screen');
         }
         setAppShellHidden(true);
+        applyAuthMetaTheme();
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
@@ -9589,6 +9625,32 @@
               /* noop */
             }
           }, 50);
+        }
+      }
+
+      function applyAuthMetaTheme() {
+        var metaTheme = document.querySelector('meta[name="theme-color"]');
+        var appleStatus = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        var getPrimary =
+          typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
+            ? window.__SHIFT_FLOW_GET_PRIMARY__
+            : function (mode) {
+                if (mode === 'dark') return '#4b67b3';
+                return '#557abb';
+              };
+        var primaryColor = getPrimary('light');
+        if (metaTheme && primaryColor) {
+          metaTheme.setAttribute('content', primaryColor);
+        }
+        if (appleStatus) {
+          appleStatus.setAttribute('content', 'default');
+        }
+      }
+
+      function restoreMetaTheme() {
+        var pref = document.documentElement.dataset.themePref || 'light';
+        if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function') {
+          window.__SHIFT_FLOW_SYNC_THEME_META__(pref);
         }
       }
 
@@ -9611,6 +9673,7 @@
           setAppShellHidden(true);
           return;
         }
+        restoreMetaTheme();
         if (document.body) {
           document.body.classList.remove('auth-screen');
         }
