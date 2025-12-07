@@ -4128,6 +4128,22 @@
                   <div class="home-panel__head">
                     <div class="section-head">
                       <span class="section-head-icon material-icons-outlined" aria-hidden="true"
+                        >event_note</span
+                      >
+                      <h3 class="m-0">シフト</h3>
+                    </div>
+                    <a href="#" class="link-soft" id="home-shift-view-all">
+                      <span class="material-icons-outlined" aria-hidden="true">open_in_new</span>
+                      <span>過去シフト</span>
+                    </a>
+                  </div>
+                  <div id="home-shift-messages" class="mt-2"></div>
+                </article>
+
+                <article class="home-panel">
+                  <div class="home-panel__head">
+                    <div class="section-head">
+                      <span class="section-head-icon material-icons-outlined" aria-hidden="true"
                         >calendar_month</span
                       >
                       <h3 class="m-0" data-i18n="home_recent_tasks_title">直近のタスク</h3>
@@ -6246,6 +6262,18 @@
           role: 'manager',
           imageUrl: TEST_THUMB_URL,
         };
+        var qaAuditor = {
+          email: 'auditor@shiftflow.dev',
+          name: 'QA 監査',
+          role: 'manager',
+          imageUrl: TEST_THUMB_URL,
+        };
+        var frontStaff = {
+          email: 'front.staff@shiftflow.dev',
+          name: 'フロント担当',
+          role: 'member',
+          imageUrl: TEST_AVATAR_URL,
+        };
         var users = [
           { email: testEmail, name: testName, role: profile, imageUrl: testAvatar },
           teamManager,
@@ -6255,55 +6283,110 @@
             role: 'manager',
             imageUrl: TEST_THUMB_URL,
           },
+          frontStaff,
           {
             email: 'guest.temp@shiftflow.dev',
             name: 'スポットワーカー',
             role: 'guest',
             imageUrl: TEST_AVATAR_URL,
           },
+          qaAuditor,
         ];
 
         var tasks = [
           createTestTask({
-            id: 'TASK-101',
-            title: '【テスト】開店前チェックリスト',
+            id: 'TASK-401',
+            title: '【テスト】開店前チェック (最新版)',
             priority: '高',
             status: '対応中',
             dueOffsetDays: 0,
-            assignees: [testEmail, 'kitchen.lead@shiftflow.dev'],
-            description: 'ホール・厨房の温度と備品を確認してください。',
+            assignees: [testEmail, frontStaff.email],
+            description: 'レジ準備・温度・釣銭残高を確認してください。写真付きで記録済み。',
+            attachments: [
+              {
+                name: '開店チェックリスト.pdf',
+                url: TEST_ATTACHMENT_MENU,
+                mimeType: 'application/pdf',
+                size: 22000,
+              },
+              {
+                name: '温度記録.jpg',
+                url: TEST_ATTACHMENT_IMAGE,
+                mimeType: 'image/jpeg',
+                size: 184025,
+              },
+            ],
             createdBy: teamManager.email,
           }),
           createTestTask({
-            id: 'TASK-102',
-            title: '【テスト】夕方の追加シフト確認',
+            id: 'TASK-402',
+            title: '【テスト】週次シフト確定レビュー',
             priority: '中',
             status: '未着手',
             dueOffsetDays: 1,
-            assignees: [testEmail],
+            assignees: [teamManager.email],
+            repeatRule: 'WEEKLY',
+            description: '提出されたシフトを承認し、掲示板へ掲載してください。',
             createdBy: teamManager.email,
           }),
           createTestTask({
-            id: 'TASK-103',
-            title: '【テスト】備品の在庫共有',
+            id: 'TASK-403',
+            title: '【テスト】在庫棚卸し＆発注案',
+            priority: '中',
+            status: '対応中',
+            dueOffsetDays: 2,
+            assignees: [testEmail, 'kitchen.lead@shiftflow.dev'],
+            description: '冷蔵庫の在庫を確認して発注案を作成してください。',
+            attachments: [
+              {
+                name: '棚卸しシート.xlsx',
+                url: TEST_ATTACHMENT_MENU,
+                mimeType: 'application/vnd.ms-excel',
+                size: 18000,
+              },
+            ],
+            createdBy: teamManager.email,
+          }),
+          createTestTask({
+            id: 'TASK-404',
+            title: '【テスト】衛生パトロール（写真つき）',
+            priority: '高',
+            status: '未着手',
+            dueOffsetDays: -1,
+            assignees: [testEmail],
+            createdBy: qaAuditor.email,
+            description: 'バックヤードの清掃状況を写真で共有してください。',
+            attachments: [
+              {
+                name: '消毒ポイント.jpg',
+                url: TEST_ATTACHMENT_IMAGE,
+                mimeType: 'image/jpeg',
+                size: 210534,
+              },
+            ],
+          }),
+          createTestTask({
+            id: 'TASK-405',
+            title: '【テスト】新人OJTフィードバック',
             priority: '低',
             status: '完了',
-            dueOffsetDays: -1,
-            assignees: ['kitchen.lead@shiftflow.dev'],
+            dueOffsetDays: -2,
+            assignees: [frontStaff.email],
+            description: '1週目終了の振り返りをコメントにまとめました。',
             createdBy: testEmail,
           }),
         ];
         if (isManagerProfile) {
           tasks.push(
             createTestTask({
-              id: 'TASK-201',
-              title: '【管理】承認待ちユーザー確認',
+              id: 'TASK-501',
+              title: '【管理】権限レビューと棚卸し',
               priority: '高',
               status: '対応中',
               dueOffsetDays: 0,
               assignees: [testEmail],
               createdBy: testEmail,
-              description: '管理画面で承認待ち 2 件を確認してください。',
+              description: '停止候補 1 件・保留 1 件を確認してください。',
             })
           );
         }
@@ -6311,24 +6394,31 @@
         var baseComments = [
           {
             id: 'CMT-1',
-            body: 'テストコメント: 進捗を確認しました。',
+            body: '12/07 更新のテストコメント: 進捗を確認しました。',
             authorEmail: teamManager.email,
-            createdAt: '2024/06/30 09:10',
+            createdAt: '2025/12/07 09:10',
+          },
+          {
+            id: 'CMT-2',
+            body: '写真付きで助かります。夜の衛生チェックでも使います。',
+            authorEmail: 'kitchen.lead@shiftflow.dev',
+            createdAt: '2025/12/07 09:20',
           },
         ];
         var messages = [
           createTestMessage({
-            id: 'MSG-201',
-            title: '【テスト】7/1 ホール連絡事項',
+            id: 'MSG-301',
+            title: '【テスト】12月シフト最終版',
             priority: '高',
             isRead: false,
-            isPinned: isManagerProfile,
+            folderId: 'シフト共有',
+            isPinned: true,
             attachments: [
               {
-                name: 'ホール配置図.jpg',
-                url: TEST_ATTACHMENT_IMAGE,
-                mimeType: 'image/jpeg',
-                size: 180245,
+                name: '2025-12-シフト.pdf',
+                url: TEST_ATTACHMENT_MENU,
+                mimeType: 'application/pdf',
+                size: 32000,
               },
             ],
             comments: baseComments,
@@ -6336,29 +6426,38 @@
             unreadUsers: [{ email: testEmail, label: testName }],
           }),
           createTestMessage({
-            id: 'MSG-202',
-            title: '【テスト】厨房シフトの共有',
+            id: 'MSG-302',
+            title: '【テスト】年末棚卸し手順',
             priority: '中',
-            folderId: 'キッチン',
-            isRead: true,
+            folderId: 'バックヤード',
+            isRead: isManagerProfile,
             attachments: [
               {
-                name: '仕込み手順.pdf',
-                url: TEST_ATTACHMENT_MENU,
-                mimeType: 'application/pdf',
-                size: 24000,
+                name: '棚卸しチェックリスト.jpg',
+                url: TEST_ATTACHMENT_IMAGE,
+                mimeType: 'image/jpeg',
+                size: 160000,
               },
             ],
             comments: [],
           }),
           createTestMessage({
-            id: 'MSG-203',
-            title: '【管理】承認待ちの確認と通知設定',
+            id: 'MSG-303',
+            title: '【管理】通知設定の確認とテスト送信',
             priority: '中',
             folderId: '全体',
             isRead: isManagerProfile,
             isPinned: isManagerProfile,
-            body: '管理者向けのテスト通知です。ユーザー承認とフォルダ管理のテストにご利用ください。',
+            body: 'プッシュ通知とメール通知のルート確認用です。設定画面のテスト送信ボタンでも挙動を確認できます。',
+            comments: [],
+          }),
+          createTestMessage({
+            id: 'MSG-304',
+            title: '【テスト】新人さん向け引き継ぎメモ',
+            priority: '低',
+            folderId: 'ホール',
+            isRead: true,
+            attachments: [],
             comments: [],
           }),
         ];
@@ -6372,7 +6471,17 @@
             isSystem: true,
             memberUserIds: [],
             memberCount: users.length,
-            updatedAt: now - 60 * 60 * 1000,
+            updatedAt: now - 30 * 60 * 1000,
+          },
+          {
+            id: 'シフト共有',
+            name: 'シフト共有',
+            color: '#22c55e',
+            isPublic: false,
+            isActive: true,
+            memberUserIds: [testEmail, teamManager.email, frontStaff.email],
+            memberCount: 3,
+            updatedAt: now - 20 * 60 * 1000,
           },
           {
             id: 'ホール',
@@ -6380,9 +6489,9 @@
             color: '#f59e0b',
             isPublic: false,
             isActive: true,
-            memberUserIds: [testEmail, teamManager.email],
-            memberCount: 2,
-            updatedAt: now - 2 * 60 * 60 * 1000,
+            memberUserIds: [testEmail, teamManager.email, frontStaff.email],
+            memberCount: 3,
+            updatedAt: now - 70 * 60 * 1000,
           },
           {
             id: 'キッチン',
@@ -6390,9 +6499,9 @@
             color: '#06b6d4',
             isPublic: false,
             isActive: true,
-            memberUserIds: ['kitchen.lead@shiftflow.dev'],
-            memberCount: 1,
-            updatedAt: now - 3 * 60 * 60 * 1000,
+            memberUserIds: ['kitchen.lead@shiftflow.dev', testEmail],
+            memberCount: 2,
+            updatedAt: now - 2 * 60 * 60 * 1000,
           },
           {
             id: 'バックヤード',
@@ -6400,19 +6509,26 @@
             color: '#8b5cf6',
             isPublic: false,
             isActive: true,
-            memberUserIds: [testEmail],
+            memberUserIds: [testEmail, qaAuditor.email],
             memberCount: 2,
-            updatedAt: now - 24 * 60 * 60 * 1000,
+            updatedAt: now - 6 * 60 * 60 * 1000,
           },
         ];
         var templates = {
           全体: [
             {
               id: 'TPL-1',
-              name: '朝会アジェンダ',
+              name: '朝会アジェンダ (最新版)',
               titleFormat: '【共有】本日の朝会',
-              bodyFormat: '・新人共有\n・安全確認\n・今日の重点',
-              updatedAt: now - 30 * 60 * 1000,
+              bodyFormat: '・安全目標\n・重点連絡\n・今日の担当',
+              updatedAt: now - 15 * 60 * 1000,
+            },
+            {
+              id: 'TPL-3',
+              name: '緊急共有テンプレ',
+              titleFormat: '【至急】',
+              bodyFormat: '・状況\n・対応\n・連絡先',
+              updatedAt: now - 25 * 60 * 1000,
             },
           ],
           ホール: [
@@ -6420,8 +6536,17 @@
               id: 'TPL-2',
               name: 'ヘルプ依頼',
               titleFormat: '【ヘルプ】ピーク対応お願い',
-              bodyFormat: '◯◯席で応援お願いします。完了したらメモに記録してください。',
-              updatedAt: now - 2 * 60 * 60 * 1000,
+              bodyFormat: '◯◯席で応援お願いします。完了したらメモに記録してください。（最新データ）',
+              updatedAt: now - 60 * 60 * 1000,
+            },
+          ],
+          シフト共有: [
+            {
+              id: 'TPL-4',
+              name: 'シフト確定連絡',
+              titleFormat: '【シフト】週次確定しました',
+              bodyFormat: '対象週:\n変更点:\n確認期限:',
+              updatedAt: now - 40 * 60 * 1000,
             },
           ],
         };
@@ -6452,7 +6577,7 @@
             avatarUrl: TEST_THUMB_URL,
             orgName: TEST_DEMO_ORG_LABEL,
             orgId: TEST_DEMO_ORG_ID,
-            lastLoginLabel: '昨日 18:20',
+            lastLoginLabel: '今日 09:15',
             membershipStatus: 'active',
             userStatus: 'active',
             approvedBy: 'system',
@@ -6462,23 +6587,6 @@
           },
           {
             userId: 'user-002',
-            email: 'crew.one@shiftflow.dev',
-            name: 'ホール担当A',
-            role: 'member',
-            status: 'pending',
-            avatarUrl: TEST_AVATAR_URL,
-            orgName: TEST_DEMO_ORG_LABEL,
-            orgId: TEST_DEMO_ORG_ID,
-            lastLoginLabel: '—',
-            membershipStatus: 'pending',
-            userStatus: 'pending',
-            approvedBy: '',
-            approvedAtLabel: '',
-            notes: '入社手続き待ち',
-            isActive: false,
-          },
-          {
-            userId: 'user-003',
             email: 'kitchen.lead@shiftflow.dev',
             name: '厨房リード',
             role: 'manager',
@@ -6486,13 +6594,30 @@
             avatarUrl: TEST_THUMB_URL,
             orgName: TEST_DEMO_ORG_LABEL,
             orgId: TEST_DEMO_ORG_ID,
-            lastLoginLabel: '今日 08:45',
+            lastLoginLabel: '今日 08:50',
             membershipStatus: 'active',
             userStatus: 'active',
             approvedBy: teamManager.name,
             approvedAtLabel: '1日前',
             notes: '厨房の安全担当',
             isActive: true,
+          },
+          {
+            userId: 'user-003',
+            email: frontStaff.email,
+            name: frontStaff.name,
+            role: frontStaff.role,
+            status: 'pending',
+            avatarUrl: frontStaff.imageUrl,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '—',
+            membershipStatus: 'pending',
+            userStatus: 'pending',
+            approvedBy: '',
+            approvedAtLabel: '',
+            notes: '入社手続き中',
+            isActive: false,
           },
           {
             userId: 'user-004',
@@ -6513,6 +6638,23 @@
           },
           {
             userId: 'user-005',
+            email: qaAuditor.email,
+            name: qaAuditor.name,
+            role: qaAuditor.role,
+            status: 'suspended',
+            avatarUrl: qaAuditor.imageUrl,
+            orgName: TEST_DEMO_ORG_LABEL,
+            orgId: TEST_DEMO_ORG_ID,
+            lastLoginLabel: '3日前',
+            membershipStatus: 'suspended',
+            userStatus: 'suspended',
+            approvedBy: teamManager.name,
+            approvedAtLabel: '3日前',
+            notes: '通知テスト用アカウント',
+            isActive: false,
+          },
+          {
+            userId: 'user-006',
             email: 'hq.admin@shiftflow.dev',
             name: '本部管理',
             role: 'admin',
@@ -6578,6 +6720,22 @@
             userEmail: testEmail,
             meta: { route: 'addNewMessage', requestId: 'TEST-AUD-3' },
           },
+          {
+            id: 'AUD-4',
+            type: 'admin',
+            typeLabel: '管理操作',
+            eventLabel: '組織設定',
+            statusLabel: '成功',
+            severity: 'success',
+            summary: '通知メール先を更新しました。',
+            occurredAt: now - 90 * 60 * 1000,
+            occurredLabel: new Date(now - 90 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
+            userLabel: testName,
+            userEmail: testEmail,
+            meta: { route: 'adminUpdateOrganization', requestId: 'TEST-AUD-4' },
+          },
         ];
         var orgs = [
           {
@@ -6587,7 +6745,7 @@
             displayColor: '#517CB2',
             notificationEmail: 'alerts@shiftflow.dev',
             timezone: 'Asia/Tokyo',
-            updatedAt: '2024/07/01 09:00',
+            updatedAt: '2025/12/07 09:00',
           },
           {
             orgId: 'east-cafe',
@@ -6596,19 +6754,38 @@
             displayColor: '#16a34a',
             notificationEmail: 'east@shiftflow.dev',
             timezone: 'Asia/Tokyo',
-            updatedAt: '2024/07/01 08:45',
+            updatedAt: '2025/12/07 08:45',
+          },
+          {
+            orgId: 'tokyo-hq',
+            name: 'Tokyo HQ',
+            shortName: 'HQ',
+            displayColor: '#0ea5e9',
+            notificationEmail: 'hq@shiftflow.dev',
+            timezone: 'Asia/Tokyo',
+            updatedAt: '2025/12/06 18:00',
           },
         ];
         var orgStats = {};
         orgStats[TEST_DEMO_ORG_ID] = {
-          totalMembers: adminUsers.length,
-          statusCounts: { pending: 1, active: 3, suspended: 0, revoked: 1 },
-          roleCounts: { admin: 1, manager: 2, member: 1, guest: 1 },
+          totalMembers: 6,
+          statusCounts: { pending: 1, active: 3, suspended: 1, revoked: 1 },
+          roleCounts: {
+            admin: 0,
+            manager: isManagerProfile ? 4 : 3,
+            member: isManagerProfile ? 1 : 2,
+            guest: 1,
+          },
         };
         orgStats['east-cafe'] = {
-          totalMembers: 12,
-          statusCounts: { pending: 1, active: 9, suspended: 1, revoked: 1 },
-          roleCounts: { admin: 1, manager: 2, member: 7, guest: 2 },
+          totalMembers: 14,
+          statusCounts: { pending: 1, active: 11, suspended: 1, revoked: 1 },
+          roleCounts: { admin: 1, manager: 3, member: 7, guest: 2 },
+        };
+        orgStats['tokyo-hq'] = {
+          totalMembers: 5,
+          statusCounts: { pending: 0, active: 5, suspended: 0, revoked: 0 },
+          roleCounts: { admin: 1, manager: 2, member: 2, guest: 0 },
         };
         var userInfo = {
           email: testEmail,
@@ -6635,8 +6812,8 @@
               totalTasks: tasks.length,
               matchedTasks: tasks.length,
               note: isManagerProfile
-                ? 'テストデータ (管理モード / 永続化なし)'
-                : 'テストデータ (ローカルのみ)',
+                ? 'テストデータ 2025-12 更新 (管理モード / 永続化なし)'
+                : 'テストデータ 2025-12 更新 (ローカルのみ)',
             },
           },
           isManager: isManagerProfile,
@@ -11199,6 +11376,33 @@
         return h;
       }
 
+      function findShiftFolderId() {
+        var folders = Array.isArray(FOLDERS) ? FOLDERS : [];
+        var hit = folders.find(function (f) {
+          if (!f) return false;
+          var id = String(f.id || '');
+          var name = String(f.name || '');
+          return id.indexOf('シフト') !== -1 || name.indexOf('シフト') !== -1;
+        });
+        return hit && hit.id ? hit.id : '';
+      }
+
+      function isShiftFolderMessage(message, shiftFolderId) {
+        if (!message) return false;
+        var fid = String(message.folderId || '').trim();
+        if (shiftFolderId && fid && fid === shiftFolderId) return true;
+        if (fid && fid.indexOf('シフト') !== -1) return true;
+        var folders = Array.isArray(FOLDERS) ? FOLDERS : [];
+        var folder = fid
+          ? folders.find(function (f) {
+              return f && f.id === fid;
+            })
+          : null;
+        var folderName = folder && folder.name ? String(folder.name) : String(message.folderName || '');
+        if (folderName && folderName.indexOf('シフト') !== -1) return true;
+        return false;
+      }
+
       function renderHomeView(data) {
         var payload = data || {};
         var tasks = normalizeArray(payload.tasks);
@@ -11228,6 +11432,21 @@
               .join('')
           : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">未読のメッセージはありません。</div></div>';
         byId('home-unread').innerHTML = mHTML;
+
+        var shiftFolderId = findShiftFolderId();
+        var shiftMessages = normalizeArray(payload.messages).filter(function (m) {
+          return isShiftFolderMessage(m, shiftFolderId);
+        });
+        var shiftHTML = shiftMessages.length
+          ? shiftMessages
+              .slice(0, 3)
+              .map(function (m) {
+                return renderMessageCard(m, { compact: true, hideAction: true });
+              })
+              .join('')
+          : '<div class="card app-card msg-card mb-2"><div class="card-body text-muted">シフト投稿はありません。</div></div>';
+        byId('home-shift-messages').innerHTML = shiftHTML;
+
         var sourceRows =
           TASK_STATE &&
           TASK_STATE.my &&
@@ -11343,6 +11562,7 @@
           var card = authRequiredCard();
           byId('home-today-tasks').innerHTML = card;
           byId('home-unread').innerHTML = card;
+          byId('home-shift-messages').innerHTML = card;
           if (!AUTH_NOTICE_SHOWN) {
             notify(AUTH_NOTICE_MESSAGE, false);
             AUTH_NOTICE_SHOWN = true;
@@ -11357,6 +11577,7 @@
           if (skeletonRendered) return;
           byId('home-today-tasks').innerHTML = skel(3);
           byId('home-unread').innerHTML = skel(3);
+          byId('home-shift-messages').innerHTML = skel(3);
           skeletonRendered = true;
         }
         return loadHomeFromCache()
@@ -12578,6 +12799,25 @@
       }
       attachMessageCardNavigation('msg-list');
       attachMessageCardNavigation('home-unread');
+      attachMessageCardNavigation('home-shift-messages');
+
+      function navigateToShiftFolder(event) {
+        if (event) event.preventDefault();
+        var folderId = findShiftFolderId();
+        var select = byId('flt-msg-folder');
+        if (select) {
+          select.value = folderId || '';
+          try {
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (_err) {
+            var ev = document.createEvent('Event');
+            ev.initEvent('change', true, true);
+            select.dispatchEvent(ev);
+          }
+        }
+        navigateTo('messages', { force: true });
+      }
+      on('home-shift-view-all', 'click', navigateToShiftFolder);
       function togglePin(btn, memoId, shouldPin) {
         if (!IS_MANAGER) {
           notify('ピン操作は管理者のみ可能です。', false);
