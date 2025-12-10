@@ -90,6 +90,7 @@ const ROUTE_PERMISSIONS = {
   listAllTasks: ['admin', 'manager'],
   getMessages: ['admin', 'manager', 'member'],
   getMessageById: ['admin', 'manager', 'member'],
+  addNewComment: ['admin', 'manager', 'member'],
   addNewMessage: ['admin', 'manager', 'member'],
   deleteMessageById: ['admin', 'manager', 'member'],
   toggleMemoRead: ['admin', 'manager', 'member'],

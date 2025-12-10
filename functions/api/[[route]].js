@@ -280,6 +280,10 @@ function generateTaskId() {
   return generateMessageId();
 }
 
+function generateCommentId() {
+  return createUlid(Date.now());
+}
+
 function normalizeEmailValue(value) {
   if (!value) return '';
   return String(value).trim().toLowerCase();
@@ -1524,6 +1528,51 @@ async function fetchMessageAttachments(db, messageId) {
       mimeType: row?.content_type || '',
       size: typeof row?.size_bytes === 'number' ? row.size_bytes : null,
       url: row?.storage_path || extras?.url || '',
+    };
+  });
+}
+
+async function fetchMessageComments(db, messageId) {
+  if (!db || !messageId) return [];
+  const result = await db
+    .prepare(
+      `
+      SELECT mc.comment_id,
+             mc.body,
+             mc.mentions,
+             mc.created_at_ms,
+             mc.author_email,
+             mc.author_display_name,
+             u.email AS user_email,
+             u.display_name AS user_display_name
+        FROM message_comments mc
+        LEFT JOIN memberships ms ON ms.membership_id = mc.membership_id
+        LEFT JOIN users u ON u.user_id = ms.user_id
+       WHERE mc.message_id = ?1
+       ORDER BY mc.created_at_ms ASC
+    `
+    )
+    .bind(messageId)
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  return rows.map((row) => {
+    const email = row?.user_email || row?.author_email || '';
+    const displayName = row?.user_display_name || row?.author_display_name || '';
+    let mentions = [];
+    if (row?.mentions) {
+      mentions = String(row.mentions)
+        .split(',')
+        .map((m) => normalizeEmailValue(m))
+        .filter(Boolean);
+    }
+    return {
+      id: row?.comment_id || '',
+      body: typeof row?.body === 'string' ? row.body : '',
+      authorEmail: email,
+      authorName: displayName,
+      author: displayName || email,
+      createdAt: row?.created_at_ms ? formatJst(row.created_at_ms, true) : '',
+      mentions,
     };
   });
 }
@@ -5448,6 +5497,7 @@ async function maybeHandleRouteWithD1(options) {
       const createdAtLabel = createdAtMs ? formatJst(createdAtMs, true) : '';
       const authorLabel = buildUserLabel(messageRow?.author_email, messageRow?.author_display_name);
       const priority = mapD1PriorityToLegacy(messageRow?.priority);
+      const comments = await fetchMessageComments(db, messageId);
       const detail = {
         id: messageRow?.message_id || messageId,
         createdBy: messageRow?.author_email || '',
@@ -5455,7 +5505,7 @@ async function maybeHandleRouteWithD1(options) {
         title: messageRow?.title || '',
         body: typeof messageRow?.body === 'string' ? messageRow.body.replace(/\r\n/g, '\n') : '',
         priority: priority || '中',
-        comments: [],
+        comments,
         readUsers,
         unreadUsers,
         readEmails,
@@ -5468,6 +5518,199 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: detail },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'addNewComment') {
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
+      }
+      const args =
+        parsedBody && Array.isArray(parsedBody.args) && parsedBody.args.length
+          ? parsedBody.args
+          : [];
+      const payload = args.length && args[0] && typeof args[0] === 'object' ? args[0] : {};
+      const messageId = normalizeIdValue(
+        payload.memoId || payload.messageId || payload.message_id || payload.id || ''
+      );
+      const commentBody = typeof payload.body === 'string' ? payload.body.trim() : '';
+      if (!messageId) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_id_required',
+          'メッセージ ID を指定してください。'
+        );
+      }
+      if (!commentBody) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'comment_body_required',
+          'コメント本文を入力してください。'
+        );
+      }
+      const actorEmailRaw = tokenDetails?.email || accessContext?.email || '';
+      const actorEmail = normalizeEmailValue(actorEmailRaw);
+      const membership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      if (!membership) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'コメントを投稿する権限がありません。'
+        );
+      }
+      const messageRow = await db
+        .prepare(
+          `
+          SELECT m.message_id,
+                 m.folder_id,
+                 m.org_id
+            FROM messages m
+           WHERE m.message_id = ?1
+        `
+        )
+        .bind(messageId)
+        .first();
+      if (!messageRow) {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          'メッセージが見つかりません。'
+        );
+      }
+      const orgId = messageRow.org_id || membership.org_id || accessContext?.orgId || null;
+      if (messageRow.org_id && orgId && messageRow.org_id !== orgId) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          '他組織のメッセージにはコメントできません。'
+        );
+      }
+      if (!orgId) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'コメントを投稿できません。'
+        );
+      }
+      const folderAccess = await ensureFolderAccessForUser(db, {
+        orgId,
+        folderId: messageRow.folder_id,
+        userId: membership.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        requireActive: false,
+      });
+      if (!folderAccess) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'このメッセージにはコメントできません。'
+        );
+      }
+      const userRow = membership?.user_id
+        ? await db
+            .prepare(
+              `
+              SELECT email, display_name
+                FROM users
+               WHERE user_id = ?1
+            `
+            )
+            .bind(membership.user_id)
+            .first()
+        : null;
+      const authorEmail = normalizeEmailValue(userRow?.email || actorEmailRaw);
+      const authorDisplayName = buildUserLabel(
+        authorEmail || actorEmailRaw,
+        userRow?.display_name || accessContext?.displayName || tokenDetails?.name || ''
+      );
+      const now = Date.now();
+      const commentId = generateCommentId();
+      const mentionsValue = Array.isArray(payload.mentions)
+        ? payload.mentions
+            .map((m) => normalizeEmailValue(m))
+            .filter(Boolean)
+            .join(',')
+        : null;
+      await db
+        .prepare(
+          `
+          INSERT INTO message_comments (
+            comment_id,
+            message_id,
+            org_id,
+            membership_id,
+            author_email,
+            author_display_name,
+            body,
+            mentions,
+            created_at_ms,
+            updated_at_ms
+          )
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        `
+        )
+        .bind(
+          commentId,
+          messageRow.message_id,
+          orgId,
+          membership.membership_id || null,
+          authorEmail || actorEmail || null,
+          authorDisplayName || null,
+          commentBody,
+          mentionsValue,
+          now,
+          now
+        )
+        .run();
+      await insertAuditLog(db, {
+        orgId,
+        actorMembershipId: membership.membership_id || null,
+        targetType: 'message',
+        targetId: messageRow.message_id,
+        action: 'message.comment',
+        payload: { commentId },
+      });
+      const comments = await fetchMessageComments(db, messageId);
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: {
+            commentId,
+            comments,
+            message: 'コメントを投稿しました。',
+          },
+        },
         allowedOrigin,
         requestId
       );

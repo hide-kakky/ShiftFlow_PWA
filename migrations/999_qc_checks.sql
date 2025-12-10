@@ -4,6 +4,7 @@ SELECT 'users_total' AS metric, COUNT(*) AS value FROM users;
 SELECT 'memberships_total', COUNT(*) FROM memberships;
 SELECT 'messages_total', COUNT(*) FROM messages;
 SELECT 'message_reads_total', COUNT(*) FROM message_reads;
+SELECT 'message_comments_total', COUNT(*) FROM message_comments;
 SELECT 'tasks_total', COUNT(*) FROM tasks;
 SELECT 'task_assignees_total', COUNT(*) FROM task_assignees;
 
@@ -17,6 +18,17 @@ SELECT mr.message_read_id
 FROM message_reads mr
 LEFT JOIN memberships mem ON mem.membership_id = mr.membership_id
 WHERE mem.membership_id IS NULL;
+
+SELECT mc.comment_id
+FROM message_comments mc
+LEFT JOIN messages m ON m.message_id = mc.message_id
+WHERE m.message_id IS NULL;
+
+SELECT mc.comment_id
+FROM message_comments mc
+LEFT JOIN memberships mem ON mem.membership_id = mc.membership_id
+WHERE mc.membership_id IS NOT NULL
+  AND mem.membership_id IS NULL;
 
 SELECT m.message_id
 FROM messages m
