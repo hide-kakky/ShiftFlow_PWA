@@ -125,7 +125,8 @@ export async function onRequest({ request, env }) {
     state,
     access_type: 'offline',
     include_granted_scopes: 'true',
-    prompt: 'select_account',
+    // consent を含めて毎回 refresh_token を払い出してもらう
+    prompt: 'consent select_account',
     code_challenge: challenge,
     code_challenge_method: 'S256',
   });
