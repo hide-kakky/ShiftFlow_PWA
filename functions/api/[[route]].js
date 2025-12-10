@@ -4214,39 +4214,49 @@ async function maybeHandleRouteWithD1(options) {
         const loginResult = await db
           .prepare(
             `
-            SELECT
-              la.login_id,
-              la.user_email,
-              la.status,
-              la.reason,
-              la.request_id,
-              la.token_iat_ms,
-              la.attempted_at_ms,
-              la.client_ip,
-              la.user_agent,
-              la.role,
-              la.org_id,
-              u.display_name
-            FROM login_audits la
-            LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
-            WHERE la.attempted_at_ms >= ?2
-              AND (
-                ?1 IS NULL
-                OR la.org_id = ?1
-                OR (
-                  la.org_id IS NULL
-                  AND EXISTS (
-                    SELECT 1
-                      FROM memberships m
-                      JOIN users u2 ON u2.user_id = m.user_id
-                     WHERE LOWER(u2.email) = LOWER(la.user_email)
-                       AND m.org_id = ?1
-                     LIMIT 1
+            SELECT *
+              FROM (
+                SELECT
+                  la.login_id,
+                  la.user_email,
+                  la.status,
+                  la.reason,
+                  la.request_id,
+                  la.token_iat_ms,
+                  la.attempted_at_ms,
+                  la.client_ip,
+                  la.user_agent,
+                  la.role,
+                  la.org_id,
+                  u.display_name,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY
+                      LOWER(COALESCE(la.user_email, '')),
+                      COALESCE(la.token_iat_ms, la.attempted_at_ms)
+                    ORDER BY la.attempted_at_ms DESC, la.login_id DESC
+                  ) AS rn
+                FROM login_audits la
+                LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
+                WHERE la.attempted_at_ms >= ?2
+                  AND (
+                    ?1 IS NULL
+                    OR la.org_id = ?1
+                    OR (
+                      la.org_id IS NULL
+                      AND EXISTS (
+                        SELECT 1
+                          FROM memberships m
+                          JOIN users u2 ON u2.user_id = m.user_id
+                         WHERE LOWER(u2.email) = LOWER(la.user_email)
+                           AND m.org_id = ?1
+                         LIMIT 1
+                      )
+                    )
                   )
-                )
               )
-            ORDER BY la.attempted_at_ms DESC
-            LIMIT ?3
+             WHERE rn = 1
+             ORDER BY attempted_at_ms DESC
+             LIMIT ?3
           `
           )
           .bind(orgId, sinceMs, limit)
