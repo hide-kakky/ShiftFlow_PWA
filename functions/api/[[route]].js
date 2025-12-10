@@ -4229,9 +4229,22 @@ async function maybeHandleRouteWithD1(options) {
               u.display_name
             FROM login_audits la
             LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
-            LEFT JOIN memberships ms ON ms.user_id = u.user_id
             WHERE la.attempted_at_ms >= ?2
-              AND (?1 IS NULL OR la.org_id = ?1 OR (la.org_id IS NULL AND ms.org_id = ?1))
+              AND (
+                ?1 IS NULL
+                OR la.org_id = ?1
+                OR (
+                  la.org_id IS NULL
+                  AND EXISTS (
+                    SELECT 1
+                      FROM memberships m
+                      JOIN users u2 ON u2.user_id = m.user_id
+                     WHERE LOWER(u2.email) = LOWER(la.user_email)
+                       AND m.org_id = ?1
+                     LIMIT 1
+                  )
+                )
+              )
             ORDER BY la.attempted_at_ms DESC
             LIMIT ?3
           `
@@ -4271,6 +4284,7 @@ async function maybeHandleRouteWithD1(options) {
             LEFT JOIN memberships ms ON ms.user_id = u.user_id
             WHERE apl.created_at_ms >= ?2
               AND (?1 IS NULL OR ms.org_id = ?1 OR apl.email IS NULL)
+              AND (apl.event IS NULL OR apl.event != 'login_attempt')
             ORDER BY apl.created_at_ms DESC
             LIMIT ?3
           `
