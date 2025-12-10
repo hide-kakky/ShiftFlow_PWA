@@ -13648,6 +13648,8 @@
 
       function openMessageModal(memoId) {
         CURRENT_MEMO_ID = memoId;
+        var commentInput = byId('newCommentBody');
+        if (commentInput) commentInput.value = '';
         var modalEl = byId('messageDetailModal');
         if (!modalEl) {
           notify('メッセージ詳細モーダルが見つかりません', false);
