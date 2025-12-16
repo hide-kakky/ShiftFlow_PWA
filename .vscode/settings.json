@@ -20,5 +20,8 @@
   "prettier.singleQuote": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "chatgpt.defaultLanguage": "ja",
-  "chatgpt.responseTone": "concise"
+  "chatgpt.responseTone": "concise",
+  "editor.fontFamily": "JetBrainsMono Nerd Font",
+  "editor.fontSize": 12,
+  "terminal.integrated.fontFamily": "JetBrainsMono Nerd Font"
 }
