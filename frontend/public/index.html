@@ -3,11 +3,11 @@
   <head>
     <!-- ===== Base PWA metadata and viewport configuration ===== -->
     <base target="_top" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#557abb" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -120,7 +120,7 @@
     <script>
       (function () {
         var themeMeta = {
-          light: { statusBar: 'default' },
+          light: { statusBar: 'black-translucent' },
           dark: { statusBar: 'black-translucent' },
         };
         function readCSSVariable(name) {
@@ -154,8 +154,7 @@
             'meta[name="apple-mobile-web-app-status-bar-style"]'
           );
           var statusBar =
-            (themeMeta[resolvedTheme] && themeMeta[resolvedTheme].statusBar) ||
-            (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
+            (themeMeta[resolvedTheme] && themeMeta[resolvedTheme].statusBar) || 'black-translucent';
           if (appleStatus && statusBar) {
             appleStatus.setAttribute('content', statusBar);
           }
@@ -182,6 +181,9 @@
       html,
       body {
         overscroll-behavior-x: none;
+      }
+      html {
+        background-color: var(--surface);
       }
       /* ===== Light theme design tokens and global variables ===== */
       :root {
@@ -332,6 +334,7 @@
         height: 100%;
       }
       body {
+        margin: 0;
         overflow-x: hidden;
         background-color: var(--surface);
         background-image: var(--body-bg);
