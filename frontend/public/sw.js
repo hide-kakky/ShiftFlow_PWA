@@ -13,7 +13,6 @@ const APP_SHELL = Array.isArray(swConfig.APP_SHELL_PATHS)
 const API_REVALIDATE_PATHS = Array.isArray(swConfig.API_REVALIDATE_PATHS)
   ? swConfig.API_REVALIDATE_PATHS
   : ['/api/tasks', '/api/messages', '/api/home'];
-
 self.addEventListener('install', (event) => {
   const hadActiveWorker = !!(self.registration && self.registration.active);
   event.waitUntil(
