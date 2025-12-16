@@ -1,4 +1,4 @@
-elf.importScripts('/app-config.js');
+self.importScripts('/app-config.js');
 const swConfig = self.SHIFT_FLOW_CONFIG || {};
 
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
