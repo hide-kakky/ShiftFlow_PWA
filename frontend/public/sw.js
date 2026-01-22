@@ -2,7 +2,7 @@ self.importScripts('/app-config.js');
 const swConfig = self.SHIFT_FLOW_CONFIG || {};
 
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
-const APP_VERSION = swConfig.APP_VERSION || '1.5.7';
+const APP_VERSION = swConfig.APP_VERSION || '1.5.20';
 
 const CACHE_PREFIX = swConfig.CACHE_PREFIX || 'shiftflow-';
 const APP_SHELL_CACHE = swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
