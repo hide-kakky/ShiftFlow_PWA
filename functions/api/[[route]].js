@@ -4399,6 +4399,23 @@ async function maybeHandleRouteWithD1(options) {
         authorEmail: tokenDetails?.email || accessContext?.email || '',
         role: accessContext?.role,
       });
+      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const orgId =
+        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      if (orgId) {
+        await insertAuditLog(db, {
+          orgId,
+          actorMembershipId: actorMembership?.membership_id || null,
+          targetType: 'task',
+          targetId: taskId,
+          action: 'task.create',
+          payload: {
+            title: typeof taskPayload.title === 'string' ? taskPayload.title.trim() : '',
+            assigneeCount: Array.isArray(taskPayload.assignees) ? taskPayload.assignees.length : 0,
+          },
+        });
+      }
       captureDiagnostics(config, 'info', 'd1_task_created', {
         event: 'd1_task_created',
         route: normalizedRoute,
@@ -5048,6 +5065,21 @@ async function maybeHandleRouteWithD1(options) {
             'メッセージの添付ファイル保存に失敗しました。'
           );
         }
+      }
+      if (orgId) {
+        const auditFolderId = folderAccess?.id || folderId;
+        await insertAuditLog(db, {
+          orgId,
+          actorMembershipId: membership?.membership_id || null,
+          targetType: 'message',
+          targetId: messageId,
+          action: 'message.create',
+          payload: {
+            title: typeof messagePayload.title === 'string' ? messagePayload.title.trim() : '',
+            folderId: auditFolderId || '',
+            attachmentCount: preparedAttachments.length,
+          },
+        });
       }
       if (actorEmail) {
         await ensureMemoReadInD1(db, {
@@ -6810,6 +6842,20 @@ function resolveAuditRange(rangeKey) {
 function describeAdminAction(action, payload) {
   const normalized = String(action || '').trim();
   const email = payload && typeof payload.email === 'string' ? payload.email : '';
+  if (normalized === 'task.create') {
+    const title = payload && typeof payload.title === 'string' ? payload.title : '';
+    return {
+      label: 'タスク作成',
+      summary: title ? 'タイトル: ' + title : 'タスクを作成しました。',
+    };
+  }
+  if (normalized === 'message.create') {
+    const title = payload && typeof payload.title === 'string' ? payload.title : '';
+    return {
+      label: 'メッセージ作成',
+      summary: title ? 'タイトル: ' + title : 'メッセージを投稿しました。',
+    };
+  }
   if (normalized === 'user_status_update') {
     return {
       label: 'ユーザーステータス更新',

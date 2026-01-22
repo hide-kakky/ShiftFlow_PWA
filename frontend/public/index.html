@@ -6831,6 +6831,58 @@
             userEmail: testEmail,
             meta: { route: 'adminUpdateOrganization', requestId: 'TEST-AUD-4' },
           },
+          {
+            id: 'AUD-5',
+            type: 'admin',
+            typeLabel: '管理操作',
+            eventLabel: 'タスク作成',
+            statusLabel: '完了',
+            severity: 'info',
+            summary: 'タイトル: 店舗Aの発注締めチェック',
+            occurredAt: now - 20 * 60 * 1000,
+            occurredLabel: new Date(now - 20 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
+            userLabel: testName,
+            userEmail: testEmail,
+            meta: {
+              source: 'audit_logs',
+              route: 'addNewTask',
+              requestId: 'TEST-AUD-5',
+              action: 'task.create',
+              targetType: 'task',
+              targetId: 'TASK-1001',
+              payload: { title: '店舗Aの発注締めチェック', assigneeCount: 1 },
+            },
+          },
+          {
+            id: 'AUD-6',
+            type: 'admin',
+            typeLabel: '管理操作',
+            eventLabel: 'メッセージ作成',
+            statusLabel: '完了',
+            severity: 'info',
+            summary: 'タイトル: 明日の朝礼資料を共有しました。',
+            occurredAt: now - 12 * 60 * 1000,
+            occurredLabel: new Date(now - 12 * 60 * 1000).toLocaleString('ja-JP', {
+              hour12: false,
+            }),
+            userLabel: testName,
+            userEmail: testEmail,
+            meta: {
+              source: 'audit_logs',
+              route: 'addNewMessage',
+              requestId: 'TEST-AUD-6',
+              action: 'message.create',
+              targetType: 'message',
+              targetId: 'MSG-201',
+              payload: {
+                title: '明日の朝礼資料を共有しました。',
+                folderId: 'folder-001',
+                attachmentCount: 1,
+              },
+            },
+          },
         ];
         var orgs = [
           {
@@ -10144,6 +10196,41 @@
         window.__SHIFT_FLOW_TEST_MODE__ = controller;
         setAuthToken(profile === 'manager' ? 'TEST-MANAGER' : 'TEST');
         clearAuthPendingFlag();
+        if (controller.data) {
+          if (!controller.data.counters) controller.data.counters = {};
+          if (typeof controller.data.counters.audit !== 'number') {
+            controller.data.counters.audit = Array.isArray(controller.data.auditLogs)
+              ? controller.data.auditLogs.length
+              : 0;
+          }
+          if (Array.isArray(controller.data.auditLogs)) {
+            var loginAuditId = 'AUD-' + ++controller.data.counters.audit;
+            var loginTime = Date.now();
+            controller.data.auditLogs.unshift({
+              id: loginAuditId,
+              type: 'login',
+              typeLabel: 'ログイン',
+              eventLabel: 'ログイン成功',
+              statusLabel: '成功',
+              severity: 'success',
+              summary:
+                profile === 'manager'
+                  ? 'テストマネージャーでログインしました。'
+                  : 'テストユーザーでログインしました。',
+              occurredAt: loginTime,
+              occurredLabel: new Date(loginTime).toLocaleString('ja-JP', { hour12: false }),
+              userLabel:
+                controller.data.userInfo && (controller.data.userInfo.name || controller.data.userInfo.email)
+                  ? controller.data.userInfo.name || controller.data.userInfo.email
+                  : 'テストユーザー',
+              userEmail:
+                controller.data.userInfo && controller.data.userInfo.email
+                  ? controller.data.userInfo.email
+                  : '',
+              meta: { route: 'testLogin', requestId: loginAuditId },
+            });
+          }
+        }
         var session = {
           authenticated: true,
           user: controller.data.userInfo,
