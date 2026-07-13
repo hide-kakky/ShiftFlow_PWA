@@ -392,7 +392,7 @@
         --fab-shadow: 0 14px 28px rgba(232, 93, 106, 0.35);
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
         --footer-h: 58px;
-        --footer-extra: 12px;
+        --footer-extra: 2px;
         --header-h: 60px;
         --nav-glass-bg: rgba(248, 251, 255, 0.78);
         --nav-glass-border: rgba(255, 255, 255, 0.82);
@@ -2230,7 +2230,7 @@
         }
       }
 
-      /* Swipe views (px aligned) */
+      /* View track transitions (px aligned) */
       .views-wrapper {
         position: relative;
         overflow: hidden;
@@ -2327,9 +2327,9 @@
         content: '';
         position: absolute;
         inset: -7px;
-        border: 1px solid rgba(105, 199, 255, 0.58);
+        border: 1px solid rgba(232, 93, 106, 0.5);
         border-radius: 50%;
-        box-shadow: 0 0 18px rgba(105, 199, 255, 0.3), 0 0 28px rgba(255, 77, 139, 0.24);
+        box-shadow: 0 0 18px rgba(232, 93, 106, 0.3), 0 0 28px rgba(245, 165, 36, 0.2);
         pointer-events: none;
         opacity: 0.78;
       }
@@ -2339,10 +2339,13 @@
         border-radius: 50%;
         padding: 0;
         border: 1px solid rgba(255, 255, 255, 0.48);
-        background: radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.58), transparent 30%),
-          linear-gradient(145deg, #6479da 0%, #d44c96 46%, #f02c66 100%);
-        box-shadow: 0 24px 40px rgba(255, 76, 127, 0.42), 0 10px 22px rgba(103, 151, 255, 0.3),
-          inset 0 1px 1px rgba(255, 255, 255, 0.5);
+        background-color: var(--fab);
+        background-image: radial-gradient(
+          circle at 26% 18%,
+          rgba(255, 255, 255, 0.58),
+          transparent 30%
+        );
+        box-shadow: var(--fab-shadow), inset 0 1px 1px rgba(255, 255, 255, 0.5);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -2378,10 +2381,13 @@
         pointer-events: none;
       }
       :root[data-theme='dark'] .fab .btn {
-        background: radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.42), transparent 30%),
-          linear-gradient(145deg, #586dca 0%, #c63b87 46%, #d9185a 100%);
-        box-shadow: 0 24px 38px rgba(224, 28, 95, 0.48), 0 12px 24px rgba(82, 132, 255, 0.3),
-          inset 0 1px 1px rgba(255, 255, 255, 0.35);
+        background-color: var(--fab);
+        background-image: radial-gradient(
+          circle at 26% 18%,
+          rgba(255, 255, 255, 0.42),
+          transparent 30%
+        );
+        box-shadow: var(--fab-shadow), inset 0 1px 1px rgba(255, 255, 255, 0.35);
       }
       :root[data-theme='dark'] .fab .btn::before {
         opacity: 0.7;
@@ -2392,7 +2398,7 @@
         box-shadow: 0 20px 34px rgba(232, 93, 106, 0.4);
       }
       .fab .btn:focus-visible {
-        outline: 3px solid #263b70;
+        outline: 3px solid #7f1d45;
         outline-offset: 4px;
         box-shadow: 0 20px 34px rgba(232, 93, 106, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.35);
       }
@@ -4691,7 +4697,8 @@
 
       .footer-nav {
         height: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom));
-        padding: 0 10px calc(var(--safe-bottom) + 6px);
+        padding: 0 calc(10px + var(--safe-right))
+          calc(var(--safe-bottom) + var(--footer-extra)) calc(10px + var(--safe-left));
         background: transparent;
         border: 0;
         box-shadow: none;
@@ -4758,20 +4765,25 @@
         border: 0;
         background: radial-gradient(
           circle,
-          rgba(111, 174, 255, 0.38) 0%,
-          rgba(255, 74, 139, 0.25) 48%,
+          rgba(232, 93, 106, 0.4) 0%,
+          rgba(245, 165, 36, 0.2) 48%,
           transparent 72%
         );
         box-shadow: none;
         filter: blur(9px);
         opacity: 0.54;
       }
-      .fab .btn {
+      .fab .btn,
+      :root[data-theme='dark'] .fab .btn {
         border: 0;
-        background: radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.78), transparent 27%),
-          linear-gradient(145deg, rgba(80, 110, 220, 0.98) 0%, rgba(201, 58, 144, 0.98) 48%, rgba(234, 31, 91, 0.98) 100%);
-        box-shadow: 0 24px 42px rgba(224, 46, 111, 0.44), 0 10px 24px rgba(77, 139, 255, 0.34),
-          inset 0 1px 1px rgba(255, 255, 255, 0.72), inset 0 -10px 24px rgba(104, 23, 116, 0.18);
+        background-color: var(--fab);
+        background-image: radial-gradient(
+          circle at 28% 18%,
+          rgba(255, 255, 255, 0.72),
+          transparent 27%
+        );
+        box-shadow: var(--fab-shadow), 0 8px 20px rgba(127, 29, 69, 0.2),
+          inset 0 1px 1px rgba(255, 255, 255, 0.72), inset 0 -10px 24px rgba(127, 29, 69, 0.14);
       }
 
       .card.app-card,
@@ -5282,7 +5294,7 @@
           </div>
         </div>
       </div>
-      <div class="header-search-panel" id="header-search-panel" data-no-swipe hidden>
+      <div class="header-search-panel" id="header-search-panel" hidden>
         <div class="header-search-panel__surface container-xl" role="search">
           <div class="header-search-panel__controls">
             <div class="task-controls" data-header-search-view="tasks" data-task-search-scope="my">
@@ -6002,7 +6014,6 @@
                       class="table-responsive"
                       id="adminUsersTableWrap"
                       aria-live="polite"
-                      data-prevent-admin-swipe="true"
                     >
                       <table class="table admin-users-table admin-table-light">
                         <thead>
@@ -6074,7 +6085,7 @@
                           </button>
                         </div>
                       </div>
-                      <div class="table-responsive" data-prevent-admin-swipe="true">
+                      <div class="table-responsive">
                         <table class="table table-sm align-middle admin-folder-table">
                           <thead>
                             <tr>
@@ -6418,7 +6429,6 @@
                       class="table-responsive"
                       id="adminAuditTableWrap"
                       aria-live="polite"
-                      data-prevent-admin-swipe="true"
                     >
                       <table class="table admin-audit-table admin-table-light">
                         <thead>
@@ -6453,7 +6463,7 @@
           </div>
           <div class="admin-bottom-meta text-center">
             <p class="text-muted small mb-0">重要な管理操作は監査ログに記録されます</p>
-            <small class="text-muted">スマートフォンではスワイプまたは下部ナビで切り替えられます</small>
+            <small class="text-muted">スマートフォンでは下部ナビをタップして切り替えます</small>
           </div>
         </section>
       </main>
@@ -8794,7 +8804,7 @@
           ? window.__SHIFT_FLOW_SYNC_THEME_META__
           : function (theme) {
               var palette = window.__SHIFT_FLOW_THEME_META__ || {
-                light: { statusBar: 'default' },
+                light: { statusBar: 'black-translucent' },
                 dark: { statusBar: 'black-translucent' },
               };
               var getPrimary =
@@ -8807,7 +8817,7 @@
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
               var statusBar =
                 (palette[resolvedTheme] && palette[resolvedTheme].statusBar) ||
-                (resolvedTheme === 'dark' ? 'black-translucent' : 'default');
+                'black-translucent';
               var metaTheme = document.querySelector('meta[name="theme-color"]');
               if (metaTheme) {
                 metaTheme.setAttribute('content', getPrimary(resolvedTheme));
@@ -10988,19 +10998,24 @@
                 if (mode === 'dark') return '#4b67b3';
                 return '#557abb';
               };
-        var primaryColor = getPrimary('light');
+        var pref = document.documentElement.dataset.themePref || 'light';
+        var resolvedPref =
+          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
+        var primaryColor = getPrimary(resolvedPref);
         if (metaTheme && primaryColor) {
           metaTheme.setAttribute('content', primaryColor);
         }
         if (appleStatus) {
-          appleStatus.setAttribute('content', 'default');
+          appleStatus.setAttribute('content', 'black-translucent');
         }
       }
 
       function restoreMetaTheme() {
         var pref = document.documentElement.dataset.themePref || 'light';
+        var resolvedPref =
+          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
         if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function') {
-          window.__SHIFT_FLOW_SYNC_THEME_META__(pref);
+          window.__SHIFT_FLOW_SYNC_THEME_META__(resolvedPref);
         }
       }
 
@@ -11770,7 +11785,6 @@
           link.classList.toggle('active', match);
           link.setAttribute('aria-current', match ? 'page' : 'false');
         });
-        moveAdminTrack(target);
         var label = byId('admin-section-label');
         if (label) {
           var labelMap = {
@@ -11817,19 +11831,6 @@
         });
         notifyAdminOrgListeners(ADMIN_STATE.orgId);
       }
-      function moveAdminTrack(section, opts) {
-        var track = byId('adminTrack');
-        if (!track) return;
-        track.style.transform = 'none';
-        track.style.transition = 'none';
-      }
-      function stepAdminSection(delta) {
-        var current = ADMIN_ORDER.indexOf(ADMIN_STATE.section || 'dashboard');
-        if (current < 0) current = 0;
-        var next = ADMIN_ORDER[current + delta];
-        if (!next) return;
-        setAdminSection(next);
-      }
       function openAdminView(section) {
         var adminView = byId('view-admin');
         if (!adminView) return;
@@ -11847,7 +11848,6 @@
           adminPanels.removeAttribute('aria-hidden');
         }
         setAdminSection(section || ADMIN_STATE.section || 'dashboard');
-        moveAdminTrack(section || ADMIN_STATE.section || 'dashboard', { animate: false });
         scrollToTopNow();
         var menuButton = byId('btn-user-menu');
         if (menuButton) {
@@ -12274,24 +12274,18 @@
         applyThemePreference(value);
       });
 
-      // ===== スワイプビュー =====
+      // ===== ビュー遷移 =====
       var order = ['home', 'tasks', 'messages', 'settings'];
-      var ADMIN_ORDER = ['dashboard', 'users', 'folders', 'orgs', 'audit'];
       var CURRENT_VIEW = 'home';
       var VIEW_HISTORY_SUPPORTED = !!(window.history && window.history.pushState);
       var VIEW_HISTORY_LOCK = false;
       var LAST_VIEW_HISTORY = 'home';
-      var SWIPE_LOCK = false;
-      var SWIPE_VERTICAL_TOLERANCE = 160;
-      var SWIPE_ACTIVATION_DELTA = 14;
-      var SWIPE_TRANSITION_MS = 240;
-      var SWIPE_TRANSITION =
-        'transform ' + SWIPE_TRANSITION_MS + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+      var VIEW_TRANSITION_MS = 240;
+      var VIEW_TRANSITION =
+        'transform ' + VIEW_TRANSITION_MS + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
       var CURRENT_TRANSFORM = 0;
       var VIEW_TRANSITION_SEQUENCE = 0;
       var VIEW_PANEL_WIDTH = 0;
-
-      window.__SHIFT_FLOW_GESTURE__ = null;
 
       function measureViewPanelWidth() {
         var track = byId('viewsTrack');
@@ -12322,11 +12316,11 @@
           track.style.transition = 'none';
           track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
           requestAnimationFrame(function () {
-            track.style.transition = SWIPE_TRANSITION;
+            track.style.transition = VIEW_TRANSITION;
           });
         } else {
           track.classList.add('is-moving');
-          track.style.transition = SWIPE_TRANSITION;
+          track.style.transition = VIEW_TRANSITION;
           requestAnimationFrame(function () {
             track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
           });
@@ -12653,7 +12647,7 @@
           callback();
         }
         track.addEventListener('transitionend', finish);
-        timer = setTimeout(finish, SWIPE_TRANSITION_MS + 100);
+        timer = setTimeout(finish, VIEW_TRANSITION_MS + 100);
       }
 
       function loadViewContent(view, options) {
@@ -12790,237 +12784,6 @@
         return Promise.resolve(loadHome({ force: opts.force === true }));
       }
 
-      (function enableSwipe() {
-        var wrap = byId('viewsWrapper');
-        var track = byId('viewsTrack');
-        if (!wrap || !track) return;
-        var state = {
-          active: false,
-          dragging: false,
-          startX: 0,
-          startY: 0,
-          startTime: 0,
-          baseOffset: 0,
-          rawDx: 0,
-          rawDy: 0,
-          previewView: null,
-          pendingOffset: null,
-          moveFrame: 0,
-        };
-        var activeTouchId = null;
-        var unify = function (e) {
-          if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0];
-          if (e.touches && e.touches.length) return e.touches[0];
-          return e;
-        };
-        function getActiveTouch(e) {
-          if (activeTouchId == null) {
-            return unify(e);
-          }
-          if (e.changedTouches && e.changedTouches.length) {
-            for (var i = 0; i < e.changedTouches.length; i++) {
-              var changed = e.changedTouches[i];
-              if (changed.identifier === activeTouchId) return changed;
-            }
-          }
-          if (e.touches && e.touches.length) {
-            for (var j = 0; j < e.touches.length; j++) {
-              var touch = e.touches[j];
-              if (touch.identifier === activeTouchId) return touch;
-            }
-          }
-          return null;
-        }
-        function swipeThreshold() {
-          var base =
-            wrap.offsetWidth || window.innerWidth || document.documentElement.clientWidth || 360;
-          return Math.max(48, Math.min(140, base * 0.18));
-        }
-        function isWithinSwipeArea(node) {
-          if (!wrap || !node) return false;
-          if (node.closest && node.closest('.modal.show')) return false;
-          if (node === wrap) return true;
-          return node instanceof Node && wrap.contains(node);
-        }
-
-        function cancelMoveFrame() {
-          if (state.moveFrame) cancelAnimationFrame(state.moveFrame);
-          state.moveFrame = 0;
-          state.pendingOffset = null;
-        }
-
-        function queueTrackOffset(offset) {
-          state.pendingOffset = offset;
-          if (state.moveFrame) return;
-          state.moveFrame = requestAnimationFrame(function () {
-            state.moveFrame = 0;
-            if (state.pendingOffset == null) return;
-            track.style.transform = 'translate3d(' + state.pendingOffset + 'px, 0, 0)';
-            state.pendingOffset = null;
-          });
-        }
-
-        function resolveAdjacentView(dx) {
-          var idx = order.indexOf(CURRENT_VIEW);
-          if (idx < 0 || dx === 0) return null;
-          var targetIndex = dx < 0 ? idx + 1 : idx - 1;
-          if (targetIndex < 0 || targetIndex >= order.length) return null;
-          return order[targetIndex];
-        }
-
-        function prepareSwipePreview(target) {
-          if (state.previewView === target) return;
-          freezeViewHeight(CURRENT_VIEW);
-          order.forEach(function (view) {
-            var panel = byId('view-' + view);
-            if (!panel) return;
-            var visible = view === CURRENT_VIEW || view === target;
-            panel.classList.toggle('is-hidden', !visible);
-            panel.classList.toggle('show', visible);
-            setPanelInteractiveState(panel, view === CURRENT_VIEW);
-          });
-          track.classList.add('is-moving');
-          state.previewView = target;
-        }
-
-        function resetSwipe(shouldSnap) {
-          var needsSnap = shouldSnap !== false && state.dragging;
-          var baseOffset = state.baseOffset;
-          cancelMoveFrame();
-          state.active = false;
-          state.dragging = false;
-          state.startX = 0;
-          state.startY = 0;
-          state.startTime = 0;
-          state.baseOffset = CURRENT_TRANSFORM;
-          state.rawDx = 0;
-          state.rawDy = 0;
-          state.previewView = null;
-          activeTouchId = null;
-          if (needsSnap) {
-            CURRENT_TRANSFORM = baseOffset;
-            var transitionSequence = ++VIEW_TRANSITION_SEQUENCE;
-            track.classList.add('is-moving');
-            track.style.transition = SWIPE_TRANSITION;
-            track.style.transform = 'translate3d(' + baseOffset + 'px, 0, 0)';
-            waitForTrackTransition(transitionSequence, function () {
-              showPanel(CURRENT_VIEW);
-              releaseViewHeight();
-              track.classList.remove('is-moving');
-            });
-          } else if (shouldSnap !== false) {
-            showPanel(CURRENT_VIEW);
-            releaseViewHeight();
-            track.classList.remove('is-moving');
-          }
-          window.__SHIFT_FLOW_GESTURE__ = null;
-        }
-        function handleSwipeStart(e) {
-          if (ADMIN_STATE.active) return;
-          if (SWIPE_LOCK) return;
-          if (document.body && document.body.classList.contains('modal-open')) return;
-          if (e.touches && e.touches.length > 1) {
-            resetSwipe();
-            return;
-          }
-          var t = unify(e);
-          if (!t) return;
-          var origin = t.target || e.target;
-          if (!isWithinSwipeArea(origin)) return;
-          state.active = true;
-          state.dragging = false;
-          state.startX = t.clientX;
-          state.startY = t.clientY;
-          state.startTime = Date.now();
-          state.baseOffset = CURRENT_TRANSFORM;
-          state.rawDx = 0;
-          state.rawDy = 0;
-          state.previewView = null;
-          activeTouchId = typeof t.identifier === 'number' ? t.identifier : null;
-          measureViewPanelWidth();
-          track.style.transition = 'none';
-          window.__SHIFT_FLOW_GESTURE__ = null;
-        }
-        function handleSwipeMove(e) {
-          if (!state.active) return;
-          if (e.touches && e.touches.length > 1) {
-            resetSwipe();
-            return;
-          }
-          var t = getActiveTouch(e);
-          if (!t) return;
-          var dx = t.clientX - state.startX;
-          var dy = t.clientY - state.startY;
-          if (!state.dragging) {
-            if (Math.abs(dx) >= SWIPE_ACTIVATION_DELTA && Math.abs(dx) > Math.abs(dy) + 10) {
-              state.dragging = true;
-              window.__SHIFT_FLOW_GESTURE__ = 'horizontal';
-              track.style.transition = 'none';
-            } else if (Math.abs(dy) >= SWIPE_ACTIVATION_DELTA && Math.abs(dy) > Math.abs(dx) + 10) {
-              window.__SHIFT_FLOW_GESTURE__ = 'vertical';
-              resetSwipe();
-              return;
-            } else {
-              return;
-            }
-          }
-          if (window.__SHIFT_FLOW_GESTURE__ !== 'horizontal') return;
-          if (e.cancelable) e.preventDefault();
-          state.rawDx = dx;
-          state.rawDy = dy;
-          var preview = resolveAdjacentView(dx);
-          prepareSwipePreview(preview);
-          var nextOffset = preview ? state.baseOffset + dx : state.baseOffset;
-          queueTrackOffset(nextOffset);
-        }
-        function handleSwipeEnd(e) {
-          if (!state.active) return;
-          if (activeTouchId != null && !getActiveTouch(e)) {
-            resetSwipe();
-            return;
-          }
-          var triggered = false;
-          if (state.dragging && !SWIPE_LOCK) {
-            var dx = state.rawDx;
-            var dy = state.rawDy;
-            var dt = Date.now() - state.startTime;
-            var threshold = swipeThreshold();
-            var flickDistance = 42;
-            var flickTime = 280;
-            var withinVerticalGuard = Math.abs(dy) < SWIPE_VERTICAL_TOLERANCE;
-            var distanceSatisfied = Math.abs(dx) >= threshold;
-            var flickSatisfied = Math.abs(dx) >= flickDistance && dt < flickTime;
-            if ((distanceSatisfied || flickSatisfied) && withinVerticalGuard) {
-              var target = state.previewView;
-              if (target && target !== CURRENT_VIEW) {
-                cancelMoveFrame();
-                SWIPE_LOCK = true;
-                navigateTo(target, { animate: true });
-                setTimeout(function () {
-                  SWIPE_LOCK = false;
-                }, SWIPE_TRANSITION_MS + 100);
-                triggered = true;
-              }
-            }
-          }
-          if (!triggered) {
-            CURRENT_TRANSFORM = state.baseOffset;
-          }
-          resetSwipe(triggered ? false : true);
-        }
-        function handleSwipeCancel() {
-          if (!state.active) return;
-          resetSwipe();
-        }
-
-        wrap.addEventListener('touchstart', handleSwipeStart, { passive: true, capture: true });
-        wrap.addEventListener('touchmove', handleSwipeMove, { passive: false, capture: true });
-        wrap.addEventListener('touchend', handleSwipeEnd, { passive: true, capture: true });
-        wrap.addEventListener('touchcancel', handleSwipeCancel, {
-          passive: true,
-          capture: true,
-        });
-      })();
 
       window.addEventListener('resize', function () {
         clearTimeout(_rszTimer);
@@ -13158,7 +12921,6 @@
             if (document.body.classList.contains('modal-open')) return;
             if (!atTop()) return;
             if (e.touches && e.touches.length > 1) return;
-            if (window.__SHIFT_FLOW_GESTURE__ === 'horizontal') return;
             var touch = e.touches ? e.touches[0] : e;
             startY = touch.clientY;
             startX = touch.clientX;
@@ -13174,11 +12936,6 @@
           function (e) {
             if (!pulling) return;
             if (e.touches && e.touches.length > 1) return;
-            if (window.__SHIFT_FLOW_GESTURE__ === 'horizontal') {
-              hide();
-              resetPull();
-              return;
-            }
             if (!atTop()) {
               resetPull();
               hide();
@@ -18633,88 +18390,6 @@
         }
       })();
 
-      (function enableAdminSwipe() {
-        var wrap = byId('adminPanelsWrapper');
-        var track = byId('adminTrack');
-        if (!wrap || !track) return;
-        var state = {
-          active: false,
-          locked: false,
-          startX: 0,
-          startY: 0,
-          dx: 0,
-          dy: 0,
-          skip: false,
-        };
-        var threshold = 60;
-        wrap.addEventListener(
-          'touchstart',
-          function (e) {
-            if (!ADMIN_STATE.active) return;
-            if (e.touches && e.touches.length > 1) return;
-            var guardTarget =
-              e.target && typeof e.target.closest === 'function'
-                ? e.target.closest('[data-prevent-admin-swipe="true"]')
-                : null;
-            state.skip = !!guardTarget;
-            if (state.skip) {
-              state.active = false;
-              state.locked = false;
-              return;
-            }
-            var touch = e.touches ? e.touches[0] : e;
-            state.active = true;
-            state.locked = false;
-            state.startX = touch.clientX;
-            state.startY = touch.clientY;
-            state.dx = 0;
-            state.dy = 0;
-          },
-          { passive: true }
-        );
-        wrap.addEventListener(
-          'touchmove',
-          function (e) {
-            if (state.skip || !state.active || !ADMIN_STATE.active) return;
-            var touch = e.touches ? e.touches[0] : e;
-            state.dx = touch.clientX - state.startX;
-            state.dy = touch.clientY - state.startY;
-            if (!state.locked) {
-              if (Math.abs(state.dx) > Math.abs(state.dy) && Math.abs(state.dx) > 8) {
-                state.locked = true;
-              } else if (Math.abs(state.dy) > Math.abs(state.dx)) {
-                state.active = false;
-              }
-            } else {
-              e.preventDefault();
-            }
-          },
-          { passive: false }
-        );
-        wrap.addEventListener(
-          'touchend',
-          function () {
-            if (state.skip) {
-              state.skip = false;
-              return;
-            }
-            if (!state.locked) {
-              state.active = false;
-              return;
-            }
-            var delta = state.dx;
-            state.active = false;
-            state.locked = false;
-            if (Math.abs(delta) < threshold) return;
-            if (delta < 0) {
-              stepAdminSection(1);
-            } else {
-              stepAdminSection(-1);
-            }
-          },
-          { passive: true }
-        );
-      })();
     </script>
     <!-- TODO: API デバッグ用UIは本番公開前に非表示化する -->
   </body>
