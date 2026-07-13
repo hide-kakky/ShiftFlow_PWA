@@ -5,6 +5,7 @@ SELECT 'memberships_total', COUNT(*) FROM memberships;
 SELECT 'messages_total', COUNT(*) FROM messages;
 SELECT 'message_reads_total', COUNT(*) FROM message_reads;
 SELECT 'message_comments_total', COUNT(*) FROM message_comments;
+SELECT 'message_pins_total', COUNT(*) FROM message_pins;
 SELECT 'tasks_total', COUNT(*) FROM tasks;
 SELECT 'task_assignees_total', COUNT(*) FROM task_assignees;
 
@@ -29,6 +30,23 @@ FROM message_comments mc
 LEFT JOIN memberships mem ON mem.membership_id = mc.membership_id
 WHERE mc.membership_id IS NOT NULL
   AND mem.membership_id IS NULL;
+
+SELECT mp.message_id, mp.membership_id
+FROM message_pins mp
+LEFT JOIN messages m ON m.message_id = mp.message_id
+WHERE m.message_id IS NULL;
+
+SELECT mp.message_id, mp.membership_id
+FROM message_pins mp
+LEFT JOIN memberships mem ON mem.membership_id = mp.membership_id
+WHERE mem.membership_id IS NULL;
+
+SELECT mp.message_id, mp.membership_id
+FROM message_pins mp
+JOIN messages m ON m.message_id = mp.message_id
+JOIN memberships mem ON mem.membership_id = mp.membership_id
+WHERE mp.org_id <> m.org_id
+   OR mp.org_id <> mem.org_id;
 
 SELECT m.message_id
 FROM messages m

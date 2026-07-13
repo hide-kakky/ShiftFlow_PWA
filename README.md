@@ -7,7 +7,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ## 運用メモ（Codex / Service Worker）
 
-- 現在の APP_VERSION: `1.9.1`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- 現在の APP_VERSION: `1.10.0`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
 - すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
 - 基本ルールは `CODEx_PROMPT.md` と `AGENTS.md` に従うこと。
 - Wrangler の `compatibility_date` は Pages Functions / Worker どちらも `2025-11-02` で統一。
@@ -20,7 +20,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 | --- | --- | --- | --- |
 | フロントエンド | PWA / UI / Service Worker | `frontend/public`（静的 HTML/CSS/JS） | Pages でそのままホスティング。ビルド工程なし。 |
 | 認証 / API | Cloudflare Pages Functions | `functions/auth/*`, `functions/api/[route].js`, `functions/config.js` | Google OAuth (PKCE) と `SESSION` Cookie でシングルサインオン。すべての業務 API を Functions 内で実装。 |
-| データストア | Cloudflare D1 (`DB` binding) | `migrations/*.sql` | ユーザー / 組織 / タスク / メッセージ / 監査ログ / 添付を保存。ULID 主キー。組織のブランド / 通知設定、フォルダ / テンプレート、メッセージのピン留めに対応。 |
+| データストア | Cloudflare D1 (`DB` binding) | `migrations/*.sql` | ユーザー / 組織 / タスク / メッセージ / 監査ログ / 添付を保存。ULID 主キー。組織のブランド / 通知設定、フォルダ / テンプレート、コメント更新表示、ユーザー個人のメッセージピン留めに対応。 |
 | セッション / フラグ | Cloudflare KV (`APP_KV` binding) | `functions/utils/session.js` | セッションレコード、PKCE 初期データ、機能フラグ (`shiftflow:flags`) を保管。 |
 | ファイルストレージ | Cloudflare R2 (`R2` binding) | `functions/api/[route].js`, `infra/r2/lifecycle.json` | プロフィール画像・メッセージ添付を `/profiles`, `/attachments`, `/orgs/<id>/...` に保存。 |
 | バックアップ | 専用 Worker + R2 | `workers/r2-backup` | Cron で本番 R2 → バックアップ R2 へ差分コピー・フル検証。 |
@@ -121,7 +121,9 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
 - `001_extend_users.sql`: GAS シート互換のユーザーメタ列（`status`, `theme`, `approved_at_ms` 等）。
 - `002_add_tasks_attachments_audit.sql`: `tasks`, `task_assignees`, `attachments`, `task_attachments`, `message_attachments`, `audit_logs`, `login_audits`, `auth_proxy_logs`.
 - `003_extend_organizations.sql`: `organizations` に短縮名・ブランドカラー・タイムゾーン・通知先メール・メタ情報列を追加。
-- `004_add_folders_features.sql`: `folders` / `folder_members` / `templates` を追加し、メッセージのフォルダ紐付けとピン留めをサポート。
+- `004_add_folders_features.sql`: `folders` / `folder_members` / `templates` と旧共有ピン列を追加。
+- `007_add_message_comments.sql`: メッセージの共有コメントを追加。
+- `008_add_personal_message_pins.sql`: `message_pins` を追加し、ピン留めを所属ユーザーごとの状態へ分離。旧共有ピン列はロールバック用に残す。
 - `999_qc_checks.sql`: テーブル間の参照整合性・NULL チェック用。
 
 ### 運用コマンド
@@ -133,6 +135,11 @@ npx wrangler d1 migrations apply app_d1_dev
 npm run qc:dev
 # サンプルデータ投入（seeds/*.sql を生成済みの場合）
 npm run seed:dev
+
+# 本番は必ずpendingを確認し、アプリコードのdeploy前に適用
+npx wrangler d1 migrations list app_d1_prod --remote --env production
+npx wrangler d1 migrations apply app_d1_prod --remote --env production
+npm run qc:prod
 ```
 
 `npm run seed:*` は `scripts/etl/to-sql.js` が生成した `seeds/090_organizations.sql` などを順番に実行する想定（リポジトリには seeds は含まれないため必要に応じて生成）。  
@@ -193,7 +200,7 @@ wrangler tail  --config workers/r2-backup/wrangler.toml
 1. **認証**: `pending` ユーザーでサインイン → `/api/*` が 403、D1 の `login_audits.status` に `pending` が追加される。`active` へ更新後は `getBootstrapData` が 200。
 2. **RBAC**: `member` が `listAllTasks` を呼ぶと 403、`manager` 以上で 200。`X-ShiftFlow-Request-Id` をログで追跡。
 3. **タスク CRUD**: `addNewTask` 成功後、`tasks` / `task_assignees` にレコードが作成され、`downloadAttachment` で添付を取得できる。
-4. **メッセージ既読管理**: `toggleMemoRead` → `message_reads` に `membership_id` が追加され、再実行で `read_at_ms` 更新。
+4. **メッセージ共同利用**: 他ユーザーのコメント追加後に `commentCount` / `hasNewComment` が一覧へ出て、詳細閲覧後に `read_at_ms` が更新される。ユーザーAのピン操作がユーザーBの `isPinned` に影響しない。
 5. **セッション更新**: `/auth/session` が `authenticated: true` を返し、`expiresAt` が30日アイドル期限、`absoluteDeadline` が90日絶対期限として返る。再訪時にGoogle通信が発生しない。
 6. **R2 バックアップ**: Worker のログに `mode=incremental` / `mode=full` が出力され、`copied` 件数が期待値内である。
 
