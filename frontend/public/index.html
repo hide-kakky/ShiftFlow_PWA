@@ -704,7 +704,8 @@
       header.navbar {
         position: sticky;
         top: 0;
-        z-index: 1080;
+        /* Bootstrap backdrop (1050) より下に置き、モーダル表示中は背景側に保つ。 */
+        z-index: 1040;
         background: var(--surface);
         color: var(--text-900);
         border-bottom: none;
@@ -1159,7 +1160,7 @@
         header.navbar {
           position: sticky;
           top: 0;
-          z-index: 1100;
+          z-index: 1040;
           box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
           backdrop-filter: blur(10px);
         }
@@ -7072,14 +7073,26 @@
     <!-- /COMPONENT: 承認モーダル -->
 
     <!-- ----- Message detail modal ----- -->
-    <div class="modal" id="messageDetailModal" tabindex="-1">
+    <div
+      class="modal"
+      id="messageDetailModal"
+      tabindex="-1"
+      aria-labelledby="messageDetailModalTitle"
+    >
       <div class="modal-dialog modal-fullscreen-sm-down">
         <div class="modal-content modal-modern">
           <div class="modal-header">
-            <button type="button" class="btn btn-link" data-bs-dismiss="modal">
-              <span class="material-icons">arrow_back</span>
+            <button
+              type="button"
+              class="btn btn-link"
+              data-bs-dismiss="modal"
+              aria-label="メッセージ詳細を閉じる"
+            >
+              <span class="material-icons" aria-hidden="true">arrow_back</span>
             </button>
-            <h6 class="m-0" data-i18n="modal_message_detail_title">メッセージ詳細</h6>
+            <h6 id="messageDetailModalTitle" class="m-0" data-i18n="modal_message_detail_title">
+              メッセージ詳細
+            </h6>
           </div>
           <div class="modal-body">
             <div id="msg-detail-loading" class="skeleton mb-3"></div>
