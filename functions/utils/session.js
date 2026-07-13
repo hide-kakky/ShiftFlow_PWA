@@ -1,13 +1,16 @@
 const SESSION_COOKIE_NAME = 'SESSION';
 const SESSION_NAMESPACE = 'sf:sessions:';
-const SESSION_IDLE_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
-const SESSION_ABSOLUTE_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_VERSION = 2;
+const SESSION_IDLE_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_ABSOLUTE_TIMEOUT_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const SESSION_TTL_SECONDS = Math.ceil(SESSION_ABSOLUTE_TIMEOUT_MS / 1000);
+const SESSION_COOKIE_MAX_AGE_SECONDS = Math.ceil(SESSION_IDLE_TIMEOUT_MS / 1000);
 const INIT_NAMESPACE = 'sf:auth_init:';
 const INIT_TTL_SECONDS = 60 * 5; // 5 minutes
-const DEFAULT_COOKIE_DOMAIN = 'shiftflow.pages.dev';
 const MIN_SESSION_WRITE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SESSION_WRITE_TRACKER = new Map();
+const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SESSION_KEY_PATTERN = /^[A-Za-z0-9_-]{40,64}$/;
 
 function toBase64Url(bytes) {
   const binString = String.fromCharCode(...new Uint8Array(bytes));
@@ -37,22 +40,23 @@ export function getSessionCookieName() {
 
 export function buildSessionCookie(value, opts = {}) {
   const params = [];
-  const domain = opts.domain || DEFAULT_COOKIE_DOMAIN;
-  const sameSite = opts.sameSite || 'None';
+  const domain = typeof opts.domain === 'string' ? opts.domain.trim() : '';
+  const sameSite = opts.sameSite || 'Lax';
   params.push(`${SESSION_COOKIE_NAME}=${value}`);
-  params.push(`Domain=${domain}`);
+  if (domain) params.push(`Domain=${domain}`);
   params.push('Path=/');
   params.push('HttpOnly');
   params.push('Secure');
-  params.push(`Max-Age=${opts.maxAge ?? SESSION_TTL_SECONDS}`);
+  params.push(`Max-Age=${Math.max(0, Math.floor(opts.maxAge ?? SESSION_COOKIE_MAX_AGE_SECONDS))}`);
   params.push(`SameSite=${sameSite}`);
   return params.join('; ');
 }
 
 export function buildExpiredSessionCookie(opts = {}) {
-  const domain = opts.domain || DEFAULT_COOKIE_DOMAIN;
-  const sameSite = opts.sameSite || 'None';
-  return `${SESSION_COOKIE_NAME}=; Domain=${domain}; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=${sameSite}`;
+  const domain = typeof opts.domain === 'string' ? opts.domain.trim() : '';
+  const sameSite = opts.sameSite || 'Lax';
+  const domainPart = domain ? ` Domain=${domain};` : '';
+  return `${SESSION_COOKIE_NAME}=;${domainPart} Path=/; HttpOnly; Secure; Max-Age=0; SameSite=${sameSite}`;
 }
 
 export function parseCookies(header) {
@@ -62,7 +66,12 @@ export function parseCookies(header) {
     if (eq === -1) return acc;
     const key = item.slice(0, eq).trim();
     const val = item.slice(eq + 1).trim();
-    if (key) acc[key] = decodeURIComponent(val);
+    if (!key) return acc;
+    try {
+      acc[key] = decodeURIComponent(val);
+    } catch (_err) {
+      acc[key] = val;
+    }
     return acc;
   }, {});
 }
@@ -74,8 +83,22 @@ export function parseSessionCookie(cookieHeader) {
   const parts = raw.split('.');
   if (parts.length !== 2) return null;
   const [id, key] = parts;
-  if (!id || !key) return null;
+  if (!SESSION_ID_PATTERN.test(id) || !SESSION_KEY_PATTERN.test(key)) return null;
   return { id, key };
+}
+
+function getExpirationTtlSeconds(record, now = Date.now()) {
+  const createdAt = Number(record?.createdAt || now) || now;
+  const remainingMs = createdAt + SESSION_ABSOLUTE_TIMEOUT_MS - now;
+  return Math.max(1, Math.min(SESSION_TTL_SECONDS, Math.ceil(remainingMs / 1000)));
+}
+
+async function persistSessionRecord(env, sessionId, record, now = Date.now()) {
+  await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(record), {
+    expirationTtl: getExpirationTtlSeconds(record, now),
+  });
+  markSessionPersisted(sessionId);
+  return record;
 }
 
 function shouldSkipSessionPersist(sessionId, forcePersist) {
@@ -120,17 +143,15 @@ export async function createSession(env, session) {
   const sessionKey = session.key || toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const now = Date.now();
   const record = {
+    sessionVersion: SESSION_VERSION,
     id: sessionId,
     hash: await sha256Base64(sessionKey),
     user: session.user || {},
-    tokens: session.tokens || {},
     createdAt: now,
     updatedAt: now,
     lastAccessAt: now,
   };
-  await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(record), {
-    expirationTtl: SESSION_TTL_SECONDS,
-  });
+  await persistSessionRecord(env, sessionId, record, now);
   return { record, sessionId, sessionKey };
 }
 
@@ -152,11 +173,7 @@ export async function touchSession(env, sessionId, record) {
   if (shouldSkipSessionPersist(sessionId, false)) {
     return updated;
   }
-  await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
-    expirationTtl: SESSION_TTL_SECONDS,
-  });
-  markSessionPersisted(sessionId);
-  return updated;
+  return persistSessionRecord(env, sessionId, updated, now);
 }
 
 export async function destroySession(env, sessionId) {
@@ -171,24 +188,45 @@ export async function verifySession(env, cookieHeader) {
   const record = await readSession(env, id);
   if (!record || !record.hash) return null;
   const candidateHash = await sha256Base64(key);
-  if (candidateHash !== record.hash) return null;
-  return { id, key, record };
-}
+  if (candidateHash.length !== record.hash.length) return null;
+  let mismatch = 0;
+  for (let index = 0; index < candidateHash.length; index += 1) {
+    mismatch |= candidateHash.charCodeAt(index) ^ record.hash.charCodeAt(index);
+  }
+  if (mismatch !== 0) return null;
 
-export async function updateSessionTokens(env, sessionId, record, tokens) {
-  if (!env?.APP_KV || !sessionId || !record) return;
-  const now = Date.now();
-  const updated = {
-    ...record,
-    tokens: { ...(record.tokens || {}), ...tokens, updatedAt: now },
-    updatedAt: now,
-    lastAccessAt: now,
-  };
-  await env.APP_KV.put(`${SESSION_NAMESPACE}${sessionId}`, JSON.stringify(updated), {
-    expirationTtl: SESSION_TTL_SECONDS,
-  });
-  markSessionPersisted(sessionId);
-  return updated;
+  let verifiedRecord = record;
+  if (Number(record.sessionVersion || 0) < SESSION_VERSION) {
+    const legacyPayload = decodeJwt(record?.tokens?.idToken || '');
+    const existingEmail = String(record?.user?.email || '').trim().toLowerCase();
+    const legacyEmail = String(legacyPayload?.email || existingEmail).trim().toLowerCase();
+    const subject = String(record?.user?.sub || legacyPayload?.sub || '').trim();
+    const legacyEmailVerified =
+      legacyPayload?.email_verified === true ||
+      legacyPayload?.email_verified === 'true' ||
+      legacyPayload?.email_verified === 1 ||
+      legacyPayload?.email_verified === '1';
+    if (
+      !subject ||
+      !legacyEmail ||
+      !legacyEmailVerified ||
+      (existingEmail && legacyEmail !== existingEmail)
+    )
+      return null;
+    verifiedRecord = {
+      ...record,
+      sessionVersion: SESSION_VERSION,
+      user: {
+        ...(record.user || {}),
+        sub: subject,
+        email: legacyEmail,
+        emailVerified: true,
+      },
+    };
+    delete verifiedRecord.tokens;
+    await persistSessionRecord(env, id, verifiedRecord);
+  }
+  return { id, key, record: verifiedRecord };
 }
 
 export function decodeJwt(token) {
@@ -241,37 +279,16 @@ export function evaluateSessionTimeout(record, now = Date.now()) {
   return { expired: false, reason: null, idleDeadline, absoluteDeadline };
 }
 
+export function getSessionCookieMaxAge(record, now = Date.now()) {
+  const timeout = evaluateSessionTimeout(record, now);
+  if (timeout.expired) return 0;
+  const remainingAbsoluteSeconds = Math.floor((timeout.absoluteDeadline - now) / 1000);
+  return Math.max(1, Math.min(SESSION_COOKIE_MAX_AGE_SECONDS, remainingAbsoluteSeconds));
+}
+
 export {
+  SESSION_VERSION,
   SESSION_IDLE_TIMEOUT_MS,
   SESSION_ABSOLUTE_TIMEOUT_MS,
+  SESSION_COOKIE_MAX_AGE_SECONDS,
 };
-
-export async function refreshGoogleTokens(env, refreshToken) {
-  const clientId = env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '';
-  const clientSecret =
-    env?.GOOGLE_OAUTH_CLIENT_SECRET ||
-    env?.GOOGLE_CLIENT_SECRET ||
-    env?.GOOGLE_OAUTH_CLIENT_SECRET_JSON ||
-    '';
-  if (!clientId || !clientSecret) {
-    throw new Error('Google OAuth client credentials are not configured.');
-  }
-  const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    refresh_token: refreshToken,
-    grant_type: 'refresh_token',
-  });
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    body,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  });
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Failed to refresh Google tokens: ${detail}`);
-  }
-  return res.json();
-}

@@ -24,7 +24,7 @@ const targets = [
   {
     label: 'frontend/public/sw.js',
     file: path.join(repoRoot, 'frontend/public/sw.js'),
-    regex: /(const APP_VERSION = swConfig\.APP_VERSION \|\| ')[^']+(';)/,
+    regex: /(const APP_VERSION = ')[^']+(';)/,
   },
 ];
 

@@ -36,17 +36,6 @@
         });
         navigator.serviceWorker.addEventListener('message', function (event) {
           if (!event || !event.data) return;
-          if (event.data.type === 'API_CACHE_UPDATED') {
-            var handler = window.__SHIFT_FLOW_TRIGGER_REFRESH__;
-            if (typeof handler === 'function') {
-              try {
-                handler(event.data);
-              } catch (err) {
-                console.warn('API cache update handling failed:', err);
-              }
-            }
-            return;
-          }
           if (event.data.type === 'APP_SHELL_UPDATED') {
             promptForAppUpdate(event.data);
           }
@@ -229,6 +218,9 @@
         --card: #ffffff;
         --card-border: #dfe6f2;
         --card-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
+        --glass-surface: rgba(255, 255, 255, 0.78);
+        --glass-border: rgba(81, 124, 178, 0.2);
+        --glass-shadow: 0 14px 34px rgba(15, 23, 42, 0.1);
         --text-900: #0f172a;
         --text-700: #1e293b;
         --muted: #475569;
@@ -241,14 +233,7 @@
         --footer-extra: 8px;
         --header-h: 48px;
         --fade: 220ms;
-        --body-bg: linear-gradient(
-            180deg,
-            rgba(81, 124, 178, 0.32) 0%,
-            rgba(81, 124, 178, 0.12) 46%,
-            rgba(255, 255, 255, 0) 85%
-          ),
-          linear-gradient(130deg, rgba(94, 122, 184, 0.22) 0%, rgba(255, 255, 255, 0) 68%),
-          var(--surface);
+        --body-bg: none;
         --task-card-bg: linear-gradient(0deg, rgba(81, 124, 178, 0.1), rgba(81, 124, 178, 0.1)),
           var(--card);
         --msg-card-unread-bg: linear-gradient(
@@ -305,6 +290,9 @@
         --card: #0f1a32;
         --card-border: rgba(122, 162, 255, 0.25);
         --card-shadow: 0 24px 48px rgba(5, 12, 28, 0.6);
+        --glass-surface: rgba(15, 26, 50, 0.8);
+        --glass-border: rgba(122, 162, 255, 0.28);
+        --glass-shadow: 0 18px 42px rgba(3, 9, 24, 0.46);
         --text-900: #f2f6ff;
         --text-700: #d5deff;
         --muted: #cdd8ff;
@@ -313,13 +301,7 @@
         --fab: #f16fa2;
         --fab-shadow: 0 18px 36px rgba(241, 111, 162, 0.4);
         --dropdown-shadow: 0 24px 48px rgba(4, 10, 26, 0.75);
-        --body-bg: linear-gradient(
-            180deg,
-            rgba(75, 118, 195, 0.38) 0%,
-            rgba(38, 58, 120, 0.3) 54%,
-            rgba(8, 19, 38, 0.92) 100%
-          ),
-          linear-gradient(140deg, rgba(66, 103, 185, 0.26) 0%, rgba(8, 19, 38, 0) 72%), #050b18;
+        --body-bg: none;
         --task-card-bg: linear-gradient(0deg, rgba(90, 130, 210, 0.18), rgba(90, 130, 210, 0.12)),
           var(--card);
         --msg-card-unread-bg: linear-gradient(
@@ -3872,6 +3854,203 @@
         max-height: 280px;
         object-fit: contain;
       }
+
+      /* v1.6.0: restrained glass surfaces and consistent state colors */
+      .message-toolbar,
+      .admin-panel,
+      .admin-dashboard-kpi,
+      .admin-card,
+      .modal-content.modal-modern {
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+      }
+      .message-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+        gap: 12px;
+        align-items: end;
+        margin-top: 10px;
+        padding: 14px;
+        border-radius: 18px;
+      }
+      .message-toolbar__field {
+        min-width: 0;
+      }
+      .message-toolbar__field .form-label {
+        margin-bottom: 6px;
+        color: var(--text-700);
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+      .message-toolbar .input-group,
+      .message-toolbar .form-control,
+      .message-toolbar .form-select,
+      .message-toolbar .btn {
+        min-height: 44px;
+      }
+      .message-toolbar__check {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        padding: 0 4px;
+      }
+      .message-toolbar__actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        min-width: 0;
+      }
+      .message-toolbar__hint {
+        grid-column: 1 / -1;
+        margin: -2px 0 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      .card.app-card,
+      :root[data-theme='dark'] .card.app-card {
+        background: var(--glass-surface);
+        border-color: var(--glass-border);
+        box-shadow: var(--glass-shadow);
+      }
+      .card.app-card:hover,
+      .card.app-card:focus-within,
+      :root[data-theme='dark'] .card.app-card:hover,
+      :root[data-theme='dark'] .card.app-card:focus-within {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 38px rgba(15, 23, 42, 0.13);
+        border-color: rgba(81, 124, 178, 0.34);
+      }
+      .card.app-card.msg-card,
+      :root[data-theme='dark'] .card.app-card.msg-card {
+        border-left: 4px solid rgba(81, 124, 178, 0.48);
+        background: var(--glass-surface);
+        box-shadow: var(--glass-shadow);
+      }
+      .card.app-card.msg-card.msg-card--pinned,
+      :root[data-theme='dark'] .card.app-card.msg-card.msg-card--pinned {
+        border-left-color: #d7a514;
+        background: var(--glass-surface);
+      }
+      .card.app-card.msg-card.unread,
+      :root[data-theme='dark'] .card.app-card.msg-card.unread {
+        border-left-color: var(--primary);
+        background: var(--glass-surface);
+        box-shadow: var(--glass-shadow);
+      }
+      .card.app-card.msg-card.unread::after {
+        display: none;
+      }
+      .msg-state-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(81, 124, 178, 0.14);
+        color: var(--primary-700);
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+      :root[data-theme='dark'] .msg-state-badge {
+        background: rgba(122, 162, 255, 0.2);
+        color: #dbe4ff;
+      }
+      :root[data-theme='dark'] .message-toolbar .btn-outline-success {
+        color: #9ce8bd;
+        border-color: rgba(156, 232, 189, 0.7);
+      }
+      :root[data-theme='dark'] .message-toolbar .btn-outline-success:hover,
+      :root[data-theme='dark'] .message-toolbar .btn-outline-success:focus-visible {
+        background: rgba(47, 158, 104, 0.2);
+        color: #d7ffe8;
+      }
+      .msg-actions .btn.msg-action-btn--icon {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+      }
+      .admin-track {
+        display: block;
+        transform: none !important;
+        transition: none;
+        will-change: auto;
+      }
+      .admin-panel {
+        width: 100%;
+        padding: 12px 0 24px;
+      }
+      .admin-panel[hidden] {
+        display: none !important;
+      }
+      .admin-org-trigger,
+      :root[data-theme='dark'] .admin-org-trigger {
+        background: var(--glass-surface);
+        color: var(--text-900);
+        border-color: var(--glass-border);
+        box-shadow: var(--glass-shadow);
+      }
+      .admin-role-label,
+      :root[data-theme='dark'] .admin-role-label {
+        color: var(--text-900) !important;
+      }
+      .app-confirm-context {
+        border-left: 3px solid var(--primary);
+        border-radius: 10px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--text-700);
+        padding: 10px 12px;
+        overflow-wrap: anywhere;
+        white-space: pre-line;
+      }
+      .app-confirm-dialog {
+        width: min(92vw, 520px);
+        max-width: 520px;
+        margin: auto;
+        padding: 0;
+        border: 0;
+        border-radius: 18px;
+        background: transparent;
+        color: var(--text-900);
+        overflow: visible;
+      }
+      .app-confirm-dialog::backdrop {
+        background: rgba(8, 15, 30, 0.55);
+      }
+      body.app-confirm-open {
+        overflow: hidden;
+      }
+      @media (min-width: 768px) {
+        body.admin-view-active .admin-footer-nav {
+          display: none !important;
+        }
+      }
+      @media (max-width: 767.98px) {
+        .message-toolbar {
+          grid-template-columns: 1fr;
+        }
+        .message-toolbar__hint {
+          grid-column: 1;
+        }
+        .message-toolbar .btn {
+          width: 100%;
+        }
+        .message-toolbar__actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
     </style>
   </head>
   <body class="auth-screen">
@@ -4433,49 +4612,55 @@
                   <h3 class="view-title" data-i18n="nav_messages">メッセージ</h3>
                 </div>
               </div>
-              <div class="subhead-bar mt-2">
-                <div class="input-group">
-                  <span class="input-group-text material-icons-outlined">search</span>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="msg-search-box"
-                    placeholder="キーワード検索"
-                    data-i18n="placeholder_keyword_search"
-                  />
+              <div class="message-toolbar" aria-label="メッセージの検索と絞り込み">
+                <div class="message-toolbar__field">
+                  <label class="form-label" for="msg-search-box">キーワード</label>
+                  <div class="input-group">
+                    <span class="input-group-text material-icons-outlined" aria-hidden="true"
+                      >search</span
+                    >
+                    <input
+                      type="search"
+                      class="form-control"
+                      id="msg-search-box"
+                      placeholder="件名・本文を検索"
+                      data-i18n="placeholder_keyword_search"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div class="row g-2 align-items-end mt-2">
-                <div class="col-auto">
-                  <label class="form-label" data-i18n="messages_filter_folder">フォルダ</label>
+                <div class="message-toolbar__field">
+                  <label class="form-label" for="flt-msg-folder" data-i18n="messages_filter_folder"
+                    >フォルダ</label
+                  >
                   <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
                     <option value="" data-i18n="filter_all">全て</option>
                   </select>
                 </div>
-                <div class="col-auto">
-                  <label class="form-label d-block">&nbsp;</label>
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                    <label
-                      class="form-check-label"
-                      for="flt-msg-unread"
-                      data-i18n="messages_filter_unread_only"
-                      >未読のみ</label
-                    >
+                <div class="message-toolbar__actions">
+                  <div class="message-toolbar__check">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
+                      <label
+                        class="form-check-label"
+                        for="flt-msg-unread"
+                        data-i18n="messages_filter_unread_only"
+                        >未読のみ</label
+                      >
+                    </div>
                   </div>
-                </div>
-                <div class="col-auto">
-                  <label class="form-label d-block">&nbsp;</label>
                   <button
                     class="btn btn-outline-success"
                     id="btn-msg-markall"
                     type="button"
-                    aria-label="未読をすべて既読にする"
+                    aria-label="選択中のフォルダをすべて既読にする"
                   >
                     <span class="material-icons align-middle me-1">done_all</span>
-                    <span data-i18n="messages_mark_all_read">全て既読にする</span>
+                    <span data-i18n="messages_mark_all_read">この範囲をすべて既読</span>
                   </button>
                 </div>
+                <p class="message-toolbar__hint">
+                  選択中のフォルダが一括既読の対象です。キーワードは対象件数に含めません。
+                </p>
               </div>
               <!-- Message card list mount point -->
               <div id="msg-list" class="mt-2"></div>
@@ -4654,7 +4839,7 @@
             </section>
           </div>
         </div>
-        <section class="admin-shell" id="view-admin" hidden aria-labelledby="adminViewTitle">
+        <section class="admin-shell" id="view-admin" hidden aria-labelledby="admin-section-label">
           <div class="container-xl">
             <div class="admin-top-actions">
               <button
@@ -5361,8 +5546,8 @@
             </div>
           </div>
           <div class="admin-bottom-meta text-center">
-            <p class="text-muted small mb-0">UI 全体は順次ブラッシュアップ予定です</p>
-            <small class="text-muted">スワイプまたは下部ナビでセクションを切り替えられます</small>
+            <p class="text-muted small mb-0">重要な管理操作は監査ログに記録されます</p>
+            <small class="text-muted">スマートフォンではスワイプまたは下部ナビで切り替えられます</small>
           </div>
         </section>
       </main>
@@ -6134,6 +6319,35 @@
         </div>
       </div>
     </div>
+
+    <dialog
+      class="app-confirm-dialog"
+      id="appConfirmModal"
+      aria-labelledby="appConfirmTitle"
+      aria-describedby="appConfirmMessage"
+    >
+      <div class="modal-content modal-modern">
+        <div class="modal-header">
+          <h5 class="modal-title" id="appConfirmTitle">操作の確認</h5>
+          <button
+            type="button"
+            class="btn-close"
+            data-app-confirm-cancel
+            aria-label="閉じる"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-3" id="appConfirmMessage">この操作を実行しますか？</p>
+          <div class="app-confirm-context small" id="appConfirmContext" hidden></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-app-confirm-cancel>
+            キャンセル
+          </button>
+          <button type="button" class="btn btn-primary" id="appConfirmAccept">実行する</button>
+        </div>
+      </div>
+    </dialog>
 
     <div
       class="image-viewer-overlay"
@@ -9266,6 +9480,69 @@
           el.addEventListener(ev, fn);
         }
       }
+      function requestConfirmation(options) {
+        options = options || {};
+        var modalEl = byId('appConfirmModal');
+        var acceptBtn = byId('appConfirmAccept');
+        if (!modalEl || !acceptBtn || typeof modalEl.showModal !== 'function') {
+          return Promise.resolve(false);
+        }
+        var titleEl = byId('appConfirmTitle');
+        var messageEl = byId('appConfirmMessage');
+        var contextEl = byId('appConfirmContext');
+        if (titleEl) titleEl.textContent = options.title || '操作の確認';
+        if (messageEl) messageEl.textContent = options.message || 'この操作を実行しますか？';
+        if (contextEl) {
+          var context = String(options.context || '').trim();
+          contextEl.textContent = context;
+          contextEl.hidden = !context;
+        }
+        acceptBtn.textContent = options.confirmLabel || '実行する';
+        acceptBtn.className =
+          'btn ' + (options.variant === 'danger' ? 'btn-danger' : 'btn-primary');
+
+        return new Promise(function (resolve) {
+          var settled = false;
+          var cancelButtons = Array.prototype.slice.call(
+            modalEl.querySelectorAll('[data-app-confirm-cancel]')
+          );
+          function finish(value) {
+            if (settled) return;
+            settled = true;
+            acceptBtn.removeEventListener('click', handleAccept);
+            modalEl.removeEventListener('close', handleClose);
+            modalEl.removeEventListener('cancel', handleCancel);
+            cancelButtons.forEach(function (button) {
+              button.removeEventListener('click', handleDismiss);
+            });
+            if (document.body) document.body.classList.remove('app-confirm-open');
+            resolve(value);
+          }
+          function handleAccept() {
+            modalEl.close('confirm');
+          }
+          function handleDismiss() {
+            modalEl.close('cancel');
+          }
+          function handleCancel(event) {
+            event.preventDefault();
+            modalEl.close('cancel');
+          }
+          function handleClose() {
+            finish(modalEl.returnValue === 'confirm');
+          }
+          if (modalEl.open) modalEl.close('cancel');
+          acceptBtn.addEventListener('click', handleAccept);
+          modalEl.addEventListener('close', handleClose, { once: true });
+          modalEl.addEventListener('cancel', handleCancel, { once: true });
+          cancelButtons.forEach(function (button) {
+            button.addEventListener('click', handleDismiss);
+          });
+          if (document.body) document.body.classList.add('app-confirm-open');
+          modalEl.returnValue = '';
+          modalEl.showModal();
+        });
+      }
       function notify(msg, ok, options) {
         options = options || {};
         var wrap = byId('notification-area');
@@ -10576,6 +10853,9 @@
         document.querySelectorAll('[data-admin-panel]').forEach(function (panel) {
           var match = panel.getAttribute('data-admin-panel') === target;
           panel.classList.toggle('is-active', match);
+          panel.hidden = !match;
+          panel.setAttribute('aria-hidden', match ? 'false' : 'true');
+          panel.inert = !match;
         });
         document.querySelectorAll('[data-admin-nav-link]').forEach(function (link) {
           var match = link.getAttribute('data-admin-target') === target;
@@ -10632,22 +10912,8 @@
       function moveAdminTrack(section, opts) {
         var track = byId('adminTrack');
         if (!track) return;
-        var idx = ADMIN_ORDER.indexOf(section);
-        if (idx < 0) return;
-        var animate = !opts || opts.animate !== false;
-        if (!animate) {
-          track.style.transition = 'none';
-        } else {
-          track.style.transition = 'transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-        }
-        requestAnimationFrame(function () {
-          track.style.transform = 'translateX(' + -idx * 100 + '%)';
-          if (!animate) {
-            requestAnimationFrame(function () {
-              track.style.transition = 'transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-            });
-          }
-        });
+        track.style.transform = 'none';
+        track.style.transition = 'none';
       }
       function stepAdminSection(delta) {
         var current = ADMIN_ORDER.indexOf(ADMIN_STATE.section || 'dashboard');
@@ -12951,6 +13217,7 @@
         var pinIndicator = m.isPinned
           ? '<span class="pin-indicator material-icons-outlined" aria-hidden="true">push_pin</span>'
           : '';
+        var unreadIndicator = !isRead ? '<span class="msg-state-badge">未読</span>' : '';
         var preview = m.preview || m.body || '';
         var previewHtml = esc(preview || '').replace(/\n/g, '<br>');
         var linkClasses = ['msg-link', 'link-surface', 'flex-grow-1'];
@@ -13012,6 +13279,7 @@
           renderAuthorAvatar(m.createdBy, authorLabel, { variant: 'lg' }) +
           '</span>' +
           pinIndicator +
+          unreadIndicator +
           '<span class="msg-title ' +
           (isRead ? 'text-muted' : '') +
           '">' +
@@ -13034,11 +13302,14 @@
       function rowMsg(m) {
         return renderMessageCard(m, { hideAction: false });
       }
+      var MESSAGE_LOAD_REQUEST_ID = 0;
       function filterMessages(list, suppliedFilters) {
         var filters = suppliedFilters || MessageViewController.getFilters();
         var folderId = filters.folderId || '';
         var unreadOnly = !!filters.unreadOnly;
-        var kw = filters.keyword || '';
+        var kw = String(filters.keyword || '')
+          .trim()
+          .toLocaleLowerCase('ja-JP');
         var rows = normalizeArray(list).slice();
         if (unreadOnly)
           rows = rows.filter(function (x) {
@@ -13053,7 +13324,9 @@
         }
         if (kw) {
           rows = rows.filter(function (x) {
-            return String(x.title || '').indexOf(kw) >= 0 || String(x.body || '').indexOf(kw) >= 0;
+            var title = String(x.title || '').toLocaleLowerCase('ja-JP');
+            var body = String(x.body || '').toLocaleLowerCase('ja-JP');
+            return title.indexOf(kw) >= 0 || body.indexOf(kw) >= 0;
           });
         }
         return rows;
@@ -13093,6 +13366,7 @@
       }
       function loadMessages(options) {
         const opts = options || {};
+        const requestId = ++MESSAGE_LOAD_REQUEST_ID;
         if (!HAS_ACTIVE_EMAIL) {
           byId('msg-list').innerHTML = authRequiredCard();
           if (!AUTH_NOTICE_SHOWN) {
@@ -13118,13 +13392,15 @@
           : Promise.resolve(null);
         return cachePromise
           .then(function (cached) {
+            if (requestId !== MESSAGE_LOAD_REQUEST_ID) return;
             if (cached && Array.isArray(cached.rows)) {
               cachedRows = cached.rows;
             }
           })
           .then(function () {
+            if (requestId !== MESSAGE_LOAD_REQUEST_ID) return false;
             if (shouldSkipFetch && cachedRows) {
-              byId('msg-list').innerHTML = renderMessageList(cachedRows);
+              byId('msg-list').innerHTML = renderMessageList(filterMessages(cachedRows, filters));
               setMsgLoading(false);
               return false;
             }
@@ -13132,20 +13408,30 @@
             return new Promise(function (resolve) {
               google.script.run
                 .withSuccessHandler(function (list) {
-                  var rows = filterMessages(list);
+                  if (requestId !== MESSAGE_LOAD_REQUEST_ID) {
+                    resolve(false);
+                    return;
+                  }
+                  var rows = filterMessages(list, filters);
                   if (useCache) {
                     cacheMessages(cacheKey, rows);
                   }
                   LAST_MESSAGES_FETCH_AT = Date.now();
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (requestId !== MESSAGE_LOAD_REQUEST_ID) return;
                     byId('msg-list').innerHTML = renderMessageList(rows);
                     setMsgLoading(false);
                   });
                   resolve(true);
                 })
                 .withFailureHandler(function (e) {
+                  if (requestId !== MESSAGE_LOAD_REQUEST_ID) {
+                    resolve(false);
+                    return;
+                  }
                   notify('Failed to load messages: ' + e.message, false);
                   revealAfterDelay(skeletonStartedAt, MIN_CONTENT_SKELETON_MS, function () {
+                    if (requestId !== MESSAGE_LOAD_REQUEST_ID) return;
                     if (Array.isArray(cachedRows)) {
                       byId('msg-list').innerHTML = renderMessageList(cachedRows);
                     } else {
@@ -13232,46 +13518,64 @@
         var folderRef = byId('flt-msg-folder') ? byId('flt-msg-folder').value : '';
         if (folderRef != null) folderRef = String(folderRef).trim();
         if (!folderRef || folderRef.toLowerCase() === 'all') folderRef = '';
+        var folderSelect = byId('flt-msg-folder');
+        var folderLabel =
+          folderSelect && folderSelect.selectedIndex >= 0
+            ? String(folderSelect.options[folderSelect.selectedIndex].text || '').trim()
+            : 'すべてのフォルダ';
+        function restoreButton() {
+          btn.disabled = false;
+          btn.innerHTML = originalHTML;
+        }
         google.script.run
           .withSuccessHandler(function (list) {
-            var rows = filterMessages(list).filter(function (x) {
-              return !x.isRead;
+            var rows = filterMessages(list, {
+              folderId: folderRef,
+              unreadOnly: true,
+              keyword: '',
             });
             var ids = rows.map(function (x) {
               return x.id;
             });
             if (ids.length === 0) {
               notify('未読メッセージはありません', true);
-              btn.disabled = false;
-              btn.innerHTML = originalHTML;
+              restoreButton();
               return;
             }
-            google.script.run
-              .withSuccessHandler(function (res) {
-                notify(
-                  res && res.message ? res.message : '既読にしました',
-                  res && res.success !== false
-                );
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
-                loadMessages({ force: true });
-                loadHome({ force: true });
-              })
-              .withFailureHandler(function (e) {
-                notify('Failed to mark messages as read: ' + e.message, false);
-                btn.disabled = false;
-                btn.innerHTML = originalHTML;
-              })
-              .markMemosReadBulk(ids);
+            requestConfirmation({
+              title: '一括既読の確認',
+              message: '選択した範囲の未読メッセージを既読にします。',
+              context: '対象: ' + (folderLabel || 'すべてのフォルダ') + ' / ' + ids.length + '件',
+              confirmLabel: '既読にする',
+            }).then(function (confirmed) {
+              if (!confirmed) {
+                restoreButton();
+                return;
+              }
+              google.script.run
+                .withSuccessHandler(function (res) {
+                  notify(
+                    res && res.message ? res.message : '既読にしました',
+                    res && res.success !== false
+                  );
+                  restoreButton();
+                  loadMessages({ force: true });
+                  loadHome({ force: true });
+                })
+                .withFailureHandler(function (e) {
+                  notify('既読処理に失敗しました: ' + e.message, false);
+                  restoreButton();
+                })
+                .markMemosReadBulk(ids);
+            });
           })
           .withFailureHandler(function (e) {
-            notify('Failed to refresh messages: ' + e.message, false);
-            btn.disabled = false;
-            btn.innerHTML = originalHTML;
+            notify('メッセージの確認に失敗しました: ' + e.message, false);
+            restoreButton();
           })
           .getMessages({
             folderId: folderRef || undefined,
-            unreadOnly: !!(byId('flt-msg-unread') || {}).checked,
+            unreadOnly: true,
           });
       });
 
@@ -13529,19 +13833,29 @@
       });
       on('deleteTaskButton', 'click', function () {
         if (!CURRENT_TASK_ID) return;
-        if (!confirm('このタスクを削除します。よろしいですか？')) return;
-        google.script.run
-          .withSuccessHandler(function (res) {
-            notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
-            var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
-            if (inst) inst.hide();
-            loadHome({ force: true });
-            loadMyTasks({ force: true });
-          })
-          .withFailureHandler(function (e) {
-            notify('削除に失敗: ' + e.message, false);
-          })
-          .deleteTaskById(CURRENT_TASK_ID);
+        var taskId = CURRENT_TASK_ID;
+        var taskTitle = byId('detailTaskTitle') ? byId('detailTaskTitle').textContent : '';
+        requestConfirmation({
+          title: 'タスクを削除',
+          message: '削除したタスクは元に戻せません。',
+          context: taskTitle || '選択中のタスク',
+          confirmLabel: '削除する',
+          variant: 'danger',
+        }).then(function (confirmed) {
+          if (!confirmed) return;
+          google.script.run
+            .withSuccessHandler(function (res) {
+              notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+              var inst = bootstrap.Modal.getInstance(byId('taskDetailModal'));
+              if (inst) inst.hide();
+              loadHome({ force: true });
+              loadMyTasks({ force: true });
+            })
+            .withFailureHandler(function (e) {
+              notify('削除に失敗: ' + e.message, false);
+            })
+            .deleteTaskById(taskId);
+        });
       });
       var CURRENT_MEMO_ID = null;
       var CURRENT_MESSAGE_ATTACHMENTS = [];
@@ -13939,19 +14253,29 @@
       });
       on('deleteMessageButton', 'click', function () {
         if (!CURRENT_MEMO_ID) return;
-        if (!confirm('このメッセージを削除します。よろしいですか？')) return;
-        google.script.run
-          .withSuccessHandler(function (res) {
-            notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
-            var inst = bootstrap.Modal.getInstance(byId('messageDetailModal'));
-            if (inst) inst.hide();
-            loadMessages({ force: true });
-            loadHome({ force: true });
-          })
-          .withFailureHandler(function (e) {
-            notify('削除に失敗: ' + e.message, false);
-          })
-          .deleteMessageById(CURRENT_MEMO_ID);
+        var memoId = CURRENT_MEMO_ID;
+        var messageTitle = byId('msgDetailTitle') ? byId('msgDetailTitle').textContent : '';
+        requestConfirmation({
+          title: 'メッセージを削除',
+          message: '削除したメッセージとコメントは元に戻せません。',
+          context: messageTitle || '選択中のメッセージ',
+          confirmLabel: '削除する',
+          variant: 'danger',
+        }).then(function (confirmed) {
+          if (!confirmed) return;
+          google.script.run
+            .withSuccessHandler(function (res) {
+              notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
+              var inst = bootstrap.Modal.getInstance(byId('messageDetailModal'));
+              if (inst) inst.hide();
+              loadMessages({ force: true });
+              loadHome({ force: true });
+            })
+            .withFailureHandler(function (e) {
+              notify('削除に失敗: ' + e.message, false);
+            })
+            .deleteMessageById(memoId);
+        });
       });
       on('btnUnreadStatus', 'click', function () {
         if (!CURRENT_MEMO_ID) return;
@@ -15727,16 +16051,29 @@
             role: requestedRole,
             status: requestedStatus,
           };
-          setButtonLoading(saveBtn, true);
-          performUpdate(payload, {
-            skipRowBusy: true,
-            onSuccess: function () {
-              setButtonLoading(saveBtn, false);
-              closeDetail();
-            },
-            onError: function () {
-              setButtonLoading(saveBtn, false);
-            },
+          var changes = [];
+          if (requestedRole) changes.push('ロール: ' + row.role + ' → ' + requestedRole);
+          if (requestedStatus)
+            changes.push('状態: ' + row.status + ' → ' + requestedStatus);
+          requestConfirmation({
+            title: 'ユーザー権限の変更',
+            message: 'この変更は対象ユーザーの利用範囲に影響します。',
+            context: (row.email || '対象ユーザー') + '\n' + changes.join(' / '),
+            confirmLabel: '変更を保存',
+            variant: requestedStatus === 'suspended' || requestedStatus === 'revoked' ? 'danger' : '',
+          }).then(function (confirmed) {
+            if (!confirmed) return;
+            setButtonLoading(saveBtn, true);
+            performUpdate(payload, {
+              skipRowBusy: true,
+              onSuccess: function () {
+                setButtonLoading(saveBtn, false);
+                closeDetail();
+              },
+              onError: function () {
+                setButtonLoading(saveBtn, false);
+              },
+            });
           });
         }
 
@@ -15759,8 +16096,16 @@
           if (action === 'activate') message = 'ユーザーを承認しますか？';
           else if (action === 'suspend') message = 'ユーザーを停止しますか？';
           else if (action === 'resume') message = 'ユーザーを再開しますか？';
-          if (!window.confirm(message)) return;
-          performUpdate({ userId: userId, email: email, action: action });
+          requestConfirmation({
+            title: 'ユーザー状態の変更',
+            message: message,
+            context: email || '対象ユーザー',
+            confirmLabel: action === 'suspend' ? '停止する' : '実行する',
+            variant: action === 'suspend' ? 'danger' : '',
+          }).then(function (confirmed) {
+            if (!confirmed) return;
+            performUpdate({ userId: userId, email: email, action: action });
+          });
         }
 
         function ensureLoaded() {

@@ -20,6 +20,10 @@ pnpm-debug.log*
 # Cloudflare Pages / Wrangler 関連
 .wrangler/
 frontend/public/.cache
+_worker.bundle
+
+# ローカルコード索引
+.codegraph/
 
 # 環境変数ファイル
 .env

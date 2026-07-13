@@ -1,5 +1,5 @@
-import { loadConfig } from '../api/config';
-import { createPkcePair, persistAuthInit } from '../utils/session';
+import { loadConfig } from '../api/config.js';
+import { createPkcePair, persistAuthInit } from '../utils/session.js';
 
 const CANONICAL_DOMAIN = 'shiftflow.pages.dev';
 const CALLBACK_URL = `https://${CANONICAL_DOMAIN}/auth/callback`;
@@ -56,11 +56,10 @@ function buildSigninErrorPath(code, requestId) {
 function cookie(name, value, { maxAge } = {}) {
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
-    `Domain=${CANONICAL_DOMAIN}`,
     'Path=/',
     'HttpOnly',
     'Secure',
-    'SameSite=None',
+    'SameSite=Lax',
   ];
   if (typeof maxAge === 'number') {
     parts.push(`Max-Age=${maxAge}`);
@@ -113,8 +112,6 @@ export async function onRequest({ request, env }) {
     'openid',
     'email',
     'profile',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile',
   ];
 
   const authParams = new URLSearchParams({
@@ -123,10 +120,7 @@ export async function onRequest({ request, env }) {
     response_type: 'code',
     scope: scopes.join(' '),
     state,
-    access_type: 'offline',
-    include_granted_scopes: 'true',
-    // consent を含めて毎回 refresh_token を払い出してもらう
-    prompt: 'consent select_account',
+    prompt: 'select_account',
     code_challenge: challenge,
     code_challenge_method: 'S256',
   });
@@ -134,6 +128,14 @@ export async function onRequest({ request, env }) {
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${authParams.toString()}`;
 
   const headers = new Headers({ Location: authUrl });
+  headers.append(
+    'Set-Cookie',
+    `OAUTH_STATE=; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+  );
+  headers.append(
+    'Set-Cookie',
+    `PKCE_CODE_VERIFIER=; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+  );
   headers.append('Set-Cookie', cookie('OAUTH_STATE', state, { maxAge: COOKIE_MAX_AGE }));
   headers.append(
     'Set-Cookie',

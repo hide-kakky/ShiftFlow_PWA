@@ -1,31 +1,32 @@
-self.importScripts('/app-config.js');
-const swConfig = self.SHIFT_FLOW_CONFIG || {};
-
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
-const APP_VERSION = swConfig.APP_VERSION || '1.5.20';
+const APP_VERSION = '1.6.0';
 
-const CACHE_PREFIX = swConfig.CACHE_PREFIX || 'shiftflow-';
-const APP_SHELL_CACHE = swConfig.APP_SHELL_CACHE_KEY || `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
-const API_CACHE = swConfig.API_CACHE_KEY || `${CACHE_PREFIX}api-v1`;
-const APP_SHELL = Array.isArray(swConfig.APP_SHELL_PATHS)
-  ? swConfig.APP_SHELL_PATHS
-  : ['/', '/index.html', '/manifest.webmanifest', '/app-config.js'];
-const API_REVALIDATE_PATHS = Array.isArray(swConfig.API_REVALIDATE_PATHS)
-  ? swConfig.API_REVALIDATE_PATHS
-  : ['/api/tasks', '/api/messages', '/api/home'];
+const CACHE_PREFIX = 'shiftflow-';
+const APP_SHELL_CACHE = `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/app-config.js', '/i18n.js'];
 
 self.addEventListener('install', (event) => {
   const hadActiveWorker = !!(self.registration && self.registration.active);
   event.waitUntil(
     caches
       .open(APP_SHELL_CACHE)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) =>
+        Promise.all(
+          APP_SHELL.map((path) =>
+            fetch(new Request(new URL(path, self.location.origin), { cache: 'reload' })).then((response) => {
+              if (!isCacheableResponse(response)) {
+                throw new Error(`Failed to refresh app shell: ${path}`);
+              }
+              return cache.put(path, response);
+            })
+          )
+        )
+      )
       .then(() => {
         if (hadActiveWorker) {
           broadcastAppShellUpdate();
-        } else {
-          self.skipWaiting();
         }
+        return self.skipWaiting();
       })
   );
 });
@@ -36,9 +37,7 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(
-            (key) => key.startsWith(CACHE_PREFIX) && key !== APP_SHELL_CACHE && key !== API_CACHE
-          )
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== APP_SHELL_CACHE)
           .map((key) => caches.delete(key))
       );
 
@@ -55,9 +54,9 @@ self.addEventListener('activate', (event) => {
           })
           .map((request) => appShellCache.delete(request))
       );
+      await self.clients.claim();
     })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener('message', (event) => {
@@ -86,12 +85,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (shouldHandleAsApi(url.pathname)) {
-    event.respondWith(staleWhileRevalidateApi(event));
+  // 認証済み業務データはユーザーをまたいでCacheStorageへ残さない。
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 
-  event.respondWith(cacheFirstAppShell(event.request));
+  const shellPath = url.pathname === '/index.html' ? '/' : url.pathname;
+  if (!APP_SHELL.includes(shellPath)) {
+    return;
+  }
+  const cacheRequest = new Request(new URL(shellPath, self.location.origin));
+  event.respondWith(cacheFirstAppShell(cacheRequest));
 });
 
 function cacheFirstAppShell(request) {
@@ -110,96 +114,12 @@ function cacheFirstAppShell(request) {
   });
 }
 
-async function staleWhileRevalidateApi(event) {
-  const { request } = event;
-  const cache = await caches.open(API_CACHE);
-  const cachedResponse = await cache.match(request);
-
-  const networkPromise = fetch(request)
-    .then(async (networkResponse) => {
-      if (!isCacheableResponse(networkResponse)) {
-        return networkResponse;
-      }
-
-      const responseForCache = networkResponse.clone();
-      const responseForNotify = networkResponse.clone();
-      await cache.put(request, responseForCache);
-
-      if (await shouldBroadcastUpdate(request, responseForNotify, cachedResponse)) {
-        broadcastCacheUpdate(request.url);
-      }
-
-      return networkResponse;
-    })
-    .catch((error) => {
-      if (!cachedResponse) {
-        throw error;
-      }
-      return cachedResponse;
-    });
-
-  if (cachedResponse) {
-    event.waitUntil(networkPromise.catch(() => {}));
-    return cachedResponse;
-  }
-
-  return networkPromise;
-}
-
 function isCacheableResponse(response) {
   return (
     response &&
     response.status === 200 &&
     (response.type === 'basic' || response.type === 'default')
   );
-}
-
-function shouldHandleAsApi(pathname) {
-  return API_REVALIDATE_PATHS.some((prefix) => pathname.startsWith(prefix));
-}
-
-async function shouldBroadcastUpdate(request, freshResponse, cachedResponse) {
-  if (!cachedResponse) {
-    return true;
-  }
-
-  const freshTag = freshResponse.headers.get('etag');
-  const cachedTag = cachedResponse.headers.get('etag');
-  if (freshTag && cachedTag && freshTag === cachedTag) {
-    return false;
-  }
-
-  const freshModified = freshResponse.headers.get('last-modified');
-  const cachedModified = cachedResponse.headers.get('last-modified');
-  if (freshModified && cachedModified && freshModified === cachedModified) {
-    return false;
-  }
-
-  const freshLength = freshResponse.headers.get('content-length');
-  const cachedLength = cachedResponse.headers.get('content-length');
-  if (freshLength && cachedLength && freshLength === cachedLength) {
-    return false;
-  }
-
-  // Fallback: if no comparison was possible, assume updated.
-  return true;
-}
-
-function broadcastCacheUpdate(url) {
-  self.clients
-    .matchAll({ type: 'window', includeUncontrolled: true })
-    .then((clients) => {
-      clients.forEach((client) => {
-        client.postMessage({
-          type: 'API_CACHE_UPDATED',
-          url,
-          timestamp: Date.now(),
-        });
-      });
-    })
-    .catch(() => {
-      // ignore broadcast failures
-    });
 }
 
 function broadcastAppShellUpdate() {

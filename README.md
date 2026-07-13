@@ -7,7 +7,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ## 運用メモ（Codex / Service Worker）
 
-- 現在の APP_VERSION: `1.0.28`（`frontend/public/sw.js` 内の定義）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- 現在の APP_VERSION: `1.6.0`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
 - すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
 - 基本ルールは `CODEx_PROMPT.md` と `AGENTS.md` に従うこと。
 - Wrangler の `compatibility_date` は Pages Functions / Worker どちらも `2025-11-02` で統一。
@@ -86,8 +86,8 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
 1. `/auth/start` で PKCE の `code_verifier` / `code_challenge` を生成し、`APP_KV` に初期状態を保管。`CANONICAL_DOMAIN`（`shiftflow.pages.dev`）向けに Google OAuth へ 302。  
    - カスタムドメインを使う場合は `functions/auth/start.js` / `callback.js` の `CANONICAL_DOMAIN` を合わせて更新し、Google Cloud 側の **認証済みリダイレクト URI** も更新すること。
 2. Google から `/auth/callback` へ戻り、`code` + `code_verifier` でトークン交換。`verifyGoogleIdToken` で ID トークンを検証。
-3. `APP_KV` にセッションを保存し、`SESSION=<id>.<key>` Cookie を SameSite=None で発行。
-4. フロントは `/auth/session` へ定期ポーリングし、`SESSION` Cookie を検証。期限が近ければリフレッシュトークンで Google トークンを延命。
+3. 検証済みの Google `sub` とユーザー情報だけを `APP_KV` に保存し、host-only の `SESSION=<id>.<key>` Cookie を `SameSite=Lax` で発行。Googleトークンはセッションへ保存しない。
+4. フロントは `/auth/session` でShiftFlowセッションを検証する。アイドル期限は30日、絶対期限は90日で、通常利用中にGoogleへ再問い合わせしない。
 5. `/auth/logout` でセッション破棄 & Cookie 失効。
 
 ---
@@ -95,8 +95,8 @@ wrangler kv key put --binding=APP_KV shiftflow:flags '{"d1Read":true,"d1Primary"
 ## API / データフロー（`functions/api/[route].js`）
 
 1. すべての `/api/<route>` が単一ファイルで完結。
-2. `GOOGLE_OAUTH_CLIENT_ID` を使って ID トークンを JWKS または TokenInfo API で検証。
-3. `resolveAccessContextFromD1` が `users` / `memberships` を参照し、`status=active` かつロール（`admin` / `manager` / `member` / `guest`）を評価。結果はメモリキャッシュ (`ACTIVE_ACCESS_CACHE_TTL_MS`) に短時間保持。
+2. ログイン時に検証済みのShiftFlowセッションをCookieから読み、`sub` / `email` / `emailVerified`を認証IDとして使う。Google ID tokenの検証はOAuth callback時だけ行う。
+3. `resolveAccessContextFromD1` が `users` / `memberships` を参照し、所属組織、`status=active`、ロール（`admin` / `manager` / `member` / `guest`）を各リクエストで評価する。
 4. 許可されたリクエストだけが D1 にアクセス。代表的なルート:
    - **Bootstrap**: `getBootstrapData`, `getHomeContent`, `listActiveUsers`, `listActiveFolders`
    - **タスク**: `addNewTask`, `updateTask`, `completeTask`, `deleteTaskById`, `listMyTasks`, `listCreatedTasks`, `listAllTasks`, `getTaskById`
@@ -194,7 +194,7 @@ wrangler tail  --config workers/r2-backup/wrangler.toml
 2. **RBAC**: `member` が `listAllTasks` を呼ぶと 403、`manager` 以上で 200。`X-ShiftFlow-Request-Id` をログで追跡。
 3. **タスク CRUD**: `addNewTask` 成功後、`tasks` / `task_assignees` にレコードが作成され、`downloadAttachment` で添付を取得できる。
 4. **メッセージ既読管理**: `toggleMemoRead` → `message_reads` に `membership_id` が追加され、再実行で `read_at_ms` 更新。
-5. **セッション更新**: `/auth/session` が `authenticated: true` を返し、`expiresAt` が Google ID トークンの期限より 60 秒以上先になっている。
+5. **セッション更新**: `/auth/session` が `authenticated: true` を返し、`expiresAt` が30日アイドル期限、`absoluteDeadline` が90日絶対期限として返る。再訪時にGoogle通信が発生しない。
 6. **R2 バックアップ**: Worker のログに `mode=incremental` / `mode=full` が出力され、`copied` 件数が期待値内である。
 
 ---

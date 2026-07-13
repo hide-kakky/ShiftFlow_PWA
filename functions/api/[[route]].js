@@ -1,14 +1,13 @@
-import { loadConfig, getRoutePermissions } from './config';
+import { loadConfig, getRoutePermissions } from './config.js';
 import {
   verifySession,
   buildSessionCookie,
   buildExpiredSessionCookie,
-  refreshGoogleTokens,
-  calculateIdTokenExpiry,
-  updateSessionTokens,
   touchSession,
-} from '../utils/session';
-import { verifyGoogleIdToken } from '../utils/googleIdToken';
+  destroySession,
+  evaluateSessionTimeout,
+  getSessionCookieMaxAge,
+} from '../utils/session.js';
 import {
   PROFILE_PLACEHOLDER_URL,
   PROFILE_IMAGE_MAX_BYTES,
@@ -22,7 +21,7 @@ import {
   SENSITIVE_META_KEYWORDS,
   ACTIVE_ACCESS_CACHE_TTL_MS,
   DIAGNOSTIC_ROUTE,
-} from './constants';
+} from './constants.js';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 const ACCESS_CACHE = new Map();
@@ -35,7 +34,6 @@ const DEFAULT_SYSTEM_FOLDER_NAME = 'Main';
 const DEFAULT_LANGUAGE = 'ja';
 const PINNED_MESSAGE_LIMIT = 5;
 const HEX_COLOR_REGEX = /^#?([0-9a-fA-F]{6})$/;
-const SESSION_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const SUPPORTED_TIMEZONES = [
   'Asia/Tokyo',
   'Asia/Singapore',
@@ -119,6 +117,8 @@ function jsonResponse(status, payload, origin, requestIdOrHeaders, maybeHeaders)
   }
   const headers = new Headers({
     'Content-Type': 'application/json',
+    'Cache-Control': 'private, no-store',
+    Pragma: 'no-cache',
     ...corsHeaders(origin),
   });
   if (requestId) {
@@ -165,7 +165,10 @@ function jsonResponse(status, payload, origin, requestIdOrHeaders, maybeHeaders)
   }
   if (extraHeaders && typeof extraHeaders === 'object') {
     Object.entries(extraHeaders).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
+      if (Array.isArray(value)) {
+        headers.delete(key);
+        value.forEach((item) => headers.append(key, String(item)));
+      } else if (value !== undefined && value !== null) {
         headers.set(key, String(value));
       }
     });
@@ -614,19 +617,25 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     row.membership_id,
     row.is_active
   );
-  const allowed = status === 'active';
-  const role = normalizeRoleValue(row.role || 'member') || 'member';
+  const hasMembership = Boolean(row.membership_id && row.org_id);
+  const membershipStatus = normalizeUserStatusValue(row.membership_status || 'pending');
+  const allowed = hasMembership && status === 'active' && membershipStatus === 'active';
+  const role = hasMembership ? normalizeRoleValue(row.role || 'member') || 'member' : 'guest';
   const context = {
     allowed,
     status,
     role,
     email: row.email || tokenDetails.email || '',
     displayName: row.display_name || tokenDetails.name || '',
-    reason: allowed ? '' : deriveStatusReason(status),
+    reason: allowed
+      ? ''
+      : hasMembership
+      ? deriveStatusReason(status)
+      : '所属組織が登録されていません。管理者にお問い合わせください。',
     userId: row.user_id || '',
     authSubject: storedSubject,
     source: 'd1',
-    reasonCode: allowed ? 'active' : status || 'unknown',
+    reasonCode: allowed ? 'active' : hasMembership ? status || 'unknown' : 'no_membership',
     orgId: row.org_id || '',
   };
   logAuthInfo('Resolved access context via D1', {
@@ -743,13 +752,13 @@ function generateAttachmentId() {
   return 'att_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
-function buildContentDisposition(filename) {
+function buildContentDisposition(filename, disposition = 'inline') {
   if (!filename || typeof filename !== 'string') {
-    return 'inline';
+    return disposition;
   }
   const asciiName = filename.replace(/[^0-9A-Za-z()._\- ]+/g, '_').replace(/"/g, '');
   const utf8 = encodeURIComponent(filename);
-  return `inline; filename="${asciiName || 'file'}"; filename*=UTF-8''${utf8}`;
+  return `${disposition}; filename="${asciiName || 'file'}"; filename*=UTF-8''${utf8}`;
 }
 
 async function storeDataUriInR2(env, options) {
@@ -1425,9 +1434,12 @@ async function folderNameExists(db, orgId, name, excludeFolderId) {
 const MY_TASK_COMPLETED_WINDOW_DAYS = 14;
 const MY_TASK_COMPLETED_WINDOW_MS = MY_TASK_COMPLETED_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-async function buildMyTasksPayload(db, rawEmail) {
+async function buildMyTasksPayload(db, rawEmail, orgId = '') {
   const normalizedEmail = normalizeEmailValue(rawEmail);
-  const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
+  const totalRow = await db
+    .prepare('SELECT COUNT(*) AS count FROM tasks WHERE org_id = ?1')
+    .bind(orgId || '')
+    .first();
   const totalTasks =
     typeof totalRow?.count === 'number'
       ? totalRow.count
@@ -1455,9 +1467,10 @@ async function buildMyTasksPayload(db, rawEmail) {
         FROM tasks t
         JOIN task_assignees ta ON ta.task_id = t.task_id
        WHERE ta.email = ?1
+         AND t.org_id = ?2
     `
     )
-    .bind(normalizedEmail)
+    .bind(normalizedEmail, orgId || '')
     .all();
   const rows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
   const assigneeMap = await fetchAssigneesForTasks(
@@ -1962,7 +1975,7 @@ async function maybeHandleRouteWithD1(options) {
       let membership = null;
       if (normalizedEmail) {
         try {
-          membership = await resolveMembershipForEmail(db, normalizedEmail);
+          membership = await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId);
         } catch (err) {
           console.warn('[ShiftFlow][D1] Failed to resolve membership for bootstrap', {
             requestId,
@@ -2043,8 +2056,9 @@ async function maybeHandleRouteWithD1(options) {
               }))
             : [];
       } catch (err) {
+        console.warn('[ShiftFlow][Bootstrap] Failed to load users', { requestId });
         bootstrap.users = [];
-        bootstrap.usersError = err && err.message ? err.message : String(err);
+        bootstrap.usersError = 'bootstrap_users_unavailable';
       }
       try {
         bootstrap.folders = await fetchFoldersWithAccess(db, {
@@ -2055,8 +2069,9 @@ async function maybeHandleRouteWithD1(options) {
           ensureDefaultFolder: true,
         });
       } catch (err) {
+        console.warn('[ShiftFlow][Bootstrap] Failed to load folders', { requestId });
         bootstrap.folders = [];
-        bootstrap.foldersError = err && err.message ? err.message : String(err);
+        bootstrap.foldersError = 'bootstrap_folders_unavailable';
       }
       try {
         bootstrap.pinnedMessages = await fetchPinnedMessagesFromD1(db, {
@@ -2066,16 +2081,18 @@ async function maybeHandleRouteWithD1(options) {
           isManager: bootstrap.isManager,
         });
       } catch (err) {
+        console.warn('[ShiftFlow][Bootstrap] Failed to load pinned messages', { requestId });
         bootstrap.pinnedMessages = {};
-        bootstrap.pinnedMessagesError = err && err.message ? err.message : String(err);
+        bootstrap.pinnedMessagesError = 'bootstrap_pinned_messages_unavailable';
       }
       try {
-        bootstrap.myTasks = await buildMyTasksPayload(db, rawEmail);
+        bootstrap.myTasks = await buildMyTasksPayload(db, rawEmail, accessContext?.orgId || '');
       } catch (err) {
+        console.warn('[ShiftFlow][Bootstrap] Failed to load tasks', { requestId });
         bootstrap.myTasks = {
           tasks: [],
           meta: {
-            error: err && err.message ? err.message : String(err),
+            error: 'bootstrap_tasks_unavailable',
           },
         };
       }
@@ -2098,7 +2115,7 @@ async function maybeHandleRouteWithD1(options) {
       );
       let orgId = null;
       if (email) {
-        const membership = await resolveMembershipForEmail(db, email);
+        const membership = await resolveMembershipForEmail(db, email, accessContext?.orgId);
         orgId = membership?.org_id || null;
       }
       if (!orgId) {
@@ -2155,7 +2172,9 @@ async function maybeHandleRouteWithD1(options) {
     if (normalizedRoute === 'listActiveFolders') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const resolvedOrgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const folders = await fetchFoldersWithAccess(db, {
@@ -2181,7 +2200,9 @@ async function maybeHandleRouteWithD1(options) {
     if (primaryRoute === 'folders' && routeSegments.length === 1 && requestMethod === 'GET') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const resolvedOrgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const includeMembersRequested =
@@ -2217,7 +2238,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       if (!orgId) {
@@ -2396,7 +2419,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const folder = await fetchFolderById(db, orgId, targetFolderId);
@@ -2620,7 +2645,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const folder = await fetchFolderById(db, orgId, targetFolderId);
@@ -2725,7 +2752,9 @@ async function maybeHandleRouteWithD1(options) {
       }
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const orgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const folder = await ensureFolderAccessForUser(db, {
@@ -2807,7 +2836,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const folder = await fetchFolderById(db, orgId, folderId);
@@ -2907,7 +2938,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const actorOrgId = actorMembership?.org_id || null;
       if (!actorOrgId) {
         const resultPayload = {
@@ -3106,7 +3139,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!actorMembership || !actorMembership.user_id) {
         return errorResponse(
           403,
@@ -3136,6 +3171,7 @@ async function maybeHandleRouteWithD1(options) {
               JOIN organizations org ON org.org_id = ms.org_id
              WHERE ms.user_id = ?1
                AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+               AND LOWER(COALESCE(ms.role, 'member')) IN ('manager', 'admin')
              ORDER BY org.created_at_ms ASC
           `
           )
@@ -3216,7 +3252,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!actorMembership || !actorMembership.user_id) {
         return errorResponse(
           403,
@@ -3421,7 +3459,7 @@ async function maybeHandleRouteWithD1(options) {
       const timestampMs =
         ctx?.timestampMs && Number.isFinite(ctx.timestampMs) ? ctx.timestampMs : Date.now();
       const hasImageData = typeof payload.imageData === 'string' && payload.imageData.trim();
-      const membership = await resolveMembershipForEmail(db, actorEmail);
+      const membership = await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId);
       const userRow = await db
         .prepare(
           `
@@ -3654,7 +3692,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!actorMembership || !actorMembership.user_id) {
         return errorResponse(
           403,
@@ -3805,7 +3845,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!actorMembership || !actorMembership.org_id) {
         return errorResponse(
           403,
@@ -3888,7 +3930,7 @@ async function maybeHandleRouteWithD1(options) {
                  ms.role,
                  ms.org_id
             FROM users u
-            LEFT JOIN memberships ms
+            JOIN memberships ms
               ON ms.user_id = u.user_id
              AND ms.org_id = ?1
            WHERE ${targetUserId ? 'u.user_id = ?2' : 'lower(u.email) = ?2'}
@@ -3912,16 +3954,11 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
-      const membershipInfo = targetLookup.membership_id
-        ? {
-            membership_id: targetLookup.membership_id,
-            role: targetLookup.role,
-            status: targetLookup.membership_status,
-          }
-        : await ensureMembershipForOrg(db, targetLookup.user_id, actorMembership.org_id, {
-            role: targetLookup.role || 'member',
-            status: targetLookup.user_status || 'pending',
-          });
+      const membershipInfo = {
+        membership_id: targetLookup.membership_id,
+        role: targetLookup.role,
+        status: targetLookup.membership_status,
+      };
       const membershipId = membershipInfo?.membership_id;
       if (!membershipId) {
         return errorResponse(
@@ -3934,9 +3971,15 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const currentRole = normalizeRoleValue(membershipInfo?.role || targetLookup.role || 'member') || 'member';
+      const currentMembershipStatus = normalizeUserStatusValue(
+        membershipInfo?.status || 'pending'
+      );
+      const currentUserStatus = normalizeUserStatusValue(
+        targetLookup.user_status || (targetLookup.is_active === 0 ? 'suspended' : 'active')
+      );
       const currentStatus = computeEffectiveStatus(
-        targetLookup.user_status,
-        membershipInfo?.status,
+        currentUserStatus,
+        currentMembershipStatus,
         membershipId,
         targetLookup.is_active
       );
@@ -3967,36 +4010,78 @@ async function maybeHandleRouteWithD1(options) {
       if (requestedRole && requestedRole !== currentRole) {
         statements.push(
           db
-            .prepare('UPDATE memberships SET role = ?1 WHERE membership_id = ?2')
-            .bind(requestedRole, membershipId)
+            .prepare('UPDATE memberships SET role = ?1 WHERE membership_id = ?2 AND org_id = ?3')
+            .bind(requestedRole, membershipId, actorMembership.org_id)
         );
         changes.push('role');
       }
-      if (requestedStatus && requestedStatus !== currentStatus) {
-        const activeFlag = requestedStatus === 'active' ? 1 : 0;
-        const approvedBy = requestedStatus === 'active' ? actorEmail : targetLookup.approved_by || null;
-        const approvedAt = requestedStatus === 'active' ? now : null;
-        statements.push(
-          db
-            .prepare(
+      if (requestedStatus) {
+        if (
+          requestedStatus === 'active' &&
+          (currentUserStatus === 'suspended' || currentUserStatus === 'revoked') &&
+          actorRole !== 'admin'
+        ) {
+          return errorResponse(
+            403,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'admin_only',
+            '全体停止・剥奪されたユーザーの再開は管理者のみ実行できます。'
+          );
+        }
+        if (requestedStatus !== currentMembershipStatus) {
+          statements.push(
+            db
+              .prepare(
+                'UPDATE memberships SET status = ?1 WHERE membership_id = ?2 AND org_id = ?3'
+              )
+              .bind(requestedStatus, membershipId, actorMembership.org_id)
+          );
+        }
+        const shouldActivateUser =
+          requestedStatus === 'active' &&
+          (currentUserStatus === 'pending' ||
+            ((currentUserStatus === 'suspended' || currentUserStatus === 'revoked') &&
+              actorRole === 'admin'));
+        if (shouldActivateUser) {
+          statements.push(
+            db
+              .prepare(
+                `
+                UPDATE users
+                   SET status = 'active',
+                       is_active = 1,
+                       approved_by = ?1,
+                       approved_at_ms = ?2,
+                       updated_at_ms = ?2
+                 WHERE user_id = ?3
+                   AND CASE
+                     WHEN LOWER(
+                       COALESCE(
+                         NULLIF(TRIM(status), ''),
+                         CASE WHEN is_active = 0 THEN 'suspended' ELSE 'active' END
+                       )
+                     ) IN ('disabled', 'inactive') THEN 'suspended'
+                     ELSE LOWER(
+                       COALESCE(
+                         NULLIF(TRIM(status), ''),
+                         CASE WHEN is_active = 0 THEN 'suspended' ELSE 'active' END
+                       )
+                     )
+                   END = ?4
               `
-              UPDATE users
-                 SET status = ?1,
-                     is_active = ?2,
-                     approved_by = ?3,
-                     approved_at_ms = ?4,
-                     updated_at_ms = ?5
-               WHERE user_id = ?6
-            `
-            )
-            .bind(requestedStatus, activeFlag, approvedBy, approvedAt, now, targetLookup.user_id)
-        );
-        statements.push(
-          db
-            .prepare('UPDATE memberships SET status = ?1 WHERE membership_id = ?2')
-            .bind(requestedStatus, membershipId)
-        );
-        changes.push('status');
+              )
+              .bind(actorEmail, now, targetLookup.user_id, currentUserStatus)
+          );
+        }
+        if (
+          requestedStatus !== currentStatus ||
+          requestedStatus !== currentMembershipStatus ||
+          shouldActivateUser
+        ) {
+          changes.push('status');
+        }
       }
       if (!statements.length) {
         return jsonResponseFromD1(
@@ -4118,7 +4203,9 @@ async function maybeHandleRouteWithD1(options) {
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!actorMembership || !actorMembership.user_id) {
         const resultPayload = {
           rows: [],
@@ -4146,7 +4233,11 @@ async function maybeHandleRouteWithD1(options) {
           requestedOrgId
         );
         const membershipStatus = (membershipForRequested?.status || '').trim().toLowerCase();
-        if (!membershipForRequested || (membershipStatus && membershipStatus !== 'active')) {
+        if (
+          !membershipForRequested ||
+          (membershipStatus && membershipStatus !== 'active') ||
+          !isManagerRole(membershipForRequested?.role)
+        ) {
           return errorResponse(
             403,
             allowedOrigin,
@@ -4157,9 +4248,6 @@ async function maybeHandleRouteWithD1(options) {
           );
         }
         orgId = requestedOrgId;
-      }
-      if (!orgId) {
-        orgId = await resolveDefaultOrgId(db);
       }
       if (!orgId) {
         return errorResponse(
@@ -4239,8 +4327,7 @@ async function maybeHandleRouteWithD1(options) {
                 LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
                 WHERE la.attempted_at_ms >= ?2
                   AND (
-                    ?1 IS NULL
-                    OR la.org_id = ?1
+                    la.org_id = ?1
                     OR (
                       la.org_id IS NULL
                       AND EXISTS (
@@ -4249,7 +4336,16 @@ async function maybeHandleRouteWithD1(options) {
                           JOIN users u2 ON u2.user_id = m.user_id
                          WHERE LOWER(u2.email) = LOWER(la.user_email)
                            AND m.org_id = ?1
+                           AND LOWER(COALESCE(m.status, 'active')) = 'active'
                          LIMIT 1
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1
+                          FROM memberships m_other
+                          JOIN users u3 ON u3.user_id = m_other.user_id
+                         WHERE LOWER(u3.email) = LOWER(la.user_email)
+                           AND m_other.org_id <> ?1
+                           AND LOWER(COALESCE(m_other.status, 'active')) = 'active'
                       )
                     )
                   )
@@ -4291,9 +4387,22 @@ async function maybeHandleRouteWithD1(options) {
               u.display_name
             FROM auth_proxy_logs apl
             LEFT JOIN users u ON LOWER(u.email) = LOWER(apl.email)
-            LEFT JOIN memberships ms ON ms.user_id = u.user_id
             WHERE apl.created_at_ms >= ?2
-              AND (?1 IS NULL OR ms.org_id = ?1 OR apl.email IS NULL)
+              AND apl.email IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                  FROM memberships ms
+                 WHERE ms.user_id = u.user_id
+                   AND ms.org_id = ?1
+                   AND LOWER(COALESCE(ms.status, 'active')) = 'active'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM memberships ms_other
+                 WHERE ms_other.user_id = u.user_id
+                   AND ms_other.org_id <> ?1
+                   AND LOWER(COALESCE(ms_other.status, 'active')) = 'active'
+              )
               AND (apl.event IS NULL OR apl.event != 'login_attempt')
             ORDER BY apl.created_at_ms DESC
             LIMIT ?3
@@ -4355,7 +4464,7 @@ async function maybeHandleRouteWithD1(options) {
     }
     if (normalizedRoute === 'listMyTasks') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
-      const responsePayload = await buildMyTasksPayload(db, rawEmail);
+      const responsePayload = await buildMyTasksPayload(db, rawEmail, accessContext?.orgId || '');
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: responsePayload },
@@ -4388,19 +4497,19 @@ async function maybeHandleRouteWithD1(options) {
         interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
           ? interception.dualWriteContext.timestampMs
           : Date.now();
-      const taskId =
-        interception?.dualWriteContext?.taskId ||
-        normalizeIdValue(taskPayload.taskId) ||
-        generateTaskId();
+      const taskId = generateTaskId();
       await insertTaskIntoD1(db, {
         taskId,
         payload: taskPayload,
         timestampMs,
         authorEmail: tokenDetails?.email || accessContext?.email || '',
+        orgId: accessContext?.orgId || '',
         role: accessContext?.role,
       });
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       if (orgId) {
@@ -4455,8 +4564,8 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const taskRow = await db
-        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1')
-        .bind(taskId)
+        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
+        .bind(taskId, accessContext?.orgId || '')
         .first();
       if (!taskRow) {
         return jsonResponseFromD1(
@@ -4474,6 +4583,7 @@ async function maybeHandleRouteWithD1(options) {
         taskId,
         payload: ctx?.payload || {},
         timestampMs: ctx?.timestampMs || Date.now(),
+        orgId: accessContext?.orgId || '',
       });
       captureDiagnostics(config, 'info', 'd1_task_updated', {
         event: 'd1_task_updated',
@@ -4508,8 +4618,8 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const taskRow = await db
-        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1')
-        .bind(taskId)
+        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
+        .bind(taskId, accessContext?.orgId || '')
         .first();
       if (!taskRow) {
         return jsonResponseFromD1(
@@ -4526,6 +4636,7 @@ async function maybeHandleRouteWithD1(options) {
       await completeTaskInD1(db, {
         taskId,
         timestampMs: Date.now(),
+        orgId: accessContext?.orgId || '',
       });
       captureDiagnostics(config, 'info', 'd1_task_completed', {
         event: 'd1_task_completed',
@@ -4563,12 +4674,14 @@ async function maybeHandleRouteWithD1(options) {
         .prepare(
           `
           SELECT task_id,
+                 org_id,
                  created_by_email
             FROM tasks
            WHERE task_id = ?1
+             AND org_id = ?2
         `
         )
-        .bind(taskId)
+        .bind(taskId, accessContext?.orgId || '')
         .first();
       if (!taskRow) {
         return jsonResponseFromD1(
@@ -4599,7 +4712,7 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteTaskFromD1(db, env, { taskId });
+      await deleteTaskFromD1(db, env, { taskId, orgId: accessContext?.orgId || '' });
       captureDiagnostics(config, 'info', 'd1_task_deleted', {
         event: 'd1_task_deleted',
         route: normalizedRoute,
@@ -4633,7 +4746,10 @@ async function maybeHandleRouteWithD1(options) {
         typeof filterArg?.sort === 'string' && filterArg.sort.trim()
           ? filterArg.sort.trim()
           : 'due';
-      const totalRow = await db.prepare('SELECT COUNT(*) AS count FROM tasks').first();
+      const totalRow = await db
+        .prepare('SELECT COUNT(*) AS count FROM tasks WHERE org_id = ?1')
+        .bind(accessContext?.orgId || '')
+        .first();
       const totalTasks =
         typeof totalRow?.count === 'number'
           ? totalRow.count
@@ -4654,9 +4770,10 @@ async function maybeHandleRouteWithD1(options) {
           SELECT *
             FROM tasks
            WHERE created_by_email = ?1
+             AND org_id = ?2
         `
         )
-        .bind(normalizedEmail)
+        .bind(normalizedEmail, accessContext?.orgId || '')
         .all();
       const rows = Array.isArray(createdResult?.results) ? createdResult.results : [];
       const assigneeMap = await fetchAssigneesForTasks(
@@ -4739,7 +4856,10 @@ async function maybeHandleRouteWithD1(options) {
           : {};
       const statusFilterRaw =
         typeof filterArg?.status === 'string' ? filterArg.status.trim() : '';
-      const allResult = await db.prepare('SELECT * FROM tasks').all();
+      const allResult = await db
+        .prepare('SELECT * FROM tasks WHERE org_id = ?1')
+        .bind(accessContext?.orgId || '')
+        .all();
       const rows = Array.isArray(allResult?.results) ? allResult.results : [];
       const assigneeMap = await fetchAssigneesForTasks(
         db,
@@ -4798,9 +4918,10 @@ async function maybeHandleRouteWithD1(options) {
           SELECT *
             FROM tasks
            WHERE task_id = ?1
+             AND org_id = ?2
         `
         )
-        .bind(taskId)
+        .bind(taskId, accessContext?.orgId || '')
         .first();
       if (!row) {
         return jsonResponseFromD1(
@@ -4863,13 +4984,12 @@ async function maybeHandleRouteWithD1(options) {
         interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
           ? interception.dualWriteContext.timestampMs
           : Date.now();
-      const messageId =
-        interception?.dualWriteContext?.messageId ||
-        normalizeIdValue(messagePayload.messageId) ||
-        generateMessageId();
+      const messageId = generateMessageId();
       const actorEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedActorEmail = normalizeEmailValue(actorEmail);
-      const membership = normalizedActorEmail ? await resolveMembershipForEmail(db, normalizedActorEmail) : null;
+      const membership = normalizedActorEmail
+        ? await resolveMembershipForEmail(db, normalizedActorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       let folderId =
@@ -4913,10 +5033,7 @@ async function maybeHandleRouteWithD1(options) {
             `添付は最大 ${MESSAGE_ATTACHMENT_LIMIT} 件までです。`
           );
         }
-        let resolvedOrgId = membership?.org_id || null;
-        if (!resolvedOrgId) {
-          resolvedOrgId = await resolveDefaultOrgId(db);
-        }
+        const resolvedOrgId = membership?.org_id || accessContext?.orgId || null;
         for (let index = 0; index < rawAttachments.length; index += 1) {
           const rawAttachment = rawAttachments[index] || {};
           const dataUri = typeof rawAttachment.dataUri === 'string' ? rawAttachment.dataUri : '';
@@ -5027,6 +5144,7 @@ async function maybeHandleRouteWithD1(options) {
         payload: messagePayload,
         timestampMs,
         authorEmail: tokenDetails?.email || accessContext?.email || '',
+        orgId: accessContext?.orgId || '',
         role: accessContext?.role,
       });
       if (preparedAttachments.length) {
@@ -5050,7 +5168,7 @@ async function maybeHandleRouteWithD1(options) {
             email: normalizedActorEmail || '',
             message: err && err.message ? err.message : String(err),
           });
-          await deleteMessageFromD1(db, env, { messageId });
+          await deleteMessageFromD1(db, env, { messageId, orgId });
           await deleteAttachmentRecords(
             db,
             env,
@@ -5086,6 +5204,7 @@ async function maybeHandleRouteWithD1(options) {
           messageId,
           timestampMs,
           email: actorEmail,
+          orgId,
         });
       }
       captureDiagnostics(config, 'info', 'd1_message_created', {
@@ -5134,9 +5253,10 @@ async function maybeHandleRouteWithD1(options) {
             LEFT JOIN memberships ms ON ms.membership_id = m.author_membership_id
             LEFT JOIN users u ON u.user_id = ms.user_id
            WHERE m.message_id = ?1
+             AND m.org_id = ?2
         `
         )
-        .bind(messageId)
+        .bind(messageId, accessContext?.orgId || '')
         .first();
       if (!messageRow) {
         return jsonResponseFromD1(
@@ -5165,7 +5285,7 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteMessageFromD1(db, env, { messageId });
+      await deleteMessageFromD1(db, env, { messageId, orgId: accessContext?.orgId || '' });
       captureDiagnostics(config, 'info', 'd1_message_deleted', {
         event: 'd1_message_deleted',
         route: normalizedRoute,
@@ -5204,6 +5324,7 @@ async function maybeHandleRouteWithD1(options) {
         messageId,
         timestampMs: Date.now(),
         email: tokenDetails?.email || accessContext?.email || '',
+        orgId: accessContext?.orgId || '',
       });
       return jsonResponseFromD1(
         200,
@@ -5240,6 +5361,7 @@ async function maybeHandleRouteWithD1(options) {
         shouldRead,
         timestampMs: Date.now(),
         email: tokenDetails?.email || accessContext?.email || '',
+        orgId: accessContext?.orgId || '',
       });
       return jsonResponseFromD1(
         200,
@@ -5264,6 +5386,7 @@ async function maybeHandleRouteWithD1(options) {
         messageIds: memoIds,
         timestampMs: Date.now(),
         email: tokenDetails?.email || accessContext?.email || '',
+        orgId: accessContext?.orgId || '',
       });
       return jsonResponseFromD1(
         200,
@@ -5283,7 +5406,9 @@ async function maybeHandleRouteWithD1(options) {
         query?.get('unreadOnly') === '1' || query?.get('unread_only') === '1';
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const membershipId = membership?.membership_id || null;
       const orgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
@@ -5313,7 +5438,9 @@ async function maybeHandleRouteWithD1(options) {
       const unreadOnly = !!args?.unreadOnly;
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const membershipId = membership?.membership_id || null;
       const orgId =
         membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
@@ -5362,7 +5489,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const messageRow = await db
@@ -5374,9 +5503,10 @@ async function maybeHandleRouteWithD1(options) {
                  m.org_id
             FROM messages m
            WHERE m.message_id = ?1
+             AND m.org_id = ?2
         `
         )
-        .bind(messageId)
+        .bind(messageId, accessContext?.orgId || '')
         .first();
       if (!messageRow) {
         return errorResponse(
@@ -5407,9 +5537,10 @@ async function maybeHandleRouteWithD1(options) {
              SET is_pinned = ?2,
                  updated_at_ms = ?3
            WHERE message_id = ?1
+             AND org_id = ?4
         `
         )
-        .bind(messageRow.message_id, nextPinned, now)
+        .bind(messageRow.message_id, nextPinned, now, messageRow.org_id)
         .run();
       await insertAuditLog(db, {
         orgId: messageRow.org_id || orgId,
@@ -5461,9 +5592,10 @@ async function maybeHandleRouteWithD1(options) {
             LEFT JOIN memberships ms ON ms.membership_id = m.author_membership_id
             LEFT JOIN users u ON u.user_id = ms.user_id
            WHERE m.message_id = ?1
+             AND m.org_id = ?2
         `
         )
-        .bind(messageId)
+        .bind(messageId, accessContext?.orgId || '')
         .first();
       if (!messageRow) {
         return jsonResponseFromD1(
@@ -5474,7 +5606,19 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const viewerEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const viewerMembership = viewerEmail ? await resolveMembershipForEmail(db, viewerEmail) : null;
+      const viewerMembership = viewerEmail
+        ? await resolveMembershipForEmail(db, viewerEmail, accessContext?.orgId)
+        : null;
+      if (!viewerMembership || messageRow.org_id !== viewerMembership.org_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'このメッセージにはアクセスできません。'
+        );
+      }
       const folderAccess = await ensureFolderAccessForUser(db, {
         orgId: messageRow.org_id || viewerMembership?.org_id || accessContext?.orgId || null,
         folderId: messageRow.folder_id,
@@ -5620,7 +5764,9 @@ async function maybeHandleRouteWithD1(options) {
       }
       const actorEmailRaw = tokenDetails?.email || accessContext?.email || '';
       const actorEmail = normalizeEmailValue(actorEmailRaw);
-      const membership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const membership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       if (!membership) {
         return errorResponse(
           403,
@@ -5639,9 +5785,10 @@ async function maybeHandleRouteWithD1(options) {
                  m.org_id
             FROM messages m
            WHERE m.message_id = ?1
+             AND m.org_id = ?2
         `
         )
-        .bind(messageId)
+        .bind(messageId, accessContext?.orgId || '')
         .first();
       if (!messageRow) {
         return errorResponse(
@@ -5653,7 +5800,7 @@ async function maybeHandleRouteWithD1(options) {
           'メッセージが見つかりません。'
         );
       }
-      const orgId = messageRow.org_id || membership.org_id || accessContext?.orgId || null;
+      const orgId = membership.org_id || accessContext?.orgId || null;
       if (messageRow.org_id && orgId && messageRow.org_id !== orgId) {
         return errorResponse(
           403,
@@ -5799,7 +5946,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail ? await resolveMembershipForEmail(db, actorEmail) : null;
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
       const orgId =
         actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
       const messageRow = await db
@@ -5812,9 +5961,10 @@ async function maybeHandleRouteWithD1(options) {
             FROM messages m
             JOIN folders f ON f.id = m.folder_id
            WHERE m.message_id = ?1
+             AND m.org_id = ?2
         `
         )
-        .bind(messageId)
+        .bind(messageId, accessContext?.orgId || '')
         .first();
       if (!messageRow) {
         return errorResponse(
@@ -5908,7 +6058,9 @@ async function maybeHandleRouteWithD1(options) {
     if (normalizedRoute === 'getHomeContent') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       const membershipId = membership?.membership_id || null;
       const assignedResult = await db
         .prepare(
@@ -5917,9 +6069,10 @@ async function maybeHandleRouteWithD1(options) {
             FROM tasks t
             JOIN task_assignees ta ON ta.task_id = t.task_id
            WHERE (?1 <> '' AND ta.email = ?1)
+             AND t.org_id = ?2
         `
         )
-        .bind(normalizedEmail || '')
+        .bind(normalizedEmail || '', accessContext?.orgId || '')
         .all();
       const taskRows = Array.isArray(assignedResult?.results) ? assignedResult.results : [];
       const assigneeMap = await fetchAssigneesForTasks(
@@ -6021,12 +6174,14 @@ async function maybeHandleRouteWithD1(options) {
                  content_type,
                  size_bytes,
                  extra_json,
-                 storage_path
+                 storage_path,
+                 created_by_membership_id
             FROM attachments
            WHERE attachment_id = ?1
+             AND (org_id = ?2 OR org_id IS NULL)
         `
         )
-        .bind(attachmentId)
+        .bind(attachmentId, accessContext?.orgId || '')
         .first();
       if (!attachmentRow) {
         return errorResponse(
@@ -6039,23 +6194,10 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const extras = safeParseJson(attachmentRow.extra_json || null, {});
-      const r2Key = typeof extras?.r2Key === 'string' ? extras.r2Key.trim() : '';
-      if (!r2Key) {
-        console.warn('[ShiftFlow][R2] Attachment missing R2 key', {
-          requestId,
-          attachmentId,
-        });
-        return errorResponse(
-          410,
-          originForResponses,
-          requestId,
-          'cf-api',
-          'attachment_missing_object',
-          'ファイルが削除されている可能性があります。'
-        );
-      }
       const normalizedEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const membership = normalizedEmail ? await resolveMembershipForEmail(db, normalizedEmail) : null;
+      const membership = normalizedEmail
+        ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
+        : null;
       if (!membership || !membership.org_id) {
         return errorResponse(
           403,
@@ -6070,9 +6212,8 @@ async function maybeHandleRouteWithD1(options) {
         attachmentRow.org_id ||
         (typeof extras?.orgId === 'string' ? extras.orgId : null);
       if (
-        attachmentOrgId &&
-        attachmentOrgId !== membership.org_id &&
-        !isManagerRole(accessContext?.role)
+        !attachmentOrgId ||
+        attachmentOrgId !== membership.org_id
       ) {
         return errorResponse(
           403,
@@ -6081,6 +6222,93 @@ async function maybeHandleRouteWithD1(options) {
           'cf-api',
           'attachment_forbidden',
           '添付ファイルにアクセスする権限がありません。'
+        );
+      }
+      let attachmentAllowed = isManagerRole(accessContext?.role);
+      if (!attachmentAllowed && extras?.category === 'profile_image') {
+        attachmentAllowed = true;
+      }
+      if (
+        !attachmentAllowed &&
+        attachmentRow.created_by_membership_id &&
+        attachmentRow.created_by_membership_id === membership.membership_id
+      ) {
+        attachmentAllowed = true;
+      }
+      if (!attachmentAllowed) {
+        const messageAccess = await db
+          .prepare(
+            `
+            SELECT 1 AS allowed
+              FROM message_attachments ma
+              JOIN messages m ON m.message_id = ma.message_id
+              JOIN folders f ON f.id = m.folder_id AND f.org_id = m.org_id
+             WHERE ma.attachment_id = ?1
+               AND m.org_id = ?2
+               AND (
+                 f.is_public = 1
+                 OR EXISTS (
+                   SELECT 1
+                     FROM folder_members fm
+                    WHERE fm.folder_id = f.id
+                      AND fm.user_id = ?3
+                 )
+               )
+             LIMIT 1
+          `
+          )
+          .bind(attachmentId, membership.org_id, membership.user_id || '')
+          .first();
+        attachmentAllowed = !!messageAccess;
+      }
+      if (!attachmentAllowed) {
+        const taskAccess = await db
+          .prepare(
+            `
+            SELECT 1 AS allowed
+              FROM task_attachments ta
+              JOIN tasks t ON t.task_id = ta.task_id
+             WHERE ta.attachment_id = ?1
+               AND t.org_id = ?2
+               AND (
+                 LOWER(COALESCE(t.created_by_email, '')) = ?3
+                 OR EXISTS (
+                   SELECT 1
+                     FROM task_assignees tas
+                    WHERE tas.task_id = t.task_id
+                      AND LOWER(COALESCE(tas.email, '')) = ?3
+                 )
+               )
+             LIMIT 1
+          `
+          )
+          .bind(attachmentId, membership.org_id, normalizedEmail)
+          .first();
+        attachmentAllowed = !!taskAccess;
+      }
+      if (!attachmentAllowed) {
+        return errorResponse(
+          403,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_forbidden',
+          '添付ファイルにアクセスする権限がありません。'
+        );
+      }
+      const r2Key = typeof extras?.r2Key === 'string' ? extras.r2Key.trim() : '';
+      if (!r2Key) {
+        console.warn('[ShiftFlow][R2] Attachment missing R2 key', {
+          requestId,
+          attachmentId,
+        });
+        return errorResponse(
+          410,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_missing_object',
+          'ファイルが削除されている可能性があります。'
         );
       }
       let object = null;
@@ -6133,9 +6361,14 @@ async function maybeHandleRouteWithD1(options) {
         `${attachmentId}.bin`;
       const headers = new Headers({
         ...corsHeaders(originForResponses),
-        'Content-Type': mimeType,
-        'Cache-Control': 'private, max-age=300',
-        'Content-Disposition': buildContentDisposition(fileName),
+        'Content-Type': mimeType === 'image/svg+xml' ? 'application/octet-stream' : mimeType,
+        'Cache-Control': 'private, no-store',
+        'Content-Disposition': buildContentDisposition(
+          fileName,
+          mimeType === 'image/svg+xml' ? 'attachment' : 'inline'
+        ),
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'X-Content-Type-Options': 'nosniff',
         'X-ShiftFlow-Request-Id': requestId,
         'X-ShiftFlow-Backend': 'R2',
       });
@@ -6186,8 +6419,9 @@ async function maybeHandleRouteWithD1(options) {
 async function insertMessageIntoD1(db, context) {
   if (!context?.messageId) return;
   const lowerEmail = normalizeEmailValue(context.authorEmail);
-  const membership = await resolveMembershipForEmail(db, lowerEmail);
+  const membership = await resolveMembershipForEmail(db, lowerEmail, context.orgId || '');
   const orgId =
+    context.orgId ||
     membership?.org_id ||
     (await resolveDefaultOrgId(db)) ||
     '01H00000000000000000000000';
@@ -6202,7 +6436,7 @@ async function insertMessageIntoD1(db, context) {
   await db
     .prepare(
       `
-      INSERT OR REPLACE INTO messages (
+      INSERT INTO messages (
         message_id,
         org_id,
         folder_id,
@@ -6239,8 +6473,11 @@ async function insertTaskIntoD1(db, context) {
       : typeof payload.folder_id === 'string'
       ? payload.folder_id.trim()
       : null;
-  const membership = creatorEmail ? await resolveMembershipForEmail(db, creatorEmail) : null;
+  const membership = creatorEmail
+    ? await resolveMembershipForEmail(db, creatorEmail, context.orgId || '')
+    : null;
   const orgId =
+    context.orgId ||
     membership?.org_id ||
     (await resolveDefaultOrgId(db)) ||
     '01H00000000000000000000000';
@@ -6298,7 +6535,7 @@ async function insertTaskIntoD1(db, context) {
   await db
     .prepare(
       `
-      INSERT OR REPLACE INTO tasks (
+      INSERT INTO tasks (
         task_id,
         org_id,
         folder_id,
@@ -6336,16 +6573,16 @@ async function insertTaskIntoD1(db, context) {
     .run();
 
   const assigneeEmails = deriveTaskAssigneeEmails(payload, creatorEmail);
-  await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, createdAtMs);
+  await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, createdAtMs, orgId);
 }
 
-async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs) {
+async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs, orgId = '') {
   if (!Array.isArray(emails) || !emails.length) return;
   await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
   for (const email of emails) {
     const normalized = normalizeEmailValue(email);
     if (!normalized) continue;
-    const membership = await resolveMembershipForEmail(db, normalized);
+    const membership = await resolveMembershipForEmail(db, normalized, orgId);
     await db
       .prepare(
         `
@@ -6375,12 +6612,14 @@ async function updateTaskInD1(db, context) {
              priority,
              due_at_ms,
              folder_id,
-             meta_json
+             meta_json,
+             org_id
       FROM tasks
       WHERE task_id = ?1
+        AND org_id = ?2
     `
     )
-    .bind(context.taskId)
+    .bind(context.taskId, context.orgId || '')
     .first();
   if (!existing) {
     logAuthInfo('Task not found in D1 during update', { taskId: context.taskId });
@@ -6430,6 +6669,7 @@ async function updateTaskInD1(db, context) {
              folder_id = ?8,
              meta_json = ?9
        WHERE task_id = ?1
+         AND org_id = ?10
     `
     )
     .bind(
@@ -6441,7 +6681,8 @@ async function updateTaskInD1(db, context) {
       timestampMs,
       nextDueAtMs,
       nextFolderId,
-      mergedMetaJson
+      mergedMetaJson,
+      context.orgId || ''
     )
     .run();
 
@@ -6452,7 +6693,13 @@ async function updateTaskInD1(db, context) {
     typeof payload.assigneeEmails === 'string';
   if (assigneeChanged) {
     const assigneeEmails = deriveTaskAssigneeEmails(payload, null);
-    await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, timestampMs);
+    await insertTaskAssigneesIntoD1(
+      db,
+      context.taskId,
+      assigneeEmails,
+      timestampMs,
+      context.orgId || existing.org_id || ''
+    );
   }
 }
 
@@ -6467,9 +6714,10 @@ async function completeTaskInD1(db, context) {
          SET status = ?2,
              updated_at_ms = ?3
        WHERE task_id = ?1
+         AND org_id = ?4
     `
     )
-    .bind(context.taskId, completedStatus, timestampMs)
+    .bind(context.taskId, completedStatus, timestampMs, context.orgId || '')
     .run();
 }
 
@@ -6482,7 +6730,7 @@ async function toggleMemoReadInD1(db, context) {
     });
     return;
   }
-  const membership = await resolveMembershipForEmail(db, email);
+  const membership = await resolveMembershipForEmail(db, email, context.orgId || '');
   if (!membership || !membership.membership_id) {
     logAuthInfo('Membership not found for memo read toggle', {
       messageId: context.messageId,
@@ -6490,6 +6738,11 @@ async function toggleMemoReadInD1(db, context) {
     });
     return;
   }
+  const messageRow = await db
+    .prepare('SELECT message_id FROM messages WHERE message_id = ?1 AND org_id = ?2')
+    .bind(context.messageId, membership.org_id)
+    .first();
+  if (!messageRow) return;
   const membershipId = membership.membership_id;
   if (context.shouldRead) {
     await db
@@ -6531,6 +6784,7 @@ async function ensureMemoReadInD1(db, context) {
     shouldRead: true,
     timestampMs: context.timestampMs,
     email: context.email,
+    orgId: context.orgId,
   });
 }
 
@@ -6542,6 +6796,7 @@ async function bulkEnsureMemoReadInD1(db, context) {
       shouldRead: true,
       timestampMs: context.timestampMs,
       email: context.email,
+      orgId: context.orgId,
     });
   }
 }
@@ -6550,6 +6805,11 @@ async function deleteTaskFromD1(db, env, context) {
   if (!context?.taskId) return;
   const taskId = normalizeIdValue(context.taskId);
   if (!taskId) return;
+  const ownedTask = await db
+    .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
+    .bind(taskId, context.orgId || '')
+    .first();
+  if (!ownedTask) return;
   const attachmentResult = await db
     .prepare(
       `
@@ -6571,13 +6831,21 @@ async function deleteTaskFromD1(db, env, context) {
   if (attachmentIds.length) {
     await deleteAttachmentRecords(db, env, attachmentIds);
   }
-  await db.prepare('DELETE FROM tasks WHERE task_id = ?1').bind(taskId).run();
+  await db
+    .prepare('DELETE FROM tasks WHERE task_id = ?1 AND org_id = ?2')
+    .bind(taskId, context.orgId || '')
+    .run();
 }
 
 async function deleteMessageFromD1(db, env, context) {
   if (!context?.messageId) return;
   const messageId = normalizeIdValue(context.messageId);
   if (!messageId) return;
+  const ownedMessage = await db
+    .prepare('SELECT message_id FROM messages WHERE message_id = ?1 AND org_id = ?2')
+    .bind(messageId, context.orgId || '')
+    .first();
+  if (!ownedMessage) return;
   const attachmentResult = await db
     .prepare(
       `
@@ -6601,7 +6869,10 @@ async function deleteMessageFromD1(db, env, context) {
   if (attachmentIds.length) {
     await deleteAttachmentRecords(db, env, attachmentIds);
   }
-  await db.prepare('DELETE FROM messages WHERE message_id = ?1').bind(messageId).run();
+  await db
+    .prepare('DELETE FROM messages WHERE message_id = ?1 AND org_id = ?2')
+    .bind(messageId, context.orgId || '')
+    .run();
 }
 
 async function updateUserSettingsInD1(db, context) {
@@ -7025,7 +7296,7 @@ function buildProxyAuditEntry(row) {
   };
 }
 
-async function resolveMembershipForEmail(db, email) {
+async function resolveMembershipForEmail(db, email, orgId = '') {
   if (!email) return null;
   const row = await db
     .prepare(
@@ -7036,11 +7307,13 @@ async function resolveMembershipForEmail(db, email) {
       FROM memberships
       JOIN users ON users.user_id = memberships.user_id
       WHERE lower(users.email) = ?1
+        AND LOWER(COALESCE(memberships.status, 'active')) = 'active'
+        AND (?2 = '' OR memberships.org_id = ?2)
       ORDER BY memberships.created_at_ms ASC
       LIMIT 1
     `
     )
-    .bind(email)
+    .bind(email, orgId || '')
     .first();
   return row || null;
 }
@@ -7485,7 +7758,7 @@ async function persistLoginAttemptInD1(db, details) {
 
 async function resolveAccessContext(config, tokenDetails, requestId, clientMeta, options = {}) {
   const cacheKey = resolveAccessCacheKey(tokenDetails);
-  const cached = readAccessCache(cacheKey);
+  const cached = options.allowCache ? readAccessCache(cacheKey) : null;
   if (cached) {
     return cached;
   }
@@ -7507,7 +7780,7 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
           route: routeName,
         });
       }
-      if (d1Context.allowed && d1Context.status === 'active') {
+      if (options.allowCache && d1Context.allowed && d1Context.status === 'active') {
         writeAccessCache(cacheKey, d1Context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
       } else if (cacheKey) {
         ACCESS_CACHE.delete(cacheKey);
@@ -7684,7 +7957,6 @@ export async function onRequest(context) {
   };
 
   const authHeader = request.headers.get('authorization') || '';
-  let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   let tokenDetails;
   let sessionCookieHeader = '';
   let sessionContext = null;
@@ -7692,7 +7964,7 @@ export async function onRequest(context) {
   logAuthInfo('Handling authenticated route request', {
     requestId,
     route,
-    hasAuthorizationHeader: !!token,
+    hasAuthorizationHeader: !!authHeader,
     origin: originHeader || '',
   });
   const cookieHeader = request.headers.get('cookie') || '';
@@ -7704,178 +7976,92 @@ export async function onRequest(context) {
     }
     return Object.keys(base).length ? base : undefined;
   };
-  if (!token) {
-    try {
-      sessionContext = await verifySession(env, cookieHeader);
-    } catch (err) {
-      console.warn('[ShiftFlow][Auth] Session verification failed', err);
-      sessionContext = null;
-    }
-    if (sessionContext) {
-      sessionRecord = sessionContext.record || {};
-      let sessionTokens = sessionRecord.tokens || {};
-      let idToken = sessionTokens.idToken || '';
-      const now = Date.now();
-      let expiry = Number(sessionTokens.expiry || 0);
-      const refreshToken = sessionTokens.refreshToken || '';
-      const needsRefresh =
-        !!refreshToken &&
-        (!expiry || Number.isNaN(expiry) || expiry <= now + SESSION_REFRESH_THRESHOLD_MS);
-      let refreshRetried = false;
-      if ((!idToken || expiry <= now + SESSION_REFRESH_THRESHOLD_MS) && refreshToken) {
-        try {
-          const refreshed = await refreshGoogleTokens(env, refreshToken);
-          const newIdToken = refreshed.id_token || idToken;
-          const newExpiry =
-            calculateIdTokenExpiry(newIdToken) ||
-            (typeof refreshed.expires_in === 'number'
-              ? now + Number(refreshed.expires_in) * 1000
-              : now + 3600 * 1000);
-          const mergedTokens = {
-            ...sessionTokens,
-            idToken: newIdToken,
-            accessToken: refreshed.access_token || sessionTokens.accessToken || '',
-            scope: refreshed.scope || sessionTokens.scope || '',
-            expiry: newExpiry,
-            updatedAt: now,
-          };
-          sessionRecord = await updateSessionTokens(env, sessionContext.id, sessionRecord, mergedTokens);
-          sessionTokens = sessionRecord.tokens || mergedTokens;
-          idToken = mergedTokens.idToken;
-          expiry = mergedTokens.expiry;
-        } catch (err) {
-          if (!refreshRetried) {
-            refreshRetried = true;
-            try {
-              const retried = await refreshGoogleTokens(env, refreshToken);
-              const retryIdToken = retried.id_token || idToken;
-              const retryExpiry =
-                calculateIdTokenExpiry(retryIdToken) ||
-                (typeof retried.expires_in === 'number'
-                  ? now + Number(retried.expires_in) * 1000
-                  : now + 3600 * 1000);
-              const mergedTokens = {
-                ...sessionTokens,
-                idToken: retryIdToken,
-                accessToken: retried.access_token || sessionTokens.accessToken || '',
-                scope: retried.scope || sessionTokens.scope || '',
-                expiry: retryExpiry,
-                updatedAt: now,
-              };
-              sessionRecord =
-                (await updateSessionTokens(env, sessionContext.id, sessionRecord, mergedTokens)) || sessionRecord;
-              sessionTokens = sessionRecord.tokens || mergedTokens;
-              idToken = mergedTokens.idToken;
-              expiry = mergedTokens.expiry;
-            } catch (retryErr) {
-              console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session (retry)', retryErr);
-              idToken = '';
-              expiry = 0;
-            }
-          } else {
-            console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens for session', err);
-            idToken = '';
-            expiry = 0;
-          }
-        }
-      }
-      if (idToken && expiry && expiry <= now + SESSION_REFRESH_THRESHOLD_MS) {
-        idToken = '';
-      }
-      if (idToken) {
-        token = idToken;
-        sessionCookieHeader = buildSessionCookie(`${sessionContext.id}.${sessionContext.key}`);
-        if (!needsRefresh) {
-          await touchSession(env, sessionContext.id, sessionRecord);
-        }
-      } else {
-        sessionCookieHeader = buildExpiredSessionCookie();
-        sessionContext = null;
-      }
-    }
+  try {
+    sessionContext = await verifySession(env, cookieHeader);
+  } catch (err) {
+    logAuthError('Session verification failed', {
+      requestId,
+      route,
+      message: err && err.message ? err.message : String(err),
+    });
+    sessionContext = null;
   }
-  if (!token) {
-    logAuthError('Missing Authorization bearer token', { requestId, route });
+  if (!sessionContext) {
+    sessionCookieHeader = [
+      buildExpiredSessionCookie(),
+      buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+    ];
     return errorResponse(
       401,
       allowedOrigin || config.allowedOrigins[0] || '*',
       requestId,
       'cf-api',
-      'missing_bearer_token',
-      'Missing Authorization bearer token.',
+      'no_session',
+      'ログインセッションを確認できません。もう一度ログインしてください。',
       null,
       mergeHeaders()
     );
   }
 
-  if (flags.cfAuth) {
-    try {
-      tokenDetails = await verifyGoogleIdToken(env, config, token);
-      if (tokenDetails && typeof tokenDetails.exp === 'number' && !tokenDetails.expMs) {
-        tokenDetails.expMs = Number(tokenDetails.exp) * 1000;
-      }
-    } catch (err) {
-      logAuthError('Token verification failed', {
-        requestId,
-        message: err && err.message ? err.message : String(err),
-        route,
-      });
-      captureDiagnostics(config, 'error', 'token_verification_failed', {
-        event: 'token_verification_failed',
-        requestId,
-        route,
-        detail: err && err.message ? err.message : String(err),
-        tokenPresent: !!token,
-        clientIp: clientMeta.ip,
-        userAgent: clientMeta.userAgent,
-        cfRay: clientMeta.cfRay,
-      });
-      return errorResponse(
-        401,
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        requestId,
-        'cf-api',
-        'token_verification_failed',
-        err && err.message ? err.message : String(err || 'Token verification failed'),
-        null,
-        mergeHeaders()
-      );
-    }
-    if (!tokenDetails.emailVerified) {
-      logAuthInfo('Email not verified', {
-        requestId,
-        email: tokenDetails.email || '',
-        route,
-      });
-      captureDiagnostics(config, 'warn', 'email_not_verified', {
-        event: 'email_not_verified',
-        requestId,
-        route,
-        email: tokenDetails.email || '',
-        clientIp: clientMeta.ip,
-        userAgent: clientMeta.userAgent,
-        cfRay: clientMeta.cfRay,
-      });
-      return errorResponse(
-        403,
-        allowedOrigin || config.allowedOrigins[0] || '*',
-        requestId,
-        'cf-api',
-        'email_not_verified',
-        'Google アカウントのメールアドレスが未確認です。',
-        null,
-        mergeHeaders()
-      );
-    }
-  } else {
-    tokenDetails = createLegacyTokenDetails(token);
+  sessionRecord = sessionContext.record || {};
+  const timeoutCheck = evaluateSessionTimeout(sessionRecord);
+  if (timeoutCheck.expired) {
+    await destroySession(env, sessionContext.id);
+    sessionCookieHeader = [
+      buildExpiredSessionCookie(),
+      buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+    ];
+    return errorResponse(
+      401,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      timeoutCheck.reason === 'absolute' ? 'absolute_timeout' : 'idle_timeout',
+      'ログインの有効期限が切れました。もう一度ログインしてください。',
+      null,
+      mergeHeaders()
+    );
   }
+
+  sessionRecord = (await touchSession(env, sessionContext.id, sessionRecord)) || sessionRecord;
+  const sessionUser = sessionRecord.user || {};
+  tokenDetails = {
+    sub: String(sessionUser.sub || '').trim(),
+    email: String(sessionUser.email || '').trim(),
+    emailVerified: sessionUser.emailVerified === true,
+    name: String(sessionUser.name || '').trim(),
+    picture: String(sessionUser.picture || '').trim(),
+  };
+  if (!tokenDetails.sub || !tokenDetails.email || !tokenDetails.emailVerified) {
+    await destroySession(env, sessionContext.id);
+    sessionCookieHeader = [
+      buildExpiredSessionCookie(),
+      buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+    ];
+    return errorResponse(
+      401,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'invalid_session_identity',
+      'ログイン情報を確認できません。もう一度ログインしてください。',
+      null,
+      mergeHeaders()
+    );
+  }
+  sessionCookieHeader = [
+    buildSessionCookie(`${sessionContext.id}.${sessionContext.key}`, {
+      maxAge: getSessionCookieMaxAge(sessionRecord),
+    }),
+    buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+  ];
 
   let accessContext;
   try {
     accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta, {
       db: env && env.DB ? env.DB : null,
       route,
+      allowCache: false,
     });
   } catch (err) {
     logAuthError('resolveAccessContext failed', {
@@ -7887,7 +8073,7 @@ export async function onRequest(context) {
       rawHtml: err && err.isHtml ? (err.rawResponseSnippet || '').slice(0, 200) : '',
       redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
-    const detailMessage =
+    const diagnosticMessage =
       err && err.isRedirect
         ? 'Apps Script が認証リダイレクトを返しました。GAS_EXEC_URL が Web アプリの /exec URL になっているか確認し、必要であれば Apps Script で認証を完了してください。'
         : err && err.isHtml
@@ -7895,13 +8081,17 @@ export async function onRequest(context) {
         : err && err.message
         ? err.message
         : String(err || 'resolveAccessContext failed');
+    const clientMessage =
+      err && err.isRedirect
+        ? 'ログイン状態を確認できませんでした。もう一度ログインしてください。'
+        : 'アクセス権限を確認できませんでした。時間をおいて再度お試しください。';
     const statusCode = err && err.isRedirect ? 401 : 403;
     captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
       event: 'resolve_access_context_failed',
       requestId,
       route,
       email: tokenDetails.email || '',
-      detail: detailMessage,
+      detail: diagnosticMessage,
       clientIp: clientMeta.ip,
       userAgent: clientMeta.userAgent,
       httpStatus: err && err.httpStatus ? err.httpStatus : '',
@@ -7916,7 +8106,7 @@ export async function onRequest(context) {
       requestId,
       'cf-api',
       'resolve_access_context_failed',
-      detailMessage,
+      clientMessage,
       {},
       mergeHeaders()
     );
@@ -7955,6 +8145,18 @@ export async function onRequest(context) {
         source: accessContext.source || '',
         reasonCode: accessContext.reasonCode || '',
       },
+      mergeHeaders()
+    );
+  }
+  if (!accessContext.orgId) {
+    return errorResponse(
+      403,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'no_membership',
+      '所属組織が確認できません。管理者にお問い合わせください。',
+      null,
       mergeHeaders()
     );
   }
@@ -8069,7 +8271,10 @@ export async function onRequest(context) {
   }
 
   if (sessionCookieHeader) {
-    d1Response.headers.set('Set-Cookie', sessionCookieHeader);
+    d1Response.headers.delete('Set-Cookie');
+    (Array.isArray(sessionCookieHeader) ? sessionCookieHeader : [sessionCookieHeader]).forEach(
+      (cookieValue) => d1Response.headers.append('Set-Cookie', cookieValue)
+    );
   }
   return d1Response;
 }

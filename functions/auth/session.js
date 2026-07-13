@@ -3,16 +3,12 @@ import {
   touchSession,
   buildSessionCookie,
   buildExpiredSessionCookie,
-  refreshGoogleTokens,
-  calculateIdTokenExpiry,
-  updateSessionTokens,
   destroySession,
   evaluateSessionTimeout,
+  getSessionCookieMaxAge,
   SESSION_IDLE_TIMEOUT_MS,
   SESSION_ABSOLUTE_TIMEOUT_MS,
-} from '../utils/session';
-
-const REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+} from '../utils/session.js';
 
 function resolveRequestId(request) {
   const header =
@@ -28,14 +24,21 @@ function resolveRequestId(request) {
 }
 
 function jsonResponse(status, payload, origin, requestId, extraHeaders = {}) {
-  const headers = {
+  const headers = new Headers({
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'true',
-    ...extraHeaders,
-  };
+    'Cache-Control': 'no-store',
+  });
+  Object.entries(extraHeaders || {}).forEach(([name, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => headers.append(name, String(item)));
+    } else if (value !== undefined && value !== null) {
+      headers.set(name, String(value));
+    }
+  });
   if (requestId) {
-    headers['X-ShiftFlow-Request-Id'] = requestId;
+    headers.set('X-ShiftFlow-Request-Id', requestId);
   }
   return new Response(JSON.stringify(payload), {
     status,
@@ -91,7 +94,12 @@ export async function onRequest({ request, env }) {
       },
       origin,
       requestId,
-      { 'Set-Cookie': buildExpiredSessionCookie() }
+      {
+        'Set-Cookie': [
+          buildExpiredSessionCookie(),
+          buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+        ],
+      }
     );
   }
 
@@ -124,75 +132,22 @@ export async function onRequest({ request, env }) {
       },
       origin,
       requestId,
-      { 'Set-Cookie': buildExpiredSessionCookie() }
+      {
+        'Set-Cookie': [
+          buildExpiredSessionCookie(),
+          buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+        ],
+      }
     );
   }
 
-  let updatedRecord = verified.record;
-  let tokens = updatedRecord.tokens || {};
-  let setCookieHeader = '';
-
-  const expiresAt = Number(tokens.expiry || 0);
-  const refreshToken = tokens.refreshToken || '';
-  const shouldRefresh = !!refreshToken && (!expiresAt || expiresAt <= now + REFRESH_THRESHOLD_MS);
-
-  if (shouldRefresh) {
-    let refreshedOnce = false;
-    try {
-      const refreshed = await refreshGoogleTokens(env, refreshToken);
-      const newIdToken = refreshed.id_token || tokens.idToken;
-      const newExpiry =
-        calculateIdTokenExpiry(newIdToken) ||
-        (refreshed.expires_in ? now + refreshed.expires_in * 1000 : now + 3600 * 1000);
-      const mergedTokens = {
-        ...tokens,
-        idToken: newIdToken,
-        accessToken: refreshed.access_token || tokens.accessToken || '',
-        expiry: newExpiry,
-        scope: refreshed.scope || tokens.scope || '',
-        updatedAt: now,
-      };
-      updatedRecord = (await updateSessionTokens(env, verified.id, updatedRecord, mergedTokens)) || updatedRecord;
-      tokens = updatedRecord.tokens || mergedTokens;
-    } catch (err) {
-      if (!refreshedOnce) {
-        refreshedOnce = true;
-        try {
-          const retried = await refreshGoogleTokens(env, refreshToken);
-          const retryIdToken = retried.id_token || tokens.idToken;
-          const retryExpiry =
-            calculateIdTokenExpiry(retryIdToken) ||
-            (retried.expires_in ? now + retried.expires_in * 1000 : now + 3600 * 1000);
-          const mergedTokens = {
-            ...tokens,
-            idToken: retryIdToken,
-            accessToken: retried.access_token || tokens.accessToken || '',
-            expiry: retryExpiry,
-            scope: retried.scope || tokens.scope || '',
-            updatedAt: now,
-          };
-          updatedRecord =
-            (await updateSessionTokens(env, verified.id, updatedRecord, mergedTokens)) || updatedRecord;
-          tokens = updatedRecord.tokens || mergedTokens;
-        } catch (retryErr) {
-          console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens (retry)', retryErr);
-          updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
-          tokens = updatedRecord.tokens || tokens;
-        }
-      } else {
-        console.warn('[ShiftFlow][Auth] Failed to refresh Google tokens', err);
-        updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
-        tokens = updatedRecord.tokens || tokens;
-      }
-    }
-  } else {
-    updatedRecord = (await touchSession(env, verified.id, updatedRecord)) || updatedRecord;
-    tokens = updatedRecord.tokens || tokens;
-  }
+  const updatedRecord = (await touchSession(env, verified.id, verified.record)) || verified.record;
 
   const refreshedTimeout = evaluateSessionTimeout(updatedRecord, Date.now());
   const cookieValue = `${verified.id}.${verified.key}`;
-  setCookieHeader = buildSessionCookie(cookieValue);
+  const setCookieHeader = buildSessionCookie(cookieValue, {
+    maxAge: getSessionCookieMaxAge(updatedRecord),
+  });
 
   const user = updatedRecord.user || {};
   return jsonResponse(
@@ -206,7 +161,7 @@ export async function onRequest({ request, env }) {
         name: user.name || '',
         picture: user.picture || '',
       },
-      expiresAt: Number(tokens.expiry || 0),
+      expiresAt: Math.min(refreshedTimeout.idleDeadline, refreshedTimeout.absoluteDeadline),
       session: {
         idleDeadline: refreshedTimeout.idleDeadline,
         absoluteDeadline: refreshedTimeout.absoluteDeadline,
@@ -216,6 +171,11 @@ export async function onRequest({ request, env }) {
     },
     origin,
     requestId,
-    { 'Set-Cookie': setCookieHeader }
+    {
+      'Set-Cookie': [
+        setCookieHeader,
+        buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+      ],
+    }
   );
 }

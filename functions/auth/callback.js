@@ -1,20 +1,22 @@
-import { loadConfig } from '../api/config';
+import { loadConfig } from '../api/config.js';
 import {
   consumeAuthInit,
   createSession,
   buildSessionCookie,
   parseCookies,
-  calculateIdTokenExpiry,
-  updateSessionTokens,
-} from '../utils/session';
-import { verifyGoogleIdToken } from '../utils/googleIdToken';
+  getSessionCookieMaxAge,
+} from '../utils/session.js';
+import { verifyGoogleIdToken } from '../utils/googleIdToken.js';
 
 const CANONICAL_DOMAIN = 'shiftflow.pages.dev';
 const CALLBACK_URL = `https://${CANONICAL_DOMAIN}/auth/callback`;
-const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function expireCookie(name) {
-  return `${name}=; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
+  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
+function expireLegacyDomainCookie(name) {
+  return `${name}=; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
 function normalizeReturnPath(rawValue) {
@@ -56,6 +58,8 @@ function redirect(path) {
   const headers = new Headers({ Location: path });
   headers.append('Set-Cookie', expireCookie('OAUTH_STATE'));
   headers.append('Set-Cookie', expireCookie('PKCE_CODE_VERIFIER'));
+  headers.append('Set-Cookie', expireLegacyDomainCookie('OAUTH_STATE'));
+  headers.append('Set-Cookie', expireLegacyDomainCookie('PKCE_CODE_VERIFIER'));
   return new Response(null, { status: 302, headers });
 }
 
@@ -83,8 +87,12 @@ export async function onRequest({ request, env }) {
   const stateCookie = cookies.OAUTH_STATE || '';
   const pkceCookie = cookies.PKCE_CODE_VERIFIER || '';
 
-  if (stateCookie && stateCookie !== state) {
-    console.warn('[auth/callback] state cookie mismatch', { rid });
+  if (!stateCookie || !pkceCookie || stateCookie !== state) {
+    console.warn('[auth/callback] state cookie validation failed', {
+      rid,
+      hasStateCookie: Boolean(stateCookie),
+      hasPkceCookie: Boolean(pkceCookie),
+    });
     return redirectToSignin('state', rid);
   }
 
@@ -98,8 +106,8 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  const viaCookie = Boolean(stateCookie && pkceCookie && stateCookie === state);
-  const codeVerifier = viaCookie ? pkceCookie : initPayload?.codeVerifier || '';
+  const viaCookie = true;
+  const codeVerifier = pkceCookie;
   const returnTo = normalizeReturnPath(initPayload?.returnTo || '/');
   const requestId =
     (initPayload && typeof initPayload.requestId === 'string' && initPayload.requestId.trim()) ||
@@ -203,50 +211,47 @@ export async function onRequest({ request, env }) {
     exp: tokenInfo.exp || null,
   });
 
-  const now = Date.now();
-  const tokenExpiry =
-    calculateIdTokenExpiry(idToken) ||
-    (tokenInfo.exp ? Number(tokenInfo.exp) * 1000 : null) ||
-    (typeof tokenPayload.expires_in === 'number'
-      ? now + Number(tokenPayload.expires_in) * 1000
-      : now + 3600 * 1000);
+  if (!tokenInfo.emailVerified || !tokenInfo.sub || !tokenInfo.email) {
+    console.warn('[auth/callback] verified identity is incomplete', {
+      rid,
+      hasSubject: Boolean(tokenInfo.sub),
+      hasEmail: Boolean(tokenInfo.email),
+      emailVerified: Boolean(tokenInfo.emailVerified),
+    });
+    return redirectToSignin('verify', requestId);
+  }
 
   const sessionData = {
     user: {
+      sub: tokenInfo.sub,
       email: tokenInfo.email,
+      emailVerified: true,
       name: tokenInfo.name || tokenInfo.given_name || tokenInfo.email,
       picture: tokenInfo.picture || '',
-    },
-    tokens: {
-      idToken,
-      accessToken: tokenPayload.access_token || '',
-      refreshToken: tokenPayload.refresh_token || '',
-      scope: tokenPayload.scope || '',
-      expiry: tokenExpiry,
-      issuedAt: now,
     },
   };
 
   const { sessionId, sessionKey, record } = await createSession(env, sessionData);
-  await updateSessionTokens(env, sessionId, record, sessionData.tokens);
 
   const sessionValue = `${sessionId}.${sessionKey}`;
   const sessionCookie = buildSessionCookie(sessionValue, {
-    maxAge: SESSION_MAX_AGE,
-    sameSite: 'None',
-    domain: CANONICAL_DOMAIN,
+    maxAge: getSessionCookieMaxAge(record),
+    sameSite: 'Lax',
   });
 
   const destination = `https://${CANONICAL_DOMAIN}${returnTo}`;
   const headers = new Headers({ Location: destination });
   headers.append('Set-Cookie', sessionCookie);
+  headers.append('Set-Cookie', expireLegacyDomainCookie('SESSION'));
   headers.append('Set-Cookie', expireCookie('OAUTH_STATE'));
   headers.append('Set-Cookie', expireCookie('PKCE_CODE_VERIFIER'));
+  headers.append('Set-Cookie', expireLegacyDomainCookie('OAUTH_STATE'));
+  headers.append('Set-Cookie', expireLegacyDomainCookie('PKCE_CODE_VERIFIER'));
 
   console.info('[auth/callback] session COOKIE SET -> redirect', {
     rid,
     destination,
-    cookie: `SESSION; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=None`,
+    cookie: `SESSION; Domain=${CANONICAL_DOMAIN}; Path=/; HttpOnly; Secure; SameSite=Lax`,
     requestId,
   });
 
