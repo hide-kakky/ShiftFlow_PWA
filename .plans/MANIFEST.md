@@ -7,6 +7,11 @@ Archive bodies are not the normal search surface.
 
 | File | Plan ID | Title | Status | Opened | Closed | Source SHA-256 | Visibility | Read policy | Supersedes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `2026-07-13-header-menu-scroll-lock.md` | `2026-07-13-header-menu-scroll-lock` | ヘッダーメニュー表示中の退避防止 | `complete` | `2026-07-13` | `2026-07-13` | `7bd019ea98dd19c46cf2612c7f877e35e1e4d63600a192f1d443abaaa829c380` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
+| `2026-07-13-liquid-glass-command-header.md` | `2026-07-13-liquid-glass-command-header` | 検索・フォルダ操作を集約したLiquid Glassヘッダー | `complete` | `2026-07-13` | `2026-07-13` | `a7c545f0114565ada3c2b10f76d18ba4f07ffa31b8059de4baba72ca141c4c04` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
+| `2026-07-13-mobile-navigation-density.md` | `2026-07-13-mobile-navigation-density` | スワイプ遷移の改善とモバイル画面密度の最適化 | `complete` | `2026-07-13` | `2026-07-13` | `201093c9a5fbca45d026aca3b257af494f1c7669cc3e60ea25bc9e9491e73770` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
+| `2026-07-13-release-190.md` | `2026-07-13-release-190` | ShiftFlow 1.9.0 本番デプロイ | `complete` | `2026-07-13` | `2026-07-13` | `a090ea23beaf8c875a4c9442c669ba663bb27cd90b368c953c01d098454f2d5c` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
+| `2026-07-13-scroll-linked-header-fade.md` | `2026-07-13-scroll-linked-header-fade` | スクロール量に連動するヘッダーフェード | `complete` | `2026-07-13` | `2026-07-13` | `9ddfb8895f5b58e684b234a5463c4f825c8622e9c5f17d8bc7854fedfbf030e2` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
 | `2026-07-13-session-persistence-ui-160.md` | `2026-07-13-session-persistence-ui-160` | ログインセッション半永続化と管理UIブラッシュアップ | `complete` | `2026-07-13` | `2026-07-13` | `bdb58ac350376172fdf47494f6bc74f9315a5418d6ede7512ae02a5bcadb784b` | `local_private` | `explicit_continuation_or_promotion_audit` | `None` |
 
 ## Sidecar-managed and recovery archives

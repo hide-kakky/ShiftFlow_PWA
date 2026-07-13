@@ -2,6 +2,7 @@
 <html data-theme="light">
   <head>
     <!-- ===== Base PWA metadata and viewport configuration ===== -->
+    <meta charset="UTF-8" />
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -44,36 +45,197 @@
     </script>
     <script>
       (function enableHeaderAutoHide() {
-        var header = document.querySelector('header.navbar');
-        if (!header) return;
-        var lastY = window.scrollY || 0;
-        var ticking = false;
-        var threshold = 6;
-        var showAtTop = 32;
-        function handleScroll() {
-          var current = window.scrollY || 0;
-          var delta = current - lastY;
-          if (Math.abs(delta) < threshold) {
+        var initialized = false;
+
+        function init() {
+          if (initialized) return;
+          var header = document.querySelector('header.navbar');
+          if (!header) return;
+          initialized = true;
+
+          var lastY = Math.max(window.scrollY || 0, 0);
+          var lastFrameAt = performance.now();
+          var hideProgress = 0;
+          var ticking = false;
+          var settleTimer = null;
+          var openHeaderDropdowns = new Set();
+          var nativeHeaderMenuOpen = false;
+          var showAtTop = 10;
+
+          function hasExpandedHeaderDropdown() {
+            return !!header.querySelector(
+              '.dropdown-menu.show, [data-bs-toggle="dropdown"][aria-expanded="true"]'
+            );
+          }
+
+          function hasOpenHeaderControl() {
+            return (
+              header.classList.contains('header--search-open') ||
+              nativeHeaderMenuOpen ||
+              openHeaderDropdowns.size > 0 ||
+              hasExpandedHeaderDropdown()
+            );
+          }
+
+          function clamp(value, min, max) {
+            return Math.min(Math.max(value, min), max);
+          }
+
+          function getHideMotionProfile(velocity) {
+            var speedRatio = clamp((velocity - 0.08) / 1.1, 0, 1);
+            return {
+              distance: 96 - speedRatio * 34,
+              duration: Math.round(320 - speedRatio * 100),
+            };
+          }
+
+          function setHeaderProgress(progress, duration) {
+            hideProgress = clamp(progress, 0, 1);
+            var fadeProgress =
+              hideProgress * hideProgress * (3 - 2 * hideProgress);
+            header.style.setProperty('--header-slide-duration', duration + 'ms');
+            header.style.setProperty(
+              '--header-hide-offset',
+              (-112 * hideProgress).toFixed(2) + '%'
+            );
+            header.style.setProperty(
+              '--header-hide-opacity',
+              (1 - fadeProgress).toFixed(3)
+            );
+            header.classList.toggle('navbar--hidden', hideProgress >= 0.999);
+          }
+
+          function clearSettleTimer() {
+            if (settleTimer === null) return;
+            window.clearTimeout(settleTimer);
+            settleTimer = null;
+          }
+
+          function revealHeader() {
+            clearSettleTimer();
+            header.classList.remove('navbar--scrolling');
+            setHeaderProgress(0, 130);
+          }
+
+          function syncHeaderMenuLock() {
+            var locked =
+              nativeHeaderMenuOpen ||
+              openHeaderDropdowns.size > 0 ||
+              hasExpandedHeaderDropdown();
+            header.classList.toggle('header--menu-open', locked);
+            if (locked) revealHeader();
+            return locked;
+          }
+
+          function lockHeaderDropdown(event) {
+            if (event && event.target) openHeaderDropdowns.add(event.target);
+            header.classList.add('header--menu-open');
+            revealHeader();
+          }
+
+          function unlockHeaderDropdown(event) {
+            if (event && event.target) openHeaderDropdowns.delete(event.target);
+            if (!hasExpandedHeaderDropdown()) openHeaderDropdowns.clear();
+            syncHeaderMenuLock();
+            setHeaderProgress(0, 130);
+          }
+
+          function isHeaderNativeSelect(target) {
+            return !!(
+              target &&
+              target.matches &&
+              target.matches('select.app-view-heading__folder-select')
+            );
+          }
+
+          function lockHeaderNativeSelect(event) {
+            if (!isHeaderNativeSelect(event.target)) return;
+            nativeHeaderMenuOpen = true;
+            syncHeaderMenuLock();
+          }
+
+          function unlockHeaderNativeSelect(event) {
+            if (!isHeaderNativeSelect(event.target)) return;
+            nativeHeaderMenuOpen = false;
+            syncHeaderMenuLock();
+            setHeaderProgress(0, 130);
+          }
+
+          function scheduleSettle(direction, velocity) {
+            clearSettleTimer();
+            settleTimer = window.setTimeout(function () {
+              settleTimer = null;
+              header.classList.remove('navbar--scrolling');
+              if (direction < 0 || hasOpenHeaderControl()) {
+                setHeaderProgress(0, 130);
+                return;
+              }
+              var target = hideProgress >= 0.45 ? 1 : 0;
+              if (Math.abs(target - hideProgress) < 0.001) return;
+              var motion = getHideMotionProfile(velocity);
+              setHeaderProgress(target, target === 1 ? motion.duration : 130);
+            }, 110);
+          }
+
+          function handleScroll(now) {
+            var current = Math.max(window.scrollY || 0, 0);
+            var delta = current - lastY;
+            var elapsed = Math.max(8, Math.min(80, now - lastFrameAt));
+            var velocity = Math.abs(delta) / elapsed;
+
+            if (current <= showAtTop || hasOpenHeaderControl()) {
+              revealHeader();
+            } else if (delta < 0) {
+              // 上方向は距離をためず、リスト途中でも即座に再表示する。
+              header.classList.add('navbar--scrolling');
+              setHeaderProgress(0, 130);
+              scheduleSettle(-1, velocity);
+            } else if (delta > 0) {
+              header.classList.add('navbar--scrolling');
+              var motion = getHideMotionProfile(velocity);
+              setHeaderProgress(
+                hideProgress + delta / motion.distance,
+                motion.duration
+              );
+              scheduleSettle(1, velocity);
+            }
+
+            lastY = current;
+            lastFrameAt = now;
             ticking = false;
-            return;
           }
-          if (current > lastY && current > showAtTop) {
-            header.classList.add('navbar--hidden');
-          } else {
-            header.classList.remove('navbar--hidden');
-          }
-          lastY = current;
-          ticking = false;
-        }
-        window.addEventListener(
-          'scroll',
-          function () {
+
+          function requestScrollUpdate() {
             if (ticking) return;
             ticking = true;
             window.requestAnimationFrame(handleScroll);
-          },
-          { passive: true }
-        );
+          }
+
+          window.addEventListener('scroll', requestScrollUpdate, { passive: true });
+          header.addEventListener('focusin', revealHeader);
+          header.addEventListener('show.bs.dropdown', lockHeaderDropdown);
+          header.addEventListener('shown.bs.dropdown', lockHeaderDropdown);
+          header.addEventListener('hide.bs.dropdown', revealHeader);
+          header.addEventListener('hidden.bs.dropdown', unlockHeaderDropdown);
+          header.addEventListener('pointerdown', lockHeaderNativeSelect);
+          header.addEventListener('pointercancel', unlockHeaderNativeSelect);
+          header.addEventListener('change', unlockHeaderNativeSelect);
+          header.addEventListener('focusout', unlockHeaderNativeSelect);
+          header.addEventListener('keydown', function (event) {
+            if (!isHeaderNativeSelect(event.target)) return;
+            if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+              lockHeaderNativeSelect(event);
+            } else if (event.key === 'Escape') {
+              unlockHeaderNativeSelect(event);
+            }
+          });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init, { once: true });
+        } else {
+          init();
+        }
       })();
     </script>
     <!-- ===== Runtime configuration endpoint (Cloudflare Functions) ===== -->
@@ -229,9 +391,15 @@
         --fab: #e85d6a;
         --fab-shadow: 0 14px 28px rgba(232, 93, 106, 0.35);
         --dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
-        --footer-h: 48px;
-        --footer-extra: 8px;
-        --header-h: 48px;
+        --footer-h: 58px;
+        --footer-extra: 12px;
+        --header-h: 60px;
+        --nav-glass-bg: rgba(248, 251, 255, 0.78);
+        --nav-glass-border: rgba(255, 255, 255, 0.82);
+        --nav-glass-highlight: rgba(255, 255, 255, 0.92);
+        --nav-glass-shadow: 0 14px 36px rgba(25, 46, 88, 0.18);
+        --nav-glass-active: rgba(81, 124, 178, 0.16);
+        --nav-glass-fg: #27466f;
         --fade: 220ms;
         --body-bg: none;
         --task-card-bg: linear-gradient(0deg, rgba(81, 124, 178, 0.1), rgba(81, 124, 178, 0.1)),
@@ -341,6 +509,12 @@
         --alert-info-bg: rgba(90, 130, 210, 0.22);
         --alert-info-border: rgba(90, 130, 210, 0.42);
         --alert-info-text: #f6f8ff;
+        --nav-glass-bg: rgba(18, 31, 59, 0.78);
+        --nav-glass-border: rgba(181, 205, 255, 0.22);
+        --nav-glass-highlight: rgba(219, 231, 255, 0.2);
+        --nav-glass-shadow: 0 18px 44px rgba(2, 7, 20, 0.62);
+        --nav-glass-active: rgba(122, 162, 255, 0.22);
+        --nav-glass-fg: #edf3ff;
       }
       /* ===== Global element resets ===== */
       * {
@@ -537,8 +711,14 @@
         min-height: var(--header-h);
         padding-top: 4px;
         padding-bottom: 6px;
-        transition: transform 200ms ease, box-shadow 200ms ease, backdrop-filter 200ms ease;
-        will-change: transform;
+        transform: translateY(var(--header-hide-offset, 0%));
+        opacity: var(--header-hide-opacity, 1);
+        transition:
+          transform var(--header-slide-duration, 160ms) cubic-bezier(0.22, 0.61, 0.36, 1),
+          opacity var(--header-slide-duration, 160ms) linear,
+          box-shadow 200ms ease,
+          backdrop-filter 200ms ease;
+        will-change: transform, opacity;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
       header .container-xl {
@@ -608,6 +788,105 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
+      .app-view-heading {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+        color: var(--text-900);
+      }
+      .app-view-heading__icon {
+        width: 36px;
+        height: 36px;
+        flex: 0 0 36px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(145deg, #6c83c5, #405c9d);
+        color: #fff;
+        font-size: 21px;
+        box-shadow: 0 10px 22px rgba(64, 92, 157, 0.28);
+      }
+      .app-view-heading__title,
+      .app-view-heading__scope-trigger {
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .app-view-heading__scope-trigger {
+        min-height: 44px;
+        max-width: min(42vw, 220px);
+        border: 0;
+        border-radius: 12px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--text-900);
+        padding: 7px 9px 7px 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .app-view-heading__scope-trigger > span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .task-scope-label__short {
+        display: none;
+      }
+      .app-view-heading__scope-trigger .material-icons-outlined {
+        flex: 0 0 auto;
+        font-size: 20px;
+      }
+      .app-view-heading__scope-trigger:focus-visible,
+      .header-view-refresh:focus-visible {
+        outline: 3px solid var(--focus-ring);
+        outline-offset: 2px;
+      }
+      .app-view-heading__menu {
+        min-width: 210px;
+        padding: 6px;
+        border: 1px solid var(--glass-border);
+        border-radius: 14px;
+        background: var(--card);
+        box-shadow: var(--dropdown-shadow);
+      }
+      .app-view-heading__menu .dropdown-item {
+        min-height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        color: var(--text-900);
+      }
+      .app-view-heading__menu .dropdown-item.active {
+        background: var(--tab-active-bg);
+        color: var(--tab-active-text);
+      }
+      .header-view-refresh {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        border: 1px solid var(--glass-border);
+        border-radius: 14px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--text-900);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .header-view-refresh .material-icons-outlined {
+        font-size: 22px;
+      }
+      .header-view-refresh.is-refreshing .material-icons-outlined {
+        animation: ptr-spin 0.8s linear infinite;
+      }
+      :root[data-theme='dark'] .app-view-heading__scope-trigger,
+      :root[data-theme='dark'] .header-view-refresh {
+        background: rgba(122, 162, 255, 0.14);
+        color: #f5f8ff;
+      }
       @media (max-width: 768px) {
         .navbar-brand.app-brand {
           gap: 10px;
@@ -619,6 +898,16 @@
         }
         .navbar-brand.app-brand .brand-text-main {
           font-size: 1.12rem;
+        }
+        .app-view-heading__icon {
+          width: 34px;
+          height: 34px;
+          flex-basis: 34px;
+          border-radius: 11px;
+        }
+        .app-view-heading__title,
+        .app-view-heading__scope-trigger {
+          font-size: 0.95rem;
         }
         header.navbar {
           padding-top: calc(4px + var(--safe-top));
@@ -636,9 +925,20 @@
         }
       }
       header.navbar.navbar--hidden {
-        transform: translateY(-120%);
         box-shadow: none;
         backdrop-filter: none;
+      }
+      header.navbar.header--menu-open,
+      header.navbar.header--search-open {
+        transform: translateY(0) !important;
+        opacity: 1 !important;
+      }
+      @supports selector(header:has(.dropdown-menu.show)) {
+        header.navbar:has(.dropdown-menu.show),
+        header.navbar:has([data-bs-toggle='dropdown'][aria-expanded='true']) {
+          transform: translateY(0) !important;
+          opacity: 1 !important;
+        }
       }
       :root[data-theme='dark'] html {
         background-color: var(--surface);
@@ -1130,7 +1430,7 @@
         box-shadow: 0 18px 32px rgba(2, 8, 20, 0.55);
       }
       .task-panels {
-        margin-top: 1.8rem;
+        margin-top: 0;
       }
       .task-panel {
         display: none;
@@ -1938,8 +2238,15 @@
       }
       .views-track {
         display: flex;
-        transition: transform 650ms cubic-bezier(0.25, 0.8, 0.25, 1);
+        transform: translate3d(0, 0, 0);
+        transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        will-change: auto;
+      }
+      .views-track.is-moving {
         will-change: transform;
+      }
+      .views-track.is-moving .fade-container {
+        transition: none;
       }
       .view-panel {
         flex: 0 0 100%;
@@ -2016,14 +2323,26 @@
         transform: translateX(-50%);
         z-index: 1030;
       }
+      .fab.dropup-center::before {
+        content: '';
+        position: absolute;
+        inset: -7px;
+        border: 1px solid rgba(105, 199, 255, 0.58);
+        border-radius: 50%;
+        box-shadow: 0 0 18px rgba(105, 199, 255, 0.3), 0 0 28px rgba(255, 77, 139, 0.24);
+        pointer-events: none;
+        opacity: 0.78;
+      }
       .fab .btn {
         width: 66px;
         height: 66px;
         border-radius: 50%;
         padding: 0;
-        border: none;
-        background: linear-gradient(140deg, #ff97ab 0%, #ff5d7d 55%, #ff1f68 100%);
-        box-shadow: 0 24px 36px rgba(255, 95, 125, 0.45), 0 10px 20px rgba(255, 95, 125, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.48);
+        background: radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.58), transparent 30%),
+          linear-gradient(145deg, #6479da 0%, #d44c96 46%, #f02c66 100%);
+        box-shadow: 0 24px 40px rgba(255, 76, 127, 0.42), 0 10px 22px rgba(103, 151, 255, 0.3),
+          inset 0 1px 1px rgba(255, 255, 255, 0.5);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -2059,8 +2378,10 @@
         pointer-events: none;
       }
       :root[data-theme='dark'] .fab .btn {
-        background: linear-gradient(140deg, #ff6f90 0%, #ff3771 55%, #e01c5f 100%);
-        box-shadow: 0 24px 34px rgba(224, 28, 95, 0.5), 0 12px 22px rgba(224, 28, 95, 0.28);
+        background: radial-gradient(circle at 26% 18%, rgba(255, 255, 255, 0.42), transparent 30%),
+          linear-gradient(145deg, #586dca 0%, #c63b87 46%, #d9185a 100%);
+        box-shadow: 0 24px 38px rgba(224, 28, 95, 0.48), 0 12px 24px rgba(82, 132, 255, 0.3),
+          inset 0 1px 1px rgba(255, 255, 255, 0.35);
       }
       :root[data-theme='dark'] .fab .btn::before {
         opacity: 0.7;
@@ -2071,7 +2392,8 @@
         box-shadow: 0 20px 34px rgba(232, 93, 106, 0.4);
       }
       .fab .btn:focus-visible {
-        outline: none;
+        outline: 3px solid #263b70;
+        outline-offset: 4px;
         box-shadow: 0 20px 34px rgba(232, 93, 106, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.35);
       }
       .fab .btn:hover::after,
@@ -2087,6 +2409,11 @@
         color: var(--on-primary);
         position: relative;
         z-index: 1;
+        text-shadow: 0 0 12px rgba(255, 255, 255, 0.42);
+        transition: transform 0.2s ease;
+      }
+      .fab .btn[aria-expanded='true'] .material-icons {
+        transform: rotate(45deg);
       }
       .fab .dropdown-toggle::after {
         display: none !important;
@@ -3855,7 +4182,7 @@
         object-fit: contain;
       }
 
-      /* v1.6.0: restrained glass surfaces and consistent state colors */
+      /* v1.7.0: compact mobile controls and consistent glass surfaces */
       .message-toolbar,
       .admin-panel,
       .admin-dashboard-kpi,
@@ -3868,20 +4195,32 @@
       .message-toolbar {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
-        gap: 12px;
-        align-items: end;
-        margin-top: 10px;
-        padding: 14px;
-        border-radius: 18px;
+        grid-template-areas: 'search folder actions';
+        gap: 8px;
+        align-items: center;
+        margin-top: 0;
+        padding: 9px;
+        border-radius: 15px;
       }
       .message-toolbar__field {
         min-width: 0;
       }
+      .message-toolbar__field--search {
+        grid-area: search;
+      }
+      .message-toolbar__field--folder {
+        grid-area: folder;
+      }
       .message-toolbar__field .form-label {
-        margin-bottom: 6px;
-        color: var(--text-700);
-        font-size: 0.82rem;
-        font-weight: 600;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
       .message-toolbar .input-group,
       .message-toolbar .form-control,
@@ -3893,20 +4232,26 @@
         min-height: 44px;
         display: flex;
         align-items: center;
-        padding: 0 4px;
+        padding: 0 9px;
+        border-radius: 12px;
+        background: rgba(81, 124, 178, 0.08);
+        white-space: nowrap;
+        gap: 6px;
+        cursor: pointer;
       }
       .message-toolbar__actions {
+        grid-area: actions;
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: 10px;
+        gap: 6px;
         min-width: 0;
       }
-      .message-toolbar__hint {
-        grid-column: 1 / -1;
-        margin: -2px 0 0;
-        color: var(--muted);
-        font-size: 0.78rem;
+      .message-toolbar__actions .btn {
+        min-height: 44px;
+        padding: 0.4rem 0.7rem;
+        border-radius: 12px;
+        white-space: nowrap;
       }
       .card.app-card,
       :root[data-theme='dark'] .card.app-card {
@@ -4028,17 +4373,510 @@
       }
       @media (max-width: 767.98px) {
         .message-toolbar {
-          grid-template-columns: 1fr;
-        }
-        .message-toolbar__hint {
-          grid-column: 1;
-        }
-        .message-toolbar .btn {
-          width: 100%;
+          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-areas:
+            'search search'
+            'folder actions';
         }
         .message-toolbar__actions {
-          align-items: stretch;
-          flex-direction: column;
+          align-items: center;
+          flex-direction: row;
+        }
+        .message-toolbar__actions .btn {
+          width: auto;
+        }
+        .message-toolbar .input-group,
+        .message-toolbar .form-control,
+        .message-toolbar .form-select,
+        .message-toolbar .btn {
+          min-height: 44px;
+        }
+        .message-toolbar__actions .btn .message-toolbar__action-label {
+          display: none;
+        }
+        .task-filter-select {
+          width: 100%;
+          min-width: 0;
+        }
+      }
+      @media (max-width: 360px) {
+        .user-menu-dropdown .user-menu-trigger > .material-icons-outlined {
+          display: none;
+        }
+        .message-toolbar__check {
+          padding-left: 7px;
+          padding-right: 7px;
+        }
+        .message-toolbar__actions .btn {
+          padding-left: 0.55rem;
+          padding-right: 0.55rem;
+        }
+      }
+
+      /* v1.8.0: compact command header and Liquid Glass navigation surfaces */
+      header.navbar {
+        display: block;
+        overflow: visible;
+        padding: 6px 0;
+        background: transparent;
+        box-shadow: none;
+        border: 0;
+        transition:
+          transform var(--header-slide-duration, 160ms) cubic-bezier(0.22, 0.61, 0.36, 1),
+          opacity var(--header-slide-duration, 160ms) linear;
+      }
+      header.navbar::before {
+        display: none;
+      }
+      header.navbar > .container-xl {
+        width: calc(100% - 16px);
+        min-height: 52px;
+        padding: 4px 8px;
+        border: 1px solid var(--nav-glass-border);
+        border-radius: 19px;
+        background: var(--nav-glass-bg);
+        box-shadow: var(--nav-glass-shadow), inset 0 1px 0 var(--nav-glass-highlight);
+        -webkit-backdrop-filter: saturate(165%) blur(22px);
+        backdrop-filter: saturate(165%) blur(22px);
+      }
+      :root[data-theme='dark'] header.navbar {
+        background: transparent;
+        box-shadow: none;
+      }
+      .app-view-heading {
+        flex: 1 1 auto;
+        max-width: calc(100% - 104px);
+      }
+      .app-view-heading__scope-trigger,
+      .app-view-heading__folder-select {
+        min-height: 44px;
+        max-width: min(42vw, 220px);
+        border: 1px solid rgba(81, 124, 178, 0.14);
+        border-radius: 14px;
+        background: var(--nav-glass-active);
+        color: var(--text-900);
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+      }
+      .app-view-heading__scope-trigger {
+        padding: 7px 8px 7px 10px;
+      }
+      .app-view-heading__folder {
+        position: relative;
+        display: inline-flex;
+        min-width: 0;
+        max-width: min(42vw, 220px);
+      }
+      .app-view-heading__folder-select {
+        width: 100%;
+        min-width: 92px;
+        font-size: 1rem;
+        padding: 7px 31px 7px 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        appearance: none;
+        -webkit-appearance: none;
+      }
+      .app-view-heading__folder > .material-icons-outlined {
+        position: absolute;
+        top: 50%;
+        right: 7px;
+        transform: translateY(-50%);
+        color: var(--text-700);
+        font-size: 20px;
+        pointer-events: none;
+      }
+      .app-view-heading__folder-select:focus-visible,
+      .header-action-button:focus-visible,
+      .header-search-panel__close:focus-visible,
+      header.header--contextual .user-menu-trigger:focus-visible,
+      .header-menu-toggle:focus-within {
+        outline: 3px solid var(--focus-ring);
+        outline-offset: 2px;
+      }
+      .header-action-button {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        padding: 0;
+        border: 1px solid rgba(81, 124, 178, 0.14);
+        border-radius: 14px;
+        background: var(--nav-glass-active);
+        color: var(--nav-glass-fg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .header-action-button .material-icons-outlined {
+        font-size: 23px;
+      }
+      .header-action-button__status {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ff5b6e;
+        box-shadow: 0 0 0 2px var(--nav-glass-bg);
+        opacity: 0;
+        transform: scale(0.5);
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+      .header-action-button.has-value .header-action-button__status {
+        opacity: 1;
+        transform: scale(1);
+      }
+      header.header--contextual .user-menu-trigger {
+        position: relative;
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        padding: 0;
+        border: 1px solid rgba(81, 124, 178, 0.14);
+        border-radius: 14px;
+        background: var(--nav-glass-active);
+        color: var(--nav-glass-fg);
+        justify-content: center;
+      }
+      header.header--contextual .header-user-avatar-visual,
+      header.header--contextual .header-user-copy,
+      header.header--contextual .header-user-chevron {
+        display: none !important;
+      }
+      header.header--contextual .header-overflow-icon {
+        display: inline-flex !important;
+        font-size: 23px;
+        opacity: 1;
+      }
+      .header-overflow-status {
+        display: none;
+      }
+      header.header--contextual .user-menu-trigger.has-active-filter .header-overflow-status {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 7px;
+        height: 7px;
+        display: block;
+        border-radius: 50%;
+        background: #ff5b6e;
+        box-shadow: 0 0 0 2px var(--nav-glass-bg);
+      }
+      .user-menu-dropdown .dropdown-menu {
+        max-height: min(72vh, 560px);
+        overflow-y: auto;
+        border: 1px solid var(--nav-glass-border);
+        border-radius: 17px;
+        background: var(--card);
+        box-shadow: var(--dropdown-shadow);
+      }
+      .header-view-actions .dropdown-item,
+      .header-menu-toggle {
+        min-height: 44px;
+      }
+      .header-menu-toggle {
+        width: calc(100% - 12px);
+        margin: 0 6px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-900);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .header-menu-toggle:hover {
+        background: var(--tab-hover-bg);
+      }
+      .header-menu-toggle .material-icons-outlined {
+        font-size: 20px;
+      }
+      .header-menu-toggle .form-check-input {
+        margin-left: auto !important;
+      }
+      .header-view-refresh {
+        width: 100%;
+        height: auto;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text-900);
+        justify-content: flex-start;
+      }
+      .header-view-refresh.is-refreshing .material-icons-outlined {
+        animation: ptr-spin 0.8s linear infinite;
+      }
+      .header-search-panel {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1090;
+      }
+      .header-search-panel[hidden] {
+        display: none !important;
+      }
+      .header-search-panel__surface {
+        width: calc(100% - 24px);
+        margin: 2px auto 0;
+        padding: 8px;
+        border: 1px solid var(--nav-glass-border);
+        border-radius: 18px;
+        background: var(--nav-glass-bg);
+        box-shadow: var(--nav-glass-shadow), inset 0 1px 0 var(--nav-glass-highlight);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        -webkit-backdrop-filter: saturate(170%) blur(24px);
+        backdrop-filter: saturate(170%) blur(24px);
+      }
+      .header-search-panel__controls {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .header-search-panel .task-controls {
+        margin: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+        gap: 8px;
+      }
+      .header-search-panel .task-controls[data-task-search-scope='my'] {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .header-search-panel .task-search,
+      .header-search-panel .task-filter-select,
+      .header-message-search .input-group,
+      .header-message-search .form-control,
+      .header-message-search .input-group-text {
+        min-height: 44px;
+      }
+      .header-search-panel .task-search,
+      .header-search-panel .task-filter-select {
+        box-shadow: none;
+      }
+      .header-search-panel .task-filter-row {
+        min-width: 0;
+      }
+      .header-search-panel .task-filter-select {
+        width: 100%;
+        min-width: 0;
+      }
+      .header-message-search .input-group-text,
+      .header-message-search .form-control {
+        border-color: var(--input-border);
+        background: var(--input-bg);
+        color: var(--text-900);
+      }
+      .header-search-panel__close {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        padding: 0;
+        border: 0;
+        border-radius: 14px;
+        background: var(--nav-glass-active);
+        color: var(--nav-glass-fg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .header-search-panel__close .material-icons-outlined {
+        font-size: 22px;
+      }
+
+      .footer-nav {
+        height: calc(var(--footer-h) + var(--footer-extra) + var(--safe-bottom));
+        padding: 0 10px calc(var(--safe-bottom) + 6px);
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+      .footer-nav .container-fluid {
+        height: var(--footer-h);
+        padding: 3px;
+        border: 1px solid var(--nav-glass-border);
+        border-radius: 22px;
+        background: var(--nav-glass-bg);
+        box-shadow: var(--nav-glass-shadow), inset 0 1px 0 var(--nav-glass-highlight);
+        overflow: hidden;
+        -webkit-backdrop-filter: saturate(165%) blur(22px);
+        backdrop-filter: saturate(165%) blur(22px);
+      }
+      .footer-nav .nav-link {
+        min-height: 48px;
+        margin: 0 2px;
+        border-radius: 17px;
+        color: var(--nav-glass-fg);
+        transform: none;
+        transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+      }
+      .footer-nav .nav-link .material-icons-outlined {
+        color: currentColor;
+        opacity: 0.82;
+        font-size: 27px;
+        transition: transform 160ms ease, opacity 160ms ease;
+      }
+      .footer-nav .nav-link.active {
+        background: var(--nav-glass-active);
+        color: var(--primary-700);
+        transform: none;
+      }
+      :root[data-theme='dark'] .footer-nav .nav-link.active {
+        color: #f3f6ff;
+      }
+      .footer-nav .nav-link.active::after {
+        bottom: 5px;
+        width: 18px;
+        height: 3px;
+        background: currentColor;
+      }
+      .footer-nav .nav-link.active .material-icons-outlined {
+        opacity: 1;
+        transform: translateY(-1px);
+        filter: none;
+        animation: none;
+      }
+      .footer-nav .nav-icon-badge {
+        box-shadow: 0 0 0 2px var(--nav-glass-bg);
+      }
+      body:has(.views-track.is-moving) header.navbar > .container-xl,
+      header.navbar.navbar--scrolling > .container-xl,
+      body:has(.views-track.is-moving) .header-search-panel__surface,
+      body:has(.views-track.is-moving) .footer-nav .container-fluid {
+        background: var(--card);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+
+      .fab.dropup-center::before {
+        inset: -10px;
+        border: 0;
+        background: radial-gradient(
+          circle,
+          rgba(111, 174, 255, 0.38) 0%,
+          rgba(255, 74, 139, 0.25) 48%,
+          transparent 72%
+        );
+        box-shadow: none;
+        filter: blur(9px);
+        opacity: 0.54;
+      }
+      .fab .btn {
+        border: 0;
+        background: radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.78), transparent 27%),
+          linear-gradient(145deg, rgba(80, 110, 220, 0.98) 0%, rgba(201, 58, 144, 0.98) 48%, rgba(234, 31, 91, 0.98) 100%);
+        box-shadow: 0 24px 42px rgba(224, 46, 111, 0.44), 0 10px 24px rgba(77, 139, 255, 0.34),
+          inset 0 1px 1px rgba(255, 255, 255, 0.72), inset 0 -10px 24px rgba(104, 23, 116, 0.18);
+      }
+
+      .card.app-card,
+      :root[data-theme='dark'] .card.app-card,
+      .admin-panel,
+      .admin-dashboard-kpi,
+      .admin-card,
+      .modal-content.modal-modern {
+        background: var(--card);
+        border-color: var(--card-border);
+        box-shadow: var(--card-shadow);
+      }
+      .card.app-card.msg-card,
+      :root[data-theme='dark'] .card.app-card.msg-card {
+        background: var(--card);
+        box-shadow: var(--card-shadow);
+      }
+      .card.app-card.msg-card.msg-card--pinned,
+      :root[data-theme='dark'] .card.app-card.msg-card.msg-card--pinned {
+        background: linear-gradient(135deg, rgba(251, 188, 5, 0.14), transparent 72%), var(--card);
+      }
+      .card.app-card.msg-card.unread,
+      :root[data-theme='dark'] .card.app-card.msg-card.unread {
+        background: var(--msg-card-unread-bg);
+        box-shadow: var(--card-shadow);
+      }
+
+      @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+        header.navbar > .container-xl,
+        .header-search-panel__surface,
+        .footer-nav .container-fluid {
+          background: var(--card);
+        }
+      }
+      @media (max-width: 767.98px) {
+        header.navbar {
+          padding-top: calc(6px + var(--safe-top));
+          padding-bottom: 4px;
+          -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+        }
+        header.navbar > .container-xl {
+          min-height: 52px;
+        }
+        .app-view-heading {
+          gap: 7px;
+          max-width: calc(100% - 96px);
+        }
+        .app-view-heading__icon {
+          width: 32px;
+          height: 32px;
+          flex-basis: 32px;
+          border-radius: 11px;
+          font-size: 20px;
+        }
+        .header-search-panel .task-controls {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 360px) {
+        .user-menu-dropdown .user-menu-trigger > .header-overflow-icon {
+          display: inline-flex !important;
+        }
+        .app-view-heading__scope-trigger,
+        .app-view-heading__folder-select,
+        .app-view-heading__folder {
+          max-width: 39vw;
+        }
+        .app-view-heading__scope-trigger,
+        .app-view-heading__folder-select {
+          font-size: 0.86rem;
+        }
+        .app-view-heading__folder-select {
+          font-size: 1rem;
+        }
+        .task-scope-label__full {
+          display: none;
+        }
+        .task-scope-label__short {
+          display: inline;
+        }
+        header.navbar > .container-xl {
+          width: calc(100% - 12px);
+          padding-left: 6px;
+          padding-right: 6px;
+        }
+        header.navbar .navbar-nav {
+          gap: 4px !important;
+        }
+      }
+      @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+        header.navbar > .container-xl,
+        .header-search-panel__surface,
+        .footer-nav .container-fluid {
+          background: var(--card);
+          -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+          border-color: var(--input-border);
+        }
+        .app-view-heading__scope-trigger,
+        .app-view-heading__folder-select,
+        .header-action-button,
+        header.header--contextual .user-menu-trigger,
+        .footer-nav .nav-link.active {
+          background: var(--tab-active-bg);
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -4236,33 +5074,152 @@
             <span class="brand-text-main">ShiftFlow</span>
           </span>
         </a>
+        <div class="app-view-heading d-none" id="app-view-heading">
+          <h1 class="visually-hidden" id="app-view-heading-a11y">タスク</h1>
+          <span
+            class="material-icons-outlined app-view-heading__icon"
+            id="app-view-heading-icon"
+            aria-hidden="true"
+            >send</span
+          >
+          <div class="dropdown d-none" id="header-task-scope">
+            <button
+              class="app-view-heading__scope-trigger"
+              id="header-task-scope-trigger"
+              type="button"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-label="タスクの表示範囲を選択"
+            >
+              <span id="header-task-scope-label">
+                <span class="task-scope-label__full" data-task-scope-label-full
+                  >あなたのタスク</span
+                >
+                <span class="task-scope-label__short" data-task-scope-label-short>自分</span>
+              </span>
+              <span class="material-icons-outlined" aria-hidden="true">expand_more</span>
+            </button>
+            <ul
+              class="dropdown-menu app-view-heading__menu"
+              id="taskScopeMenu"
+              aria-labelledby="header-task-scope-trigger"
+            >
+              <li>
+                <button class="dropdown-item active" data-task-tab="my" type="button">
+                  <span class="material-icons-outlined" aria-hidden="true">person</span>
+                  <span data-i18n="task_tab_my">あなたのタスク</span>
+                </button>
+              </li>
+              <li>
+                <button class="dropdown-item" data-task-tab="from" type="button">
+                  <span class="material-icons-outlined" aria-hidden="true">outbox</span>
+                  <span data-i18n="task_tab_created">依頼したタスク</span>
+                </button>
+              </li>
+              <li class="d-none" data-manager-only="true">
+                <button class="dropdown-item" data-task-tab="all" type="button">
+                  <span class="material-icons-outlined" aria-hidden="true"
+                    >admin_panel_settings</span
+                  >
+                  <span data-i18n="task_tab_all">全タスク</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+          <div class="app-view-heading__folder d-none" id="header-message-folder">
+            <label class="visually-hidden" for="flt-msg-folder" data-i18n="messages_filter_folder"
+              >フォルダ</label
+            >
+            <select
+              id="flt-msg-folder"
+              class="app-view-heading__folder-select"
+              data-folder-select="filter"
+              aria-label="メッセージのフォルダを選択"
+            >
+              <option value="" data-i18n="filter_all">全て</option>
+            </select>
+            <span class="material-icons-outlined" aria-hidden="true">expand_more</span>
+          </div>
+          <span class="app-view-heading__title" id="app-view-heading-title">タスク</span>
+        </div>
         <div class="navbar-nav ms-auto flex-row align-items-center gap-2 order-md-last">
+          <button
+            class="header-action-button header-search-trigger d-none"
+            id="header-search-trigger"
+            type="button"
+            aria-label="検索を開く"
+            aria-controls="header-search-panel"
+            aria-expanded="false"
+            title="検索"
+          >
+            <span class="material-icons-outlined" aria-hidden="true">search</span>
+            <span class="header-action-button__status" aria-hidden="true"></span>
+          </button>
           <div class="dropdown user-menu-dropdown">
             <button
               type="button"
               class="user-menu-trigger d-flex align-items-center gap-2"
               id="btn-user-menu"
               data-bs-toggle="dropdown"
+              data-bs-auto-close="outside"
               aria-expanded="false"
               aria-haspopup="true"
+              aria-label="ユーザーメニュー"
             >
               <img
                 src="/icons/icon-192.png"
-                class="avatar avatar-sm js-user-avatar user-menu-avatar"
+                class="avatar avatar-sm js-user-avatar user-menu-avatar header-user-avatar-visual"
                 data-avatar-url="/icons/icon-192.png"
                 data-bind-user-avatar
                 alt="ユーザー"
               />
-              <span class="d-none d-xl-inline-flex flex-column text-start lh-1">
+              <span class="d-none d-xl-inline-flex flex-column text-start lh-1 header-user-copy">
                 <strong class="user-menu-name" data-bind-user-name>ゲストユーザー</strong>
                 <small class="opacity-75">ログイン中</small>
               </span>
-              <span class="material-icons-outlined">expand_more</span>
+              <span class="material-icons-outlined header-overflow-icon d-none" aria-hidden="true"
+                >more_horiz</span
+              >
+              <span class="header-overflow-status" aria-hidden="true"></span>
+              <span class="material-icons-outlined header-user-chevron" aria-hidden="true"
+                >expand_more</span
+              >
             </button>
             <div
               class="dropdown-menu dropdown-menu-end user-menu shadow"
               aria-labelledby="btn-user-menu"
             >
+              <div class="header-view-actions d-none" id="header-view-actions">
+                <div class="header-message-actions d-none" id="header-message-actions">
+                  <label class="header-menu-toggle" for="flt-msg-unread">
+                    <span class="material-icons-outlined" aria-hidden="true">mark_email_unread</span>
+                    <span data-i18n="messages_filter_unread_only">未読のみ</span>
+                    <input class="form-check-input m-0" type="checkbox" id="flt-msg-unread" />
+                  </label>
+                  <button
+                    class="dropdown-item d-flex align-items-center gap-2"
+                    id="btn-msg-markall"
+                    type="button"
+                    aria-label="すべて既読"
+                    title="すべて既読"
+                  >
+                    <span class="material-icons-outlined" aria-hidden="true">done_all</span>
+                    <span data-i18n="messages_mark_all_read">すべて既読</span>
+                  </button>
+                </div>
+                <button
+                  class="dropdown-item d-flex align-items-center gap-2 header-view-refresh"
+                  id="header-view-refresh"
+                  type="button"
+                  aria-label="表示中の画面を再読み込み"
+                  title="再読み込み"
+                >
+                  <span class="material-icons-outlined" aria-hidden="true">refresh</span>
+                  <span data-i18n="btn_reload">再読込</span>
+                </button>
+                <div class="dropdown-divider"></div>
+              </div>
               <div class="user-menu-meta">
                 <strong data-bind-user-name>ゲストユーザー</strong>
                 <small class="d-block text-muted" data-bind-user-email>guest@example.com</small>
@@ -4323,6 +5280,94 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      <div class="header-search-panel" id="header-search-panel" data-no-swipe hidden>
+        <div class="header-search-panel__surface container-xl" role="search">
+          <div class="header-search-panel__controls">
+            <div class="task-controls" data-header-search-view="tasks" data-task-search-scope="my">
+              <div class="task-search">
+                <span class="material-icons-outlined" aria-hidden="true">search</span>
+                <input
+                  type="search"
+                  id="task-search-my"
+                  placeholder="キーワード検索"
+                  aria-label="自分のタスクを検索"
+                  data-i18n="placeholder_keyword_search"
+                />
+              </div>
+            </div>
+            <div
+              class="task-controls d-none"
+              data-header-search-view="tasks"
+              data-task-search-scope="from"
+            >
+              <div class="task-search">
+                <span class="material-icons-outlined" aria-hidden="true">search</span>
+                <input
+                  type="search"
+                  id="task-search-from"
+                  placeholder="キーワード検索"
+                  aria-label="自分が依頼したタスクを検索"
+                  data-i18n="placeholder_keyword_search"
+                />
+              </div>
+              <div class="task-filter-row">
+                <select class="task-filter-select" id="task-filter-from-assignee">
+                  <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
+                </select>
+              </div>
+            </div>
+            <div
+              class="task-controls d-none"
+              data-header-search-view="tasks"
+              data-task-search-scope="all"
+              data-manager-only="true"
+            >
+              <div class="task-search">
+                <span class="material-icons-outlined" aria-hidden="true">search</span>
+                <input
+                  type="search"
+                  id="task-search-all"
+                  placeholder="キーワード検索"
+                  aria-label="すべてのタスクを検索"
+                  data-i18n="placeholder_keyword_search"
+                />
+              </div>
+              <div class="task-filter-row">
+                <select class="task-filter-select" id="task-filter-all-assignee">
+                  <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
+                </select>
+              </div>
+            </div>
+            <div
+              class="header-message-search d-none"
+              data-header-search-view="messages"
+            >
+              <div class="input-group">
+                <span class="input-group-text material-icons-outlined" aria-hidden="true"
+                  >search</span
+                >
+                <input
+                  type="search"
+                  class="form-control"
+                  id="msg-search-box"
+                  placeholder="件名・本文を検索"
+                  aria-label="メッセージを検索"
+                  data-i18n="placeholder_keyword_search"
+                />
+              </div>
+            </div>
+          </div>
+          <button
+            class="header-search-panel__close"
+            id="header-search-close"
+            type="button"
+            aria-label="検索を閉じる"
+            title="閉じる"
+          >
+            <span class="material-icons-outlined" aria-hidden="true">close</span>
+          </button>
         </div>
       </div>
     </header>
@@ -4506,99 +5551,20 @@
 
             <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
             <section class="view-panel fade-container is-hidden" id="view-tasks">
-              <div class="task-header mt-0">
-                <div class="task-title-wrap">
-                  <span class="material-icons-outlined task-title-icon">send</span>
-                  <h3 class="view-title" data-i18n="nav_tasks">タスク</h3>
-                </div>
-                <button
-                  class="btn btn-outline-primary d-flex align-items-center gap-1"
-                  id="task-reload"
-                  type="button"
-                >
-                  <span class="material-icons align-middle">refresh</span>
-                  <span data-i18n="btn_reload">再読込</span>
-                </button>
-              </div>
-
-              <div class="task-tabs" id="taskTabs">
-                <button class="task-tab-btn active" data-task-tab="my" type="button">
-                  <span data-i18n="task_tab_my">あなたのタスク</span>
-                </button>
-                <button class="task-tab-btn" data-task-tab="from" type="button">
-                  <span data-i18n="task_tab_created">依頼したタスク</span>
-                </button>
-                <button
-                  class="task-tab-btn d-none"
-                  data-task-tab="all"
-                  data-manager-only="true"
-                  type="button"
-                >
-                  <span class="material-icons-outlined">admin_panel_settings</span>
-                  <span data-i18n="task_tab_all">全タスク</span>
-                </button>
-              </div>
-
               <div class="task-panels">
                 <div class="task-panel active" data-task-panel="my">
-                  <div class="task-controls">
-                    <div class="task-search">
-                      <span class="material-icons-outlined">search</span>
-                      <input
-                        type="search"
-                        id="task-search-my"
-                        placeholder="キーワード検索"
-                        aria-label="自分のタスクを検索"
-                        data-i18n="placeholder_keyword_search"
-                      />
-                    </div>
-                  </div>
                   <!-- Results container for "My Tasks" -->
-                  <div class="task-list mt-3" id="task-list-my"></div>
+                  <div class="task-list mt-2" id="task-list-my"></div>
                 </div>
 
                 <div class="task-panel" data-task-panel="from">
-                  <div class="task-controls">
-                    <div class="task-search">
-                      <span class="material-icons-outlined">search</span>
-                      <input
-                        type="search"
-                        id="task-search-from"
-                        placeholder="キーワード検索"
-                        aria-label="自分が依頼したタスクを検索"
-                        data-i18n="placeholder_keyword_search"
-                      />
-                    </div>
-                    <div class="task-filter-row">
-                      <select class="task-filter-select" id="task-filter-from-assignee">
-                        <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
-                      </select>
-                    </div>
-                  </div>
                   <!-- Results container for "From Me" tasks -->
-                  <div class="task-list mt-3" id="task-list-from"></div>
+                  <div class="task-list mt-2" id="task-list-from"></div>
                 </div>
 
                 <div class="task-panel d-none" data-task-panel="all" data-manager-only="true">
-                  <div class="task-controls">
-                    <div class="task-search">
-                      <span class="material-icons-outlined">search</span>
-                      <input
-                        type="search"
-                        id="task-search-all"
-                        placeholder="キーワード検索"
-                        aria-label="すべてのタスクを検索"
-                        data-i18n="placeholder_keyword_search"
-                      />
-                    </div>
-                    <div class="task-filter-row">
-                      <select class="task-filter-select" id="task-filter-all-assignee">
-                        <option value="" data-i18n="task_filter_assignee">担当者で絞り込み</option>
-                      </select>
-                    </div>
-                  </div>
                   <!-- Results container for "All Tasks" (manager only) -->
-                  <div class="task-list mt-3" id="task-list-all"></div>
+                  <div class="task-list mt-2" id="task-list-all"></div>
                 </div>
               </div>
             </section>
@@ -4606,72 +5572,12 @@
 
             <!-- ----- Messages view panel ----- -->
             <section class="view-panel fade-container is-hidden" id="view-messages">
-              <div class="task-header mt-0">
-                <div class="task-title-wrap">
-                  <span class="material-icons-outlined task-title-icon">mail</span>
-                  <h3 class="view-title" data-i18n="nav_messages">メッセージ</h3>
-                </div>
-              </div>
-              <div class="message-toolbar" aria-label="メッセージの検索と絞り込み">
-                <div class="message-toolbar__field">
-                  <label class="form-label" for="msg-search-box">キーワード</label>
-                  <div class="input-group">
-                    <span class="input-group-text material-icons-outlined" aria-hidden="true"
-                      >search</span
-                    >
-                    <input
-                      type="search"
-                      class="form-control"
-                      id="msg-search-box"
-                      placeholder="件名・本文を検索"
-                      data-i18n="placeholder_keyword_search"
-                    />
-                  </div>
-                </div>
-                <div class="message-toolbar__field">
-                  <label class="form-label" for="flt-msg-folder" data-i18n="messages_filter_folder"
-                    >フォルダ</label
-                  >
-                  <select id="flt-msg-folder" class="form-select" data-folder-select="filter">
-                    <option value="" data-i18n="filter_all">全て</option>
-                  </select>
-                </div>
-                <div class="message-toolbar__actions">
-                  <div class="message-toolbar__check">
-                    <div class="form-check">
-                      <input class="form-check-input" type="checkbox" id="flt-msg-unread" />
-                      <label
-                        class="form-check-label"
-                        for="flt-msg-unread"
-                        data-i18n="messages_filter_unread_only"
-                        >未読のみ</label
-                      >
-                    </div>
-                  </div>
-                  <button
-                    class="btn btn-outline-success"
-                    id="btn-msg-markall"
-                    type="button"
-                    aria-label="選択中のフォルダをすべて既読にする"
-                  >
-                    <span class="material-icons align-middle me-1">done_all</span>
-                    <span data-i18n="messages_mark_all_read">この範囲をすべて既読</span>
-                  </button>
-                </div>
-                <p class="message-toolbar__hint">
-                  選択中のフォルダが一括既読の対象です。キーワードは対象件数に含めません。
-                </p>
-              </div>
               <!-- Message card list mount point -->
               <div id="msg-list" class="mt-2"></div>
             </section>
 
             <!-- ----- Settings view panel ----- -->
             <section class="view-panel fade-container is-hidden" id="view-settings">
-              <h3 class="mt-0">
-                <span class="material-icons align-middle me-1">settings</span>
-                <span data-i18n="nav_settings">設定</span>
-              </h3>
               <!-- Settings form wrapper (profile, appearance, etc.) -->
               <form class="settings-layout" id="form-settings">
                 <div class="form-section settings-block">
@@ -7993,7 +8899,8 @@
           select.innerHTML = '';
           var placeholder = document.createElement('option');
           placeholder.value = '';
-          placeholder.textContent = '担当者で絞り込み';
+          placeholder.setAttribute('data-i18n', 'task_filter_assignee');
+          placeholder.textContent = getUiLabel('task_filter_assignee', '担当者で絞り込み');
           select.appendChild(placeholder);
           rows.forEach(function (user) {
             if (!user || !user.email) return;
@@ -8031,7 +8938,8 @@
           filterSelect.innerHTML = '';
           var allOption = document.createElement('option');
           allOption.value = '';
-          allOption.textContent = '全て';
+          allOption.setAttribute('data-i18n', 'filter_all');
+          allOption.textContent = getUiLabel('filter_all', '全て');
           filterSelect.appendChild(allOption);
           folders.forEach(function (folder) {
             if (!folder || !folder.id) return;
@@ -11376,31 +12284,81 @@
       var SWIPE_LOCK = false;
       var SWIPE_VERTICAL_TOLERANCE = 160;
       var SWIPE_ACTIVATION_DELTA = 14;
-      var SWIPE_TRANSITION = 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+      var SWIPE_TRANSITION_MS = 240;
+      var SWIPE_TRANSITION =
+        'transform ' + SWIPE_TRANSITION_MS + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
       var CURRENT_TRANSFORM = 0;
+      var VIEW_TRANSITION_SEQUENCE = 0;
+      var VIEW_PANEL_WIDTH = 0;
 
       window.__SHIFT_FLOW_GESTURE__ = null;
 
+      function measureViewPanelWidth() {
+        var track = byId('viewsTrack');
+        var width = track ? track.clientWidth : 0;
+        if (width > 0) VIEW_PANEL_WIDTH = width;
+        return VIEW_PANEL_WIDTH;
+      }
+
+      function getTrackOffset(view) {
+        var idx = order.indexOf(view);
+        if (idx < 0) return null;
+        var width =
+          VIEW_PANEL_WIDTH ||
+          measureViewPanelWidth() ||
+          window.innerWidth ||
+          document.documentElement.clientWidth ||
+          360;
+        return -(idx * width);
+      }
+
       function trackTo(view, opts) {
         var track = byId('viewsTrack');
-        var idx = order.indexOf(view);
-        var panel = byId('view-' + view);
-        if (!track || !panel || idx < 0) return;
+        var offset = getTrackOffset(view);
+        if (!track || offset == null) return;
         var animate = !opts || opts.animate !== false;
-        var offset = panel.offsetLeft;
         if (!animate) {
+          track.classList.remove('is-moving');
           track.style.transition = 'none';
-          track.style.transform = 'translateX(' + -offset + 'px)';
+          track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
           requestAnimationFrame(function () {
             track.style.transition = SWIPE_TRANSITION;
           });
         } else {
+          track.classList.add('is-moving');
           track.style.transition = SWIPE_TRANSITION;
           requestAnimationFrame(function () {
-            track.style.transform = 'translateX(' + -offset + 'px)';
+            track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
           });
         }
-        CURRENT_TRANSFORM = -offset;
+        CURRENT_TRANSFORM = offset;
+      }
+
+      function freezeViewHeight(view) {
+        var wrap = byId('viewsWrapper');
+        var panel = byId('view-' + view);
+        if (!wrap || !panel || wrap.style.height) return;
+        var header = document.querySelector('header.navbar');
+        var footer = document.querySelector('.footer-nav:not([hidden])');
+        var viewportHeight =
+          (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
+        var minimumVisibleHeight = Math.max(
+          0,
+          viewportHeight - (header ? header.offsetHeight : 0) - (footer ? footer.offsetHeight : 0) - 24
+        );
+        var height = Math.max(panel.offsetHeight, minimumVisibleHeight);
+        if (height > 0) wrap.style.height = height + 'px';
+      }
+
+      function releaseViewHeight() {
+        var wrap = byId('viewsWrapper');
+        if (wrap) wrap.style.height = '';
+      }
+
+      function setPanelInteractiveState(panel, isInteractive) {
+        if (!panel) return;
+        panel.setAttribute('aria-hidden', isInteractive ? 'false' : 'true');
+        panel.inert = !isInteractive;
       }
 
       function setActiveNav(view) {
@@ -11411,6 +12369,242 @@
           a.classList.toggle('active', a.getAttribute('data-view') === view);
         });
       }
+
+      function getUiLabel(key, fallback) {
+        if (globalThis.I18n && typeof globalThis.I18n.t === 'function') {
+          return globalThis.I18n.t(key);
+        }
+        return fallback;
+      }
+
+      function syncTaskScopeHeader(tab) {
+        var fullKey =
+          tab === 'from' ? 'task_tab_created' : tab === 'all' ? 'task_tab_all' : 'task_tab_my';
+        var fullFallback =
+          tab === 'from' ? '依頼したタスク' : tab === 'all' ? '全タスク' : 'あなたのタスク';
+        var shortKey =
+          tab === 'from'
+            ? 'task_scope_created_short'
+            : tab === 'all'
+            ? 'task_scope_all_short'
+            : 'task_scope_my_short';
+        var shortFallback =
+          tab === 'from' ? '依頼' : tab === 'all' ? '全タスク' : '自分';
+        var fullLabel = getUiLabel(fullKey, fullFallback);
+        var shortLabel = getUiLabel(shortKey, shortFallback);
+        var scopeLabel = byId('header-task-scope-label');
+        if (scopeLabel) {
+          var fullLabelNode = scopeLabel.querySelector('[data-task-scope-label-full]');
+          var shortLabelNode = scopeLabel.querySelector('[data-task-scope-label-short]');
+          if (fullLabelNode && shortLabelNode) {
+            fullLabelNode.textContent = fullLabel;
+            shortLabelNode.textContent = shortLabel;
+          } else {
+            scopeLabel.textContent = shortLabel;
+          }
+        }
+        var scopeTrigger = byId('header-task-scope-trigger');
+        if (scopeTrigger) {
+          scopeTrigger.setAttribute(
+            'aria-label',
+            getUiLabel('nav_tasks', 'タスク') + ': ' + fullLabel
+          );
+        }
+      }
+
+      var HEADER_SEARCH_OPEN = false;
+
+      function syncMessageToolbarLabels() {
+        var markAllButton = byId('btn-msg-markall');
+        if (markAllButton) {
+          var markAllLabel = getUiLabel('messages_mark_all_read', 'すべて既読');
+          markAllButton.setAttribute('aria-label', markAllLabel);
+          markAllButton.title = markAllLabel;
+        }
+        var folderSelect = byId('flt-msg-folder');
+        if (folderSelect) {
+          folderSelect.setAttribute(
+            'aria-label',
+            getUiLabel('nav_messages', 'メッセージ') + ': ' +
+              getUiLabel('messages_filter_folder', 'フォルダ')
+          );
+        }
+      }
+
+      function getActiveHeaderSearchControl(view) {
+        if (view === 'tasks') {
+          return document.querySelector(
+            '[data-header-search-view="tasks"][data-task-search-scope="' +
+              (ACTIVE_TASK_TAB || 'my') +
+              '"]'
+          );
+        }
+        if (view === 'messages') {
+          return document.querySelector('[data-header-search-view="messages"]');
+        }
+        return null;
+      }
+
+      function getActiveHeaderSearchInput(view) {
+        var control = getActiveHeaderSearchControl(view);
+        return control ? control.querySelector('input[type="search"]') : null;
+      }
+
+      function headerSearchHasValue(view) {
+        var control = getActiveHeaderSearchControl(view);
+        if (!control) return false;
+        var searchInput = control.querySelector('input[type="search"]');
+        var filterSelect = control.querySelector('select');
+        return !!(
+          (searchInput && String(searchInput.value || '').trim()) ||
+          (filterSelect && String(filterSelect.value || '').trim())
+        );
+      }
+
+      function syncHeaderFilterIndicators(view) {
+        var searchButton = byId('header-search-trigger');
+        if (searchButton) {
+          searchButton.classList.toggle('has-value', headerSearchHasValue(view));
+        }
+        var userMenuButton = byId('btn-user-menu');
+        var unread = byId('flt-msg-unread');
+        if (userMenuButton) {
+          userMenuButton.classList.toggle(
+            'has-active-filter',
+            view === 'messages' && unread && unread.checked
+          );
+        }
+      }
+
+      function syncHeaderSearchControls(view) {
+        var searchable = view === 'tasks' || view === 'messages';
+        var activeControl = getActiveHeaderSearchControl(view);
+        $$('[data-header-search-view]').forEach(function (control) {
+          var isActive = searchable && control === activeControl && HEADER_SEARCH_OPEN;
+          control.classList.toggle('d-none', !isActive);
+          control.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        });
+        var panel = byId('header-search-panel');
+        if (panel) {
+          var shouldShow = searchable && HEADER_SEARCH_OPEN && !!activeControl;
+          panel.hidden = !shouldShow;
+          panel.inert = !shouldShow;
+        }
+        var trigger = byId('header-search-trigger');
+        if (trigger) {
+          trigger.classList.toggle('d-none', !searchable);
+          trigger.setAttribute('aria-expanded', searchable && HEADER_SEARCH_OPEN ? 'true' : 'false');
+          var viewLabel =
+            view === 'tasks'
+              ? getUiLabel('nav_tasks', 'タスク')
+              : getUiLabel('nav_messages', 'メッセージ');
+          var actionLabel = HEADER_SEARCH_OPEN
+            ? getUiLabel('header_search_close', '検索を閉じる')
+            : getUiLabel('header_search_open', '検索を開く');
+          trigger.setAttribute('aria-label', viewLabel + ': ' + actionLabel);
+          trigger.title = actionLabel;
+        }
+        var closeButton = byId('header-search-close');
+        if (closeButton) {
+          var closeLabel = getUiLabel('header_search_close', '検索を閉じる');
+          closeButton.setAttribute('aria-label', closeLabel);
+          closeButton.title = closeLabel;
+        }
+        syncHeaderFilterIndicators(view);
+      }
+
+      function setHeaderSearchOpen(open, options) {
+        var opts = options || {};
+        var searchable = CURRENT_VIEW === 'tasks' || CURRENT_VIEW === 'messages';
+        HEADER_SEARCH_OPEN = searchable && !!open;
+        var header = document.querySelector('header.navbar');
+        if (header) header.classList.toggle('header--search-open', HEADER_SEARCH_OPEN);
+        syncHeaderSearchControls(CURRENT_VIEW);
+        if (HEADER_SEARCH_OPEN) {
+          var input = getActiveHeaderSearchInput(CURRENT_VIEW);
+          if (input) {
+            requestAnimationFrame(function () {
+              try {
+                input.focus({ preventScroll: true });
+              } catch (_err) {
+                input.focus();
+              }
+            });
+          }
+        } else if (opts.restoreFocus !== false) {
+          var trigger = byId('header-search-trigger');
+          if (trigger && !trigger.classList.contains('d-none')) {
+            try {
+              trigger.focus({ preventScroll: true });
+            } catch (_err) {
+              trigger.focus();
+            }
+          }
+        }
+      }
+
+      function updateViewHeader(view) {
+        HEADER_SEARCH_OPEN = false;
+        var header = document.querySelector('header.navbar');
+        var brand = document.querySelector('header.navbar .app-brand');
+        var heading = byId('app-view-heading');
+        var headingIcon = byId('app-view-heading-icon');
+        var headingTitle = byId('app-view-heading-title');
+        var headingA11y = byId('app-view-heading-a11y');
+        var taskScope = byId('header-task-scope');
+        var messageFolder = byId('header-message-folder');
+        var viewActions = byId('header-view-actions');
+        var messageActions = byId('header-message-actions');
+        var refreshButton = byId('header-view-refresh');
+        var userMenuButton = byId('btn-user-menu');
+        var isHome = view === 'home';
+        var meta = {
+          tasks: { icon: 'send', title: getUiLabel('nav_tasks', 'タスク') },
+          messages: { icon: 'mail', title: getUiLabel('nav_messages', 'メッセージ') },
+          settings: { icon: 'settings', title: getUiLabel('nav_settings', '設定') },
+        }[view];
+        if (header) {
+          header.classList.toggle('header--contextual', !isHome && !!meta);
+          header.classList.remove('header--search-open');
+        }
+        if (brand) brand.classList.toggle('d-none', !isHome);
+        if (heading) heading.classList.toggle('d-none', isHome || !meta);
+        if (headingIcon && meta) headingIcon.textContent = meta.icon;
+        if (headingA11y && meta) headingA11y.textContent = meta.title;
+        if (headingTitle && meta) {
+          headingTitle.textContent = meta.title;
+          headingTitle.classList.toggle('d-none', view === 'tasks' || view === 'messages');
+        }
+        if (taskScope) taskScope.classList.toggle('d-none', view !== 'tasks');
+        if (messageFolder) messageFolder.classList.toggle('d-none', view !== 'messages');
+        if (viewActions) viewActions.classList.toggle('d-none', isHome || !meta);
+        if (messageActions) messageActions.classList.toggle('d-none', view !== 'messages');
+        if (refreshButton) {
+          refreshButton.classList.toggle('d-none', isHome || !meta);
+          if (meta) {
+            var reloadLabel = meta.title + ' - ' + getUiLabel('btn_reload', '再読み込み');
+            refreshButton.setAttribute('aria-label', reloadLabel);
+            refreshButton.title = reloadLabel;
+          }
+        }
+        if (userMenuButton) {
+          userMenuButton.setAttribute(
+            'aria-label',
+            isHome
+              ? getUiLabel('header_user_menu', 'ユーザーメニュー')
+              : (meta ? meta.title + ': ' : '') +
+                  getUiLabel('header_other_actions', 'その他の操作')
+          );
+        }
+        syncHeaderSearchControls(view);
+      }
+
+      document.addEventListener('shiftflow:languagechange', function () {
+        updateViewHeader(CURRENT_VIEW);
+        syncTaskScopeHeader(ACTIVE_TASK_TAB || 'my');
+        syncMessageToolbarLabels();
+      });
+
       function showPanel(view) {
         order.forEach(function (v) {
           var el = byId('view-' + v);
@@ -11418,11 +12612,61 @@
           if (v === view) {
             el.classList.remove('is-hidden');
             el.classList.add('show');
+            setPanelInteractiveState(el, true);
           } else {
             el.classList.add('is-hidden');
             el.classList.remove('show');
+            setPanelInteractiveState(el, false);
           }
         });
+      }
+
+      function preparePanelTransition(fromView, toView, targetInteractive) {
+        freezeViewHeight(fromView);
+        order.forEach(function (v) {
+          var el = byId('view-' + v);
+          if (!el) return;
+          var visible = v === fromView || v === toView;
+          el.classList.toggle('is-hidden', !visible);
+          el.classList.toggle('show', visible);
+          setPanelInteractiveState(el, v === (targetInteractive ? toView : fromView));
+        });
+        var track = byId('viewsTrack');
+        if (track) track.classList.add('is-moving');
+      }
+
+      function waitForTrackTransition(sequence, callback) {
+        var track = byId('viewsTrack');
+        if (!track) {
+          callback();
+          return;
+        }
+        var settled = false;
+        var timer = 0;
+        function finish(event) {
+          if (event && (event.target !== track || event.propertyName !== 'transform')) return;
+          if (settled) return;
+          settled = true;
+          track.removeEventListener('transitionend', finish);
+          if (timer) clearTimeout(timer);
+          if (sequence !== VIEW_TRANSITION_SEQUENCE) return;
+          callback();
+        }
+        track.addEventListener('transitionend', finish);
+        timer = setTimeout(finish, SWIPE_TRANSITION_MS + 100);
+      }
+
+      function loadViewContent(view, options) {
+        if (view === 'home') loadHome({ force: options.force === true });
+        if (view === 'tasks') {
+          ensureTaskBootstrap();
+          var activeTaskTab = ACTIVE_TASK_TAB || 'my';
+          activateTaskTab(activeTaskTab, false);
+          var needForceTasks = options.force === true || !hasTaskRows(activeTaskTab);
+          reloadActiveTaskTab({ force: needForceTasks });
+        }
+        if (view === 'messages') loadMessages({ force: options.force === true });
+        if (view === 'settings') loadSettings({ force: options.force === true });
       }
 
       function pushViewHistoryState(view, force) {
@@ -11447,29 +12691,41 @@
         LAST_VIEW_HISTORY = view;
       }
       function navigateTo(v, opts) {
+        if (order.indexOf(v) < 0) return;
         ensureAdminViewHidden();
         var options = opts || {};
+        var previousView = CURRENT_VIEW;
+        var shouldAnimate = options.animate !== false && previousView !== v;
+        var transitionSequence = ++VIEW_TRANSITION_SEQUENCE;
+        measureViewPanelWidth();
         CURRENT_VIEW = v;
         setActiveNav(v);
-        showPanel(v);
-        trackTo(v, { animate: options.animate !== false });
-        if (!options.skipScroll) {
-          scrollToTopNow();
+        updateViewHeader(v);
+        if (shouldAnimate) {
+          preparePanelTransition(previousView, v, true);
+        } else {
+          showPanel(v);
         }
-        if (v === 'home') loadHome();
-        if (v === 'tasks') {
-          ensureTaskBootstrap();
-          var activeTaskTab = ACTIVE_TASK_TAB || 'my';
-          activateTaskTab(activeTaskTab, false);
-          var needForceTasks = options.force === true || !hasTaskRows(activeTaskTab);
-          reloadActiveTaskTab({ force: needForceTasks });
-        }
-        if (v === 'messages') loadMessages({ force: options.force === true });
-        if (v === 'settings') loadSettings({ force: options.force === true });
+        trackTo(v, { animate: shouldAnimate });
         if (!options.skipHistory) {
           pushViewHistoryState(v);
         } else {
           LAST_VIEW_HISTORY = v;
+        }
+
+        function completeNavigation() {
+          showPanel(v);
+          releaseViewHeight();
+          var track = byId('viewsTrack');
+          if (track) track.classList.remove('is-moving');
+          if (!options.skipScroll) scrollToTopNow();
+          loadViewContent(v, options);
+        }
+
+        if (shouldAnimate) {
+          waitForTrackTransition(transitionSequence, completeNavigation);
+        } else {
+          completeNavigation();
         }
       }
 
@@ -11537,7 +12793,6 @@
       (function enableSwipe() {
         var wrap = byId('viewsWrapper');
         var track = byId('viewsTrack');
-        var pageShell = document.querySelector('.page-body[data-app-shell]');
         if (!wrap || !track) return;
         var state = {
           active: false,
@@ -11548,6 +12803,9 @@
           baseOffset: 0,
           rawDx: 0,
           rawDy: 0,
+          previewView: null,
+          pendingOffset: null,
+          moveFrame: 0,
         };
         var activeTouchId = null;
         var unify = function (e) {
@@ -11582,21 +12840,53 @@
           if (!wrap || !node) return false;
           if (node.closest && node.closest('.modal.show')) return false;
           if (node === wrap) return true;
-          if (node instanceof Node) {
-            if (wrap.contains(node)) return true;
-            if (node.closest) {
-              var withinWrap = node.closest('#viewsWrapper');
-              if (withinWrap) return true;
-              var withinTrack = node.closest('#viewsTrack');
-              if (withinTrack && wrap.contains(withinTrack)) return true;
-              if (pageShell && node.closest('.page-body[data-app-shell]') === pageShell)
-                return true;
-            }
-            return false;
-          }
-          return false;
+          return node instanceof Node && wrap.contains(node);
         }
+
+        function cancelMoveFrame() {
+          if (state.moveFrame) cancelAnimationFrame(state.moveFrame);
+          state.moveFrame = 0;
+          state.pendingOffset = null;
+        }
+
+        function queueTrackOffset(offset) {
+          state.pendingOffset = offset;
+          if (state.moveFrame) return;
+          state.moveFrame = requestAnimationFrame(function () {
+            state.moveFrame = 0;
+            if (state.pendingOffset == null) return;
+            track.style.transform = 'translate3d(' + state.pendingOffset + 'px, 0, 0)';
+            state.pendingOffset = null;
+          });
+        }
+
+        function resolveAdjacentView(dx) {
+          var idx = order.indexOf(CURRENT_VIEW);
+          if (idx < 0 || dx === 0) return null;
+          var targetIndex = dx < 0 ? idx + 1 : idx - 1;
+          if (targetIndex < 0 || targetIndex >= order.length) return null;
+          return order[targetIndex];
+        }
+
+        function prepareSwipePreview(target) {
+          if (state.previewView === target) return;
+          freezeViewHeight(CURRENT_VIEW);
+          order.forEach(function (view) {
+            var panel = byId('view-' + view);
+            if (!panel) return;
+            var visible = view === CURRENT_VIEW || view === target;
+            panel.classList.toggle('is-hidden', !visible);
+            panel.classList.toggle('show', visible);
+            setPanelInteractiveState(panel, view === CURRENT_VIEW);
+          });
+          track.classList.add('is-moving');
+          state.previewView = target;
+        }
+
         function resetSwipe(shouldSnap) {
+          var needsSnap = shouldSnap !== false && state.dragging;
+          var baseOffset = state.baseOffset;
+          cancelMoveFrame();
           state.active = false;
           state.dragging = false;
           state.startX = 0;
@@ -11605,10 +12895,23 @@
           state.baseOffset = CURRENT_TRANSFORM;
           state.rawDx = 0;
           state.rawDy = 0;
+          state.previewView = null;
           activeTouchId = null;
-          if (shouldSnap !== false) {
+          if (needsSnap) {
+            CURRENT_TRANSFORM = baseOffset;
+            var transitionSequence = ++VIEW_TRANSITION_SEQUENCE;
+            track.classList.add('is-moving');
             track.style.transition = SWIPE_TRANSITION;
-            track.style.transform = 'translateX(' + CURRENT_TRANSFORM + 'px)';
+            track.style.transform = 'translate3d(' + baseOffset + 'px, 0, 0)';
+            waitForTrackTransition(transitionSequence, function () {
+              showPanel(CURRENT_VIEW);
+              releaseViewHeight();
+              track.classList.remove('is-moving');
+            });
+          } else if (shouldSnap !== false) {
+            showPanel(CURRENT_VIEW);
+            releaseViewHeight();
+            track.classList.remove('is-moving');
           }
           window.__SHIFT_FLOW_GESTURE__ = null;
         }
@@ -11632,7 +12935,9 @@
           state.baseOffset = CURRENT_TRANSFORM;
           state.rawDx = 0;
           state.rawDy = 0;
+          state.previewView = null;
           activeTouchId = typeof t.identifier === 'number' ? t.identifier : null;
+          measureViewPanelWidth();
           track.style.transition = 'none';
           window.__SHIFT_FLOW_GESTURE__ = null;
         }
@@ -11663,14 +12968,13 @@
           if (e.cancelable) e.preventDefault();
           state.rawDx = dx;
           state.rawDy = dy;
-          var nextOffset = state.baseOffset + dx;
-          track.style.transform = 'translateX(' + nextOffset + 'px)';
+          var preview = resolveAdjacentView(dx);
+          prepareSwipePreview(preview);
+          var nextOffset = preview ? state.baseOffset + dx : state.baseOffset;
+          queueTrackOffset(nextOffset);
         }
         function handleSwipeEnd(e) {
-          if (!state.active) {
-            resetSwipe();
-            return;
-          }
+          if (!state.active) return;
           if (activeTouchId != null && !getActiveTouch(e)) {
             resetSwipe();
             return;
@@ -11687,47 +12991,32 @@
             var distanceSatisfied = Math.abs(dx) >= threshold;
             var flickSatisfied = Math.abs(dx) >= flickDistance && dt < flickTime;
             if ((distanceSatisfied || flickSatisfied) && withinVerticalGuard) {
-              var idx = order.indexOf(CURRENT_VIEW);
-              var count = order.length;
-              var lastIndex = count - 1;
-              var target = null;
-              if (dx < 0) {
-                target = idx < lastIndex ? order[idx + 1] : order[0];
-              } else if (dx > 0) {
-                target = idx > 0 ? order[idx - 1] : order[lastIndex];
-              }
+              var target = state.previewView;
               if (target && target !== CURRENT_VIEW) {
+                cancelMoveFrame();
                 SWIPE_LOCK = true;
                 navigateTo(target, { animate: true });
-                var targetPanel = byId('view-' + target);
-                if (targetPanel) {
-                  CURRENT_TRANSFORM = -targetPanel.offsetLeft;
-                }
                 setTimeout(function () {
                   SWIPE_LOCK = false;
-                }, 360);
+                }, SWIPE_TRANSITION_MS + 100);
                 triggered = true;
               }
             }
           }
           if (!triggered) {
-            track.style.transition = SWIPE_TRANSITION;
-            track.style.transform = 'translateX(' + state.baseOffset + 'px)';
             CURRENT_TRANSFORM = state.baseOffset;
           }
           resetSwipe(triggered ? false : true);
         }
         function handleSwipeCancel() {
           if (!state.active) return;
-          track.style.transition = SWIPE_TRANSITION;
-          track.style.transform = 'translateX(' + CURRENT_TRANSFORM + 'px)';
           resetSwipe();
         }
 
-        document.addEventListener('touchstart', handleSwipeStart, { passive: true, capture: true });
-        document.addEventListener('touchmove', handleSwipeMove, { passive: false, capture: true });
-        document.addEventListener('touchend', handleSwipeEnd, { passive: true, capture: true });
-        document.addEventListener('touchcancel', handleSwipeCancel, {
+        wrap.addEventListener('touchstart', handleSwipeStart, { passive: true, capture: true });
+        wrap.addEventListener('touchmove', handleSwipeMove, { passive: false, capture: true });
+        wrap.addEventListener('touchend', handleSwipeEnd, { passive: true, capture: true });
+        wrap.addEventListener('touchcancel', handleSwipeCancel, {
           passive: true,
           capture: true,
         });
@@ -11736,6 +13025,7 @@
       window.addEventListener('resize', function () {
         clearTimeout(_rszTimer);
         _rszTimer = setTimeout(function () {
+          VIEW_PANEL_WIDTH = 0;
           trackTo(CURRENT_VIEW, { animate: false });
         }, 120);
       });
@@ -12870,9 +14160,17 @@
         }
         if (!tab) tab = 'my';
         ACTIVE_TASK_TAB = tab;
-        $$('#taskTabs .task-tab-btn').forEach(function (btn) {
-          btn.classList.toggle('active', btn.getAttribute('data-task-tab') === tab);
+        $$('#taskScopeMenu [data-task-tab]').forEach(function (btn) {
+          var isActive = btn.getAttribute('data-task-tab') === tab;
+          btn.classList.toggle('active', isActive);
+          if (isActive) {
+            btn.setAttribute('aria-current', 'true');
+          } else {
+            btn.removeAttribute('aria-current');
+          }
         });
+        syncTaskScopeHeader(tab);
+        syncHeaderSearchControls(CURRENT_VIEW);
         $$('.task-panels .task-panel').forEach(function (panel) {
           panel.classList.toggle('active', panel.getAttribute('data-task-panel') === tab);
         });
@@ -13014,7 +14312,7 @@
         }
 
         function attachTabHandlers() {
-          $$('#taskTabs .task-tab-btn').forEach(function (btn) {
+          $$('#taskScopeMenu [data-task-tab]').forEach(function (btn) {
             btn.addEventListener('click', handleTabClick);
           });
         }
@@ -13022,6 +14320,7 @@
         function updateSearchFilter(scope, value) {
           if (!scope || !TASK_FILTERS[scope]) return;
           TASK_FILTERS[scope].search = (value || '').trim();
+          syncHeaderFilterIndicators(CURRENT_VIEW);
           renderTaskList(scope);
         }
 
@@ -13036,6 +14335,7 @@
         function updateAssigneeFilter(scope, value) {
           if (!scope || !TASK_FILTERS[scope]) return;
           TASK_FILTERS[scope].assignee = value || '';
+          syncHeaderFilterIndicators(CURRENT_VIEW);
           renderTaskList(scope);
         }
 
@@ -13047,15 +14347,10 @@
           });
         }
 
-        function attachReloadHandler() {
-          on('task-reload', 'click', reloadActiveTaskTab);
-        }
-
         function init() {
           attachTabHandlers();
           attachSearchHandlers();
           attachAssigneeHandlers();
-          attachReloadHandler();
         }
 
         return {
@@ -13103,11 +14398,13 @@
 
         function handleFilterChange(event) {
           if (event) event.preventDefault();
+          syncHeaderFilterIndicators(CURRENT_VIEW);
           loadMessages();
         }
 
         function handleSearchInput(event) {
           if (event) event.preventDefault();
+          syncHeaderFilterIndicators(CURRENT_VIEW);
           debouncedSearch();
         }
 
@@ -13544,7 +14841,7 @@
             }
             requestConfirmation({
               title: '一括既読の確認',
-              message: '選択した範囲の未読メッセージを既読にします。',
+              message: '未読メッセージを既読にします。',
               context: '対象: ' + (folderLabel || 'すべてのフォルダ') + ' / ' + ids.length + '件',
               confirmLabel: '既読にする',
             }).then(function (confirmed) {
@@ -16981,6 +18278,46 @@
           on('home-quick-new-msg', 'click', openNewMessageModal);
         }
 
+        function attachHeaderRefreshHandler() {
+          on('header-view-refresh', 'click', function (event) {
+            if (event) event.preventDefault();
+            var button = event && event.currentTarget ? event.currentTarget : this;
+            if (!button || button.disabled) return;
+            button.disabled = true;
+            button.classList.add('is-refreshing');
+            Promise.resolve(refreshCurrentView({ force: true }))
+              .catch(function (error) {
+                console.warn('View refresh failed:', error);
+                notify('再読み込みに失敗しました。通信状態を確認してください。', false);
+              })
+              .finally(function () {
+                button.disabled = false;
+                button.classList.remove('is-refreshing');
+              });
+          });
+        }
+
+        function attachHeaderCommandHandlers() {
+          on('header-search-trigger', 'click', function (event) {
+            if (event) event.preventDefault();
+            setHeaderSearchOpen(!HEADER_SEARCH_OPEN, { restoreFocus: false });
+          });
+          on('header-search-close', 'click', function (event) {
+            if (event) event.preventDefault();
+            setHeaderSearchOpen(false);
+          });
+          on('btn-user-menu', 'click', function () {
+            if (HEADER_SEARCH_OPEN) {
+              setHeaderSearchOpen(false, { restoreFocus: false });
+            }
+          });
+          document.addEventListener('keydown', function (event) {
+            if (!HEADER_SEARCH_OPEN || !event || event.key !== 'Escape') return;
+            event.preventDefault();
+            setHeaderSearchOpen(false);
+          });
+        }
+
         function activateAdminSection(section) {
           if (!IS_MANAGER) {
             notify('管理者メニューへアクセスする権限がありません。', false);
@@ -17049,6 +18386,8 @@
           attachViewLinks();
           attachFabHandlers();
           attachHomeHeroActions();
+          attachHeaderCommandHandlers();
+          attachHeaderRefreshHandler();
           attachAdminMenuHandler();
           attachUserMenuHandlers();
         }

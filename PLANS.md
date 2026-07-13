@@ -1,8 +1,8 @@
 ---
 status: "idle"
 owner: "."
-profile: "dev"
-last_archive: ".plans/2026-07-13-session-persistence-ui-160.md"
+profile: "rizo"
+last_archive: ".plans/2026-07-13-release-190.md"
 updated_at: "2026-07-13"
 ---
 
@@ -14,7 +14,7 @@ updated_at: "2026-07-13"
 
 ## 最新の固定保存
 
-- `.plans/2026-07-13-session-persistence-ui-160.md`
+- `.plans/2026-07-13-release-190.md`
 
 ## 再開ルール
 
