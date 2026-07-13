@@ -1,8 +1,8 @@
 ---
 status: "idle"
 owner: "."
-profile: "dev"
-last_archive: ".plans/2026-07-13-mobile-chrome-navigation.md"
+profile: "rizo"
+last_archive: ".plans/2026-07-13-release-191.md"
 updated_at: "2026-07-13"
 ---
 
@@ -14,7 +14,7 @@ updated_at: "2026-07-13"
 
 ## 最新の固定保存
 
-- `.plans/2026-07-13-mobile-chrome-navigation.md`
+- `.plans/2026-07-13-release-191.md`
 
 ## 再開ルール
 
