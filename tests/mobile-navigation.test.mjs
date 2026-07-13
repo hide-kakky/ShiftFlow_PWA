@@ -49,7 +49,12 @@ test('ステータスバー、下部ナビ、FABはモバイル表示ルール�
     /appleStatus\.setAttribute\('content', 'black-translucent'\)/
   );
   assert.equal(JSON.parse(manifestSource).background_color, '#f2f4f9');
-  assert.match(indexSource, /--footer-extra: 2px;/);
+  assert.match(
+    indexSource,
+    /--footer-bottom-inset: max\(4px, calc\(var\(--safe-bottom\) - 12px\)\);/
+  );
+  assert.doesNotMatch(indexSource, /--footer-extra:/);
+  assert.match(indexSource, /padding-bottom: var\(--footer-bottom-inset\);/);
   assert.match(indexSource, /calc\(10px \+ var\(--safe-right\)\)/);
   assert.match(indexSource, /calc\(10px \+ var\(--safe-left\)\)/);
   assert.match(indexSource, /background-color: var\(--fab\);/);

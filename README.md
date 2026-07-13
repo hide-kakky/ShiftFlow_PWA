@@ -7,7 +7,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ## 運用メモ（Codex / Service Worker）
 
-- 現在の APP_VERSION: `1.10.1`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- 現在の APP_VERSION: `1.10.2`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
 - すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
 - 基本ルールは `CODEx_PROMPT.md` と `AGENTS.md` に従うこと。
 - Wrangler の `compatibility_date` は Pages Functions / Worker どちらも `2025-11-02` で統一。
