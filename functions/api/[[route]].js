@@ -1283,13 +1283,17 @@ async function fetchPinnedMessagesFromD1(db, options = {}) {
              m.folder_id,
              m.created_at_ms,
              m.updated_at_ms,
-             m.is_pinned,
+             mp.pinned_at_ms,
              f.name AS folder_name,
              f.color AS folder_color,
              CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read,
              CASE WHEN fm_user.user_id IS NOT NULL THEN 1 ELSE 0 END AS has_private_access,
              f.is_public
         FROM messages m
+        JOIN message_pins mp
+          ON mp.message_id = m.message_id
+         AND mp.membership_id = ?2
+         AND mp.org_id = m.org_id
         JOIN folders f ON f.id = m.folder_id
         LEFT JOIN message_reads mr
           ON mr.message_id = m.message_id
@@ -1298,9 +1302,9 @@ async function fetchPinnedMessagesFromD1(db, options = {}) {
           ON fm_user.folder_id = f.id
          AND fm_user.user_id = ?3
        WHERE m.org_id = ?1
-         AND m.is_pinned = 1
          AND f.is_active = 1
        ORDER BY f.sort_order ASC,
+                mp.pinned_at_ms DESC,
                 m.created_at_ms DESC
     `
     )
@@ -1584,6 +1588,10 @@ async function fetchMessageComments(db, messageId) {
       authorEmail: email,
       authorName: displayName,
       author: displayName || email,
+      createdAtMs:
+        typeof row?.created_at_ms === 'number' && Number.isFinite(row.created_at_ms)
+          ? row.created_at_ms
+          : 0,
       createdAt: row?.created_at_ms ? formatJst(row.created_at_ms, true) : '',
       mentions,
     };
@@ -1611,17 +1619,35 @@ async function buildMessagesForUser(db, options = {}) {
              m.priority,
              m.created_at_ms,
              m.updated_at_ms,
-             m.is_pinned,
+             CASE WHEN mp.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_pinned,
              f.name AS folder_name,
              f.color AS folder_color,
              author_user.email AS author_email,
              COALESCE(author_user.display_name, author_user.email) AS author_name,
-             CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read
+             CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read,
+             mr.read_at_ms,
+             COALESCE(comment_stats.comment_count, 0) AS comment_count,
+             comment_stats.last_comment_at_ms
         FROM messages m
         JOIN folders f ON f.id = m.folder_id
         LEFT JOIN message_reads mr
           ON mr.message_id = m.message_id
          AND mr.membership_id = ?3
+        LEFT JOIN message_pins mp
+          ON mp.message_id = m.message_id
+         AND mp.membership_id = ?3
+         AND mp.org_id = m.org_id
+        LEFT JOIN (
+          SELECT message_id,
+                 org_id,
+                 COUNT(*) AS comment_count,
+                 MAX(created_at_ms) AS last_comment_at_ms
+            FROM message_comments
+           WHERE org_id = ?1
+           GROUP BY message_id, org_id
+        ) comment_stats
+          ON comment_stats.message_id = m.message_id
+         AND comment_stats.org_id = m.org_id
         LEFT JOIN memberships author_ms
           ON author_ms.membership_id = m.author_membership_id
         LEFT JOIN users author_user
@@ -1637,7 +1663,11 @@ async function buildMessagesForUser(db, options = {}) {
            OR ?5 = 1
            OR fm_user.user_id IS NOT NULL
          )
-       ORDER BY m.is_pinned DESC,
+       ORDER BY CASE WHEN mp.message_id IS NOT NULL THEN 1 ELSE 0 END DESC,
+                MAX(
+                  COALESCE(comment_stats.last_comment_at_ms, 0),
+                  COALESCE(m.updated_at_ms, m.created_at_ms)
+                ) DESC,
                 m.created_at_ms DESC
     `
     )
@@ -1651,6 +1681,22 @@ async function buildMessagesForUser(db, options = {}) {
         : 0;
     const priority = mapD1PriorityToLegacy(row?.priority);
     const authorLabel = buildUserLabel(row?.author_email, row?.author_name);
+    const readAtMs =
+      typeof row?.read_at_ms === 'number' && Number.isFinite(row.read_at_ms)
+        ? row.read_at_ms
+        : 0;
+    const commentCount = Number.isFinite(Number(row?.comment_count))
+      ? Number(row.comment_count)
+      : 0;
+    const lastCommentAtMs =
+      typeof row?.last_comment_at_ms === 'number' && Number.isFinite(row.last_comment_at_ms)
+        ? row.last_comment_at_ms
+        : 0;
+    const updatedAtMs =
+      typeof row?.updated_at_ms === 'number' && Number.isFinite(row.updated_at_ms)
+        ? row.updated_at_ms
+        : 0;
+    const lastActivityAtMs = Math.max(createdAtMs, updatedAtMs, lastCommentAtMs);
     return {
       id: row?.message_id || '',
       title: row?.title || '',
@@ -1663,7 +1709,11 @@ async function buildMessagesForUser(db, options = {}) {
       isRead: row?.is_read ? true : false,
       isPinned: row?.is_pinned ? true : false,
       createdAt: createdAtMs,
-      updatedAt: row?.updated_at_ms || 0,
+      updatedAt: updatedAtMs,
+      commentCount,
+      lastCommentAt: lastCommentAtMs,
+      lastActivityAt: lastActivityAtMs,
+      hasNewComment: commentCount > 0 && (!readAtMs || lastCommentAtMs > readAtMs),
       createdAtLabel: createdAtMs ? formatJst(createdAtMs, true) : '',
       createdBy: row?.author_email || '',
       createdByLabel: authorLabel,
@@ -5421,7 +5471,9 @@ async function maybeHandleRouteWithD1(options) {
         userId,
         isManager,
       });
-      const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
+      const payload = unreadOnly
+        ? messages.filter((item) => !item.isRead || item.hasNewComment)
+        : messages;
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: payload },
@@ -5453,7 +5505,9 @@ async function maybeHandleRouteWithD1(options) {
         userId,
         isManager,
       });
-      const payload = unreadOnly ? messages.filter((item) => !item.isRead) : messages;
+      const payload = unreadOnly
+        ? messages.filter((item) => !item.isRead || item.hasNewComment)
+        : messages;
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: payload },
@@ -5467,14 +5521,15 @@ async function maybeHandleRouteWithD1(options) {
       tertiaryRoute === 'pin' &&
       requestMethod === 'POST'
     ) {
-      if (!isManagerRole(accessContext?.role)) {
+      const pinAllowedRoles = new Set(['admin', 'manager', 'member']);
+      if (!pinAllowedRoles.has(String(accessContext?.role || '').toLowerCase())) {
         return errorResponse(
           403,
           allowedOrigin,
           requestId,
           'cf-api',
           'forbidden',
-          'ピン留めを変更する権限がありません。'
+          'ピン留めを利用する権限がありません。'
         );
       }
       const messageId = normalizeIdValue(secondaryRoute);
@@ -5492,13 +5547,21 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      if (!actorMembership?.membership_id || !actorMembership?.org_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'ピン留めを保存する所属情報が見つかりません。'
+        );
+      }
+      const orgId = actorMembership.org_id;
       const messageRow = await db
         .prepare(
           `
           SELECT m.message_id,
-                 m.is_pinned,
                  m.folder_id,
                  m.org_id
             FROM messages m
@@ -5506,7 +5569,7 @@ async function maybeHandleRouteWithD1(options) {
              AND m.org_id = ?2
         `
         )
-        .bind(messageId, accessContext?.orgId || '')
+        .bind(messageId, orgId)
         .first();
       if (!messageRow) {
         return errorResponse(
@@ -5528,30 +5591,94 @@ async function maybeHandleRouteWithD1(options) {
           '他組織のメッセージには操作できません。'
         );
       }
-      const nextPinned = messageRow.is_pinned ? 0 : 1;
-      const now = Date.now();
-      await db
+      const folderAccess = await ensureFolderAccessForUser(db, {
+        orgId,
+        folderId: messageRow.folder_id,
+        userId: actorMembership.user_id || accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+        requireActive: false,
+      });
+      if (!folderAccess) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'forbidden',
+          'このメッセージはピン留めできません。'
+        );
+      }
+      const bodyObject = parsedBody && typeof parsedBody === 'object' ? parsedBody : {};
+      const hasDesiredPin = Object.prototype.hasOwnProperty.call(bodyObject, 'pin');
+      if (hasDesiredPin && typeof bodyObject.pin !== 'boolean') {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'invalid_pin_state',
+          'ピン状態は true または false で指定してください。'
+        );
+      }
+      const currentPin = await db
         .prepare(
           `
-          UPDATE messages
-             SET is_pinned = ?2,
-                 updated_at_ms = ?3
+          SELECT pinned_at_ms
+            FROM message_pins
            WHERE message_id = ?1
-             AND org_id = ?4
+             AND membership_id = ?2
+             AND org_id = ?3
         `
         )
-        .bind(messageRow.message_id, nextPinned, now, messageRow.org_id)
-        .run();
-      await insertAuditLog(db, {
-        orgId: messageRow.org_id || orgId,
-        actorMembershipId: actorMembership?.membership_id || null,
-        targetType: 'message',
-        targetId: messageRow.message_id,
-        action: nextPinned ? 'message.pin' : 'message.unpin',
-        payload: {
-          folderId: messageRow.folder_id,
-        },
-      });
+        .bind(messageRow.message_id, actorMembership.membership_id, orgId)
+        .first();
+      const currentlyPinned = !!currentPin;
+      const nextPinned = hasDesiredPin ? bodyObject.pin : !currentlyPinned;
+      let changed = false;
+      const now = Date.now();
+      if (nextPinned !== currentlyPinned && nextPinned) {
+        const insertResult = await db
+          .prepare(
+            `
+            INSERT OR IGNORE INTO message_pins (
+              message_id,
+              membership_id,
+              org_id,
+              pinned_at_ms
+            )
+            VALUES (?1, ?2, ?3, ?4)
+          `
+          )
+          .bind(messageRow.message_id, actorMembership.membership_id, orgId, now)
+          .run();
+        changed = Number(insertResult?.meta?.changes || 0) > 0;
+      } else if (nextPinned !== currentlyPinned) {
+        const deleteResult = await db
+          .prepare(
+            `
+            DELETE FROM message_pins
+             WHERE message_id = ?1
+               AND membership_id = ?2
+               AND org_id = ?3
+          `
+          )
+          .bind(messageRow.message_id, actorMembership.membership_id, orgId)
+          .run();
+        changed = Number(deleteResult?.meta?.changes || 0) > 0;
+      }
+      if (changed) {
+        await insertAuditLog(db, {
+          orgId: messageRow.org_id || orgId,
+          actorMembershipId: actorMembership.membership_id,
+          targetType: 'message',
+          targetId: messageRow.message_id,
+          action: nextPinned ? 'message.pin' : 'message.unpin',
+          payload: {
+            folderId: messageRow.folder_id,
+            personalized: true,
+          },
+        });
+      }
       return jsonResponseFromD1(
         200,
         {
@@ -5560,6 +5687,7 @@ async function maybeHandleRouteWithD1(options) {
           result: {
             messageId: messageRow.message_id,
             isPinned: !!nextPinned,
+            changed,
           },
         },
         allowedOrigin,
@@ -5909,6 +6037,7 @@ async function maybeHandleRouteWithD1(options) {
           ok: true,
           success: true,
           result: {
+            success: true,
             commentId,
             comments,
             message: 'コメントを投稿しました。',
@@ -6748,13 +6877,15 @@ async function toggleMemoReadInD1(db, context) {
     await db
       .prepare(
         `
-        INSERT OR IGNORE INTO message_reads (
+        INSERT INTO message_reads (
           message_read_id,
           message_id,
           membership_id,
           read_at_ms
         )
         VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(message_id, membership_id)
+        DO UPDATE SET read_at_ms = MAX(message_reads.read_at_ms, excluded.read_at_ms)
       `
       )
       .bind(

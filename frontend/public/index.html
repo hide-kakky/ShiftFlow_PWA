@@ -4308,6 +4308,31 @@
         background: rgba(122, 162, 255, 0.2);
         color: #dbe4ff;
       }
+      .msg-comment-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(81, 124, 178, 0.1);
+        color: var(--primary-700);
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+      .msg-comment-badge--new {
+        background: rgba(230, 126, 34, 0.18);
+        color: #a34f0a;
+        box-shadow: inset 0 0 0 1px rgba(230, 126, 34, 0.28);
+      }
+      :root[data-theme='dark'] .msg-comment-badge {
+        background: rgba(122, 162, 255, 0.18);
+        color: #dbe4ff;
+      }
+      :root[data-theme='dark'] .msg-comment-badge--new {
+        background: rgba(255, 174, 92, 0.22);
+        color: #ffd5a5;
+        box-shadow: inset 0 0 0 1px rgba(255, 174, 92, 0.34);
+      }
       :root[data-theme='dark'] .message-toolbar .btn-outline-success {
         color: #9ce8bd;
         border-color: rgba(156, 232, 189, 0.7);
@@ -7536,6 +7561,16 @@
         var createdByLabel =
           options.createdByLabel || options.createdByName || (createdBy ? createdBy : '');
         var createdAtLabel = new Date(createdAt).toLocaleString('ja-JP', { hour12: false });
+        var comments = Array.isArray(options.comments) ? options.comments.slice() : [];
+        var commentCount =
+          typeof options.commentCount === 'number' ? options.commentCount : comments.length;
+        var lastCommentAt =
+          typeof options.lastCommentAt === 'number'
+            ? options.lastCommentAt
+            : comments.reduce(function (latest, comment) {
+                var value = Number(comment && comment.createdAtMs ? comment.createdAtMs : 0);
+                return value > latest ? value : latest;
+              }, 0);
         var summary = {
           id: options.id || 'MSG-' + Math.floor(Math.random() * 10000),
           title: options.title || 'テストのお知らせ',
@@ -7545,6 +7580,10 @@
           folderId: options.folderId || '全体',
           isRead: !!options.isRead,
           isPinned: !!options.isPinned,
+          commentCount: commentCount,
+          lastCommentAt: lastCommentAt,
+          lastActivityAt: Math.max(createdAt, lastCommentAt),
+          hasNewComment: !!options.hasNewComment,
           createdAt: createdAt,
           createdAtLabel: createdAtLabel,
           createdBy: createdBy,
@@ -7555,7 +7594,7 @@
           title: summary.title,
           body: summary.body,
           attachments: Array.isArray(options.attachments) ? options.attachments.slice() : [],
-          comments: Array.isArray(options.comments) ? options.comments.slice() : [],
+          comments: comments,
           readUsers: Array.isArray(options.readUsers) ? options.readUsers.slice() : [],
           unreadUsers: Array.isArray(options.unreadUsers) ? options.unreadUsers.slice() : [],
           readEmails: Array.isArray(options.readEmails) ? options.readEmails.slice() : [],
@@ -8441,6 +8480,7 @@
             var toggleTarget = findTestMessage(state, memoId);
             if (!toggleTarget) throw new Error('メッセージが見つかりません。');
             toggleTarget.isRead = shouldRead;
+            if (shouldRead) toggleTarget.hasNewComment = false;
             updateMessageReadState(data, toggleTarget, shouldRead);
             return toTestPayloadSuccess('既読状態を更新しました (テスト)');
           }
@@ -8449,6 +8489,7 @@
             var markTarget = findTestMessage(state, memoIdForMark);
             if (!markTarget) throw new Error('メッセージが見つかりません。');
             markTarget.isRead = true;
+            markTarget.hasNewComment = false;
             updateMessageReadState(data, markTarget, true);
             return toTestPayloadSuccess('既読化しました (テスト)');
           }
@@ -8458,6 +8499,7 @@
               var tgt = findTestMessage(state, memoId);
               if (!tgt) return;
               tgt.isRead = true;
+              tgt.hasNewComment = false;
               updateMessageReadState(data, tgt, true);
             });
             return toTestPayloadSuccess('未読メッセージを既読にしました (テスト)');
@@ -8500,14 +8542,20 @@
             memoForComment.detail = memoForComment.detail || {};
             var comments = memoForComment.detail.comments || [];
             var label = commentPayload.body || '';
+            var commentCreatedAt = Date.now();
             comments.unshift({
               id: 'CMT-' + ++state.data.counters.comment,
               body: label,
               authorEmail: data.userInfo.email,
               authorName: data.userInfo.name,
-              createdAt: new Date().toLocaleString('ja-JP', { hour12: false }),
+              createdAtMs: commentCreatedAt,
+              createdAt: new Date(commentCreatedAt).toLocaleString('ja-JP', { hour12: false }),
             });
             memoForComment.detail.comments = comments;
+            memoForComment.commentCount = comments.length;
+            memoForComment.lastCommentAt = commentCreatedAt;
+            memoForComment.lastActivityAt = commentCreatedAt;
+            memoForComment.hasNewComment = true;
             return toTestPayloadSuccess('コメントを追加しました (テスト)');
           }
           case 'getUserSettings':
@@ -11088,7 +11136,7 @@
       const AUTH_SESSION_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
       let LAST_AUTH_SESSION = null;
       let LAST_AUTH_SESSION_AT = 0;
-      const API_REFRESH_INTERVAL_MS = 7 * 60 * 1000;
+      const API_REFRESH_INTERVAL_MS = 60 * 1000;
       let LAST_HOME_FETCH_AT = 0;
       let LAST_MESSAGES_FETCH_AT = 0;
       const LAST_TASK_FETCH_AT = { my: 0, from: 0, all: 0 };
@@ -13071,13 +13119,23 @@
 
       function renderShiftHomeCard(message) {
         var isRead = !!message.isRead;
+        var hasNewComment = !!message.hasNewComment;
+        var commentCount = Number(message.commentCount || 0);
         var timestampLabel = resolveMessageTimestampLabel(message);
         var title =
           message && message.title
             ? message.title
             : tShift('home_shift_untitled', '（無題のシフト）');
         var classes = ['card', 'app-card', 'msg-card', 'msg-card-compact', 'mb-2'];
-        if (!isRead) classes.push('unread');
+        if (!isRead || hasNewComment) classes.push('unread');
+        var commentBadge = commentCount
+          ? '<span class="msg-comment-badge ' +
+            (hasNewComment ? 'msg-comment-badge--new' : '') +
+            '">' +
+            (hasNewComment ? '新着コメント ' : 'コメント ') +
+            commentCount +
+            '</span>'
+          : '';
         return (
           '<div class="' +
           classes.join(' ') +
@@ -13091,6 +13149,7 @@
           '<span class="fw-bold">' +
           esc(title) +
           '</span>' +
+          commentBadge +
           '</a>' +
           (timestampLabel ? '<small class="text-muted">' + esc(timestampLabel) + '</small>' : '') +
           '</div>' +
@@ -13101,6 +13160,7 @@
       function renderHomeView(data) {
         var payload = data || {};
         var tasks = normalizeArray(payload.tasks);
+        var homeMessages = sortMessagesByActivity(normalizeArray(payload.messages));
         var tHTML = tasks.length
           ? tasks
               .map(function (t) {
@@ -13110,8 +13170,8 @@
           : '<div class="card app-card task-card mb-2"><div class="card-body text-muted">直近のタスクはありません。</div></div>';
         byId('home-today-tasks').innerHTML = tHTML;
 
-        var unread = normalizeArray(payload.messages).filter(function (x) {
-          return !x.isRead;
+        var unread = homeMessages.filter(function (x) {
+          return !x.isRead || x.hasNewComment;
         });
         [byId('badge-unread-top'), byId('badge-unread-bottom')].forEach(function (b) {
           if (!b) return;
@@ -13129,7 +13189,7 @@
         byId('home-unread').innerHTML = mHTML;
 
         var shiftFolderId = findShiftFolderId();
-        var shiftMessages = normalizeArray(payload.messages).filter(function (m) {
+        var shiftMessages = homeMessages.filter(function (m) {
           return isShiftFolderMessage(m, shiftFolderId);
         });
         var shiftHTML = shiftMessages.length
@@ -14000,12 +14060,27 @@
         });
       }
 
+      var LAST_RETURN_REFRESH_AT = 0;
+      function refreshCollaborationViewOnReturn() {
+        if (document.hidden || (CURRENT_VIEW !== 'home' && CURRENT_VIEW !== 'messages')) return;
+        var lastFetch = CURRENT_VIEW === 'messages' ? LAST_MESSAGES_FETCH_AT : LAST_HOME_FETCH_AT;
+        var now = Date.now();
+        if (lastFetch && now - lastFetch < API_REFRESH_INTERVAL_MS) return;
+        if (now - LAST_RETURN_REFRESH_AT < API_REFRESH_COOLDOWN_MS) return;
+        LAST_RETURN_REFRESH_AT = now;
+        refreshCurrentView({ force: true });
+      }
+
       document.addEventListener('visibilitychange', function () {
         if (!document.hidden) {
           flushPendingApiRefreshes();
+          refreshCollaborationViewOnReturn();
         }
       });
-      window.addEventListener('focus', flushPendingApiRefreshes);
+      window.addEventListener('focus', function () {
+        flushPendingApiRefreshes();
+        refreshCollaborationViewOnReturn();
+      });
 
       window.__SHIFT_FLOW_TRIGGER_REFRESH__ = function (message) {
         if (!message || !message.url) {
@@ -14219,6 +14294,12 @@
         if (match) return match[1] + ' ' + match[2];
         return label;
       }
+      function canPinMessages() {
+        var role = String(
+          (window.userInfo && window.userInfo.role) || CURRENT_USER_ROLE || ''
+        ).toLowerCase();
+        return ['admin', 'manager', 'member'].indexOf(role) !== -1;
+      }
       function renderAuthorAvatar(email, label, options) {
         var variant = (options && options.variant) || 'md';
         var classes = ['msg-avatar'];
@@ -14262,16 +14343,26 @@
       function renderMessageCard(m, options) {
         var opts = options || {};
         var isRead = !!m.isRead;
+        var hasNewComment = !!m.hasNewComment;
+        var commentCount = Math.max(0, Number(m.commentCount || 0));
         var authorLabel = resolveMessageAuthorLabel(m);
         var timestampLabel = resolveMessageTimestampLabel(m);
         var classes = ['card', 'app-card', 'msg-card', 'mb-2'];
-        if (!isRead) classes.push('unread');
+        if (!isRead || hasNewComment) classes.push('unread');
         if (m.isPinned) classes.push('msg-card--pinned');
         if (opts.compact) classes.push('msg-card-compact');
         var pinIndicator = m.isPinned
           ? '<span class="pin-indicator material-icons-outlined" aria-hidden="true">push_pin</span>'
           : '';
         var unreadIndicator = !isRead ? '<span class="msg-state-badge">未読</span>' : '';
+        var commentIndicator = commentCount
+          ? '<span class="msg-comment-badge ' +
+            (hasNewComment ? 'msg-comment-badge--new' : '') +
+            '">' +
+            (hasNewComment ? '新着コメント ' : 'コメント ') +
+            commentCount +
+            '</span>'
+          : '';
         var preview = m.preview || m.body || '';
         var previewHtml = esc(preview || '').replace(/\n/g, '<br>');
         var linkClasses = ['msg-link', 'link-surface', 'flex-grow-1'];
@@ -14279,16 +14370,17 @@
         var actionHtml = '';
         if (!opts.hideAction) {
           var actionButtons = [];
-          if (IS_MANAGER) {
+          if (canPinMessages()) {
+            var pinActionLabel = m.isPinned ? '自分のピンを解除' : '自分用にピン留め';
             actionButtons.push(
               '<button class="btn btn-outline-secondary btn-sm msg-action-btn msg-action-btn--icon" onclick="event.preventDefault(); togglePin(this,\'' +
                 m.id +
                 "'," +
                 (m.isPinned ? 'false' : 'true') +
                 ')" aria-label="' +
-                (m.isPinned ? 'ピン解除' : 'ピン留め') +
+                pinActionLabel +
                 '" title="' +
-                (m.isPinned ? 'ピン解除' : 'ピン留め') +
+                pinActionLabel +
                 '">' +
                 '<span class="material-icons pin-toggle-icon ' +
                 (m.isPinned ? 'pin-toggle-icon--off' : 'pin-toggle-icon--on') +
@@ -14334,6 +14426,7 @@
           '</span>' +
           pinIndicator +
           unreadIndicator +
+          commentIndicator +
           '<span class="msg-title ' +
           (isRead ? 'text-muted' : '') +
           '">' +
@@ -14356,6 +14449,28 @@
       function rowMsg(m) {
         return renderMessageCard(m, { hideAction: false });
       }
+      function messageActivityValue(message) {
+        if (!message) return 0;
+        var candidates = [
+          message.lastActivityAt,
+          message.lastCommentAt,
+          message.updatedAt,
+          message.createdAt,
+        ];
+        return candidates.reduce(function (latest, value) {
+          var numeric = Number(value || 0);
+          return Number.isFinite(numeric) && numeric > latest ? numeric : latest;
+        }, 0);
+      }
+      function sortMessagesByActivity(list) {
+        return normalizeArray(list)
+          .slice()
+          .sort(function (a, b) {
+            var pinDiff = Number(!!(b && b.isPinned)) - Number(!!(a && a.isPinned));
+            if (pinDiff) return pinDiff;
+            return messageActivityValue(b) - messageActivityValue(a);
+          });
+      }
       var MESSAGE_LOAD_REQUEST_ID = 0;
       function filterMessages(list, suppliedFilters) {
         var filters = suppliedFilters || MessageViewController.getFilters();
@@ -14364,10 +14479,10 @@
         var kw = String(filters.keyword || '')
           .trim()
           .toLocaleLowerCase('ja-JP');
-        var rows = normalizeArray(list).slice();
+        var rows = sortMessagesByActivity(list);
         if (unreadOnly)
           rows = rows.filter(function (x) {
-            return !x.isRead;
+            return !x.isRead || x.hasNewComment;
           });
         if (folderId) {
           var normalized = folderId.toLowerCase();
@@ -14543,17 +14658,18 @@
       }
       on('home-shift-view-all', 'click', navigateToShiftFolder);
       function togglePin(btn, memoId, shouldPin) {
-        if (!IS_MANAGER) {
-          notify('ピン操作は管理者のみ可能です。', false);
+        if (!canPinMessages()) {
+          notify('このアカウントではピン留めを利用できません。', false);
           return;
         }
         setButtonLoading(btn, true);
         apiRequest(`${API_BASE_PATH}/messages/${encodeURIComponent(memoId)}/pin`, {
           method: 'POST',
+          body: { pin: !!shouldPin },
         })
           .then(function (res) {
             setButtonLoading(btn, false);
-            notify('ピン状態を更新しました。', true);
+            notify(shouldPin ? '自分用にピン留めしました。' : '自分のピンを解除しました。', true);
             loadMessages({ force: true });
             loadHome({ force: true });
           })
@@ -15227,6 +15343,7 @@
                 renderMessageDetail(data);
                 byId('msg-detail-loading').classList.add('d-none');
                 byId('msg-detail-content').classList.remove('d-none');
+                loadMessages({ force: true });
                 loadHome({ force: true });
               })
               .getMessageById(memoId);
@@ -15241,11 +15358,11 @@
         }
         google.script.run
           .withSuccessHandler(function (res) {
-            if (res && res.success) {
+            if (res && res.success !== false) {
               byId('newCommentBody').value = '';
               openMessageModal(CURRENT_MEMO_ID);
             }
-            notify(res.message || '完了', res.success !== false);
+            notify((res && res.message) || '完了', !res || res.success !== false);
           })
           .addNewComment({ memoId: CURRENT_MEMO_ID, body: body });
       });
