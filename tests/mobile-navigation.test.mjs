@@ -38,6 +38,19 @@ test('画面遷移は下部ナビのタップ導線だけを使う', () => {
   assert.equal((adminNav[0].match(/data-admin-target=/g) || []).length, 5);
 });
 
+test('通常画面は横スライドせず選択パネルだけを即時表示する', () => {
+  assert.match(indexSource, /\.views-track\s*{[^}]*display:\s*block;[^}]*transform:\s*none;[^}]*transition:\s*none;/s);
+  assert.match(indexSource, /\.view-panel\.is-hidden\s*{[^}]*display:\s*none\s*!important;/s);
+  assert.match(indexSource, /el\.hidden = !isActive;/);
+  assert.match(indexSource, /setPanelInteractiveState\(el, isActive\);/);
+  assert.equal((indexSource.match(/class="view-panel fade-container is-hidden"/g) || []).length, 3);
+  assert.equal((indexSource.match(/aria-hidden="true"\s+hidden\s+inert/g) || []).length, 3);
+  assert.doesNotMatch(
+    indexSource,
+    /VIEW_TRANSITION|translate3d\(|preparePanelTransition|waitForTrackTransition|trackTo\(/
+  );
+});
+
 test('ステータスバー、下部ナビ、FABはモバイル表示ルールに揃う', () => {
   assert.doesNotMatch(
     indexSource,

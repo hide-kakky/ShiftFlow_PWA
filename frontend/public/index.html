@@ -2231,36 +2231,34 @@
         }
       }
 
-      /* View track transitions (px aligned) */
+      /* 画面は横並びにせず、選択されたパネルだけを即時表示する */
       .views-wrapper {
         position: relative;
         overflow: hidden;
         touch-action: pan-y;
       }
       .views-track {
-        display: flex;
-        transform: translate3d(0, 0, 0);
-        transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
-        will-change: auto;
-      }
-      .views-track.is-moving {
-        will-change: transform;
-      }
-      .views-track.is-moving .fade-container {
+        display: block;
+        width: 100%;
+        transform: none;
         transition: none;
       }
       .view-panel {
-        flex: 0 0 100%;
+        width: 100%;
         min-width: 0;
       }
+      .view-panel.fade-container {
+        opacity: 1;
+        transition: none;
+      }
       .view-panel.is-hidden {
+        display: none !important;
         visibility: hidden;
         pointer-events: none;
-        height: 0 !important;
-        overflow: hidden !important;
       }
       .view-panel.show {
-        height: auto !important;
+        display: block;
+        visibility: visible;
         overflow: visible !important;
       }
       .pull-to-refresh {
@@ -4777,10 +4775,7 @@
       .footer-nav .nav-icon-badge {
         box-shadow: 0 0 0 2px var(--nav-glass-bg);
       }
-      body:has(.views-track.is-moving) header.navbar > .container-xl,
-      header.navbar.navbar--scrolling > .container-xl,
-      body:has(.views-track.is-moving) .header-search-panel__surface,
-      body:has(.views-track.is-moving) .footer-nav .container-fluid {
+      header.navbar.navbar--scrolling > .container-xl {
         background: var(--card);
         -webkit-backdrop-filter: none;
         backdrop-filter: none;
@@ -5470,7 +5465,11 @@
         <div class="views-wrapper container-xl" id="viewsWrapper">
           <div class="views-track" id="viewsTrack">
             <!-- ----- Home view panel ----- -->
-            <section class="view-panel fade-container show" id="view-home">
+            <section
+              class="view-panel fade-container show"
+              id="view-home"
+              aria-hidden="false"
+            >
               <section class="home-hero" aria-label="ホームのハイライト">
                 <div class="home-hero__grid">
                   <div class="home-hero__intro">
@@ -5588,7 +5587,13 @@
             </section>
 
             <!-- COMPONENT: シフト一覧（タスク表示パネル） -->
-            <section class="view-panel fade-container is-hidden" id="view-tasks">
+            <section
+              class="view-panel fade-container is-hidden"
+              id="view-tasks"
+              aria-hidden="true"
+              hidden
+              inert
+            >
               <div class="task-panels">
                 <div class="task-panel active" data-task-panel="my">
                   <!-- Results container for "My Tasks" -->
@@ -5609,13 +5614,25 @@
             <!-- /COMPONENT: シフト一覧 -->
 
             <!-- ----- Messages view panel ----- -->
-            <section class="view-panel fade-container is-hidden" id="view-messages">
+            <section
+              class="view-panel fade-container is-hidden"
+              id="view-messages"
+              aria-hidden="true"
+              hidden
+              inert
+            >
               <!-- Message card list mount point -->
               <div id="msg-list" class="mt-2"></div>
             </section>
 
             <!-- ----- Settings view panel ----- -->
-            <section class="view-panel fade-container is-hidden" id="view-settings">
+            <section
+              class="view-panel fade-container is-hidden"
+              id="view-settings"
+              aria-hidden="true"
+              hidden
+              inert
+            >
               <!-- Settings form wrapper (profile, appearance, etc.) -->
               <form class="settings-layout" id="form-settings">
                 <div class="form-section settings-block">
@@ -8851,7 +8868,6 @@
       let MANAGER_NOTICE_SHOWN = false;
       let AUTH_HELP_REQUESTED = false;
       let TASKS_BOOTSTRAPPED = false;
-      var _rszTimer = null;
       let ACTIVE_TASK_TAB = 'my';
       let AUTH_SESSION = { authenticated: false, user: null, expiresAt: 0 };
       if (!HAS_GAS_WEB_APP_URL) {
@@ -12341,74 +12357,6 @@
       var VIEW_HISTORY_SUPPORTED = !!(window.history && window.history.pushState);
       var VIEW_HISTORY_LOCK = false;
       var LAST_VIEW_HISTORY = 'home';
-      var VIEW_TRANSITION_MS = 240;
-      var VIEW_TRANSITION =
-        'transform ' + VIEW_TRANSITION_MS + 'ms cubic-bezier(0.22, 0.61, 0.36, 1)';
-      var CURRENT_TRANSFORM = 0;
-      var VIEW_TRANSITION_SEQUENCE = 0;
-      var VIEW_PANEL_WIDTH = 0;
-
-      function measureViewPanelWidth() {
-        var track = byId('viewsTrack');
-        var width = track ? track.clientWidth : 0;
-        if (width > 0) VIEW_PANEL_WIDTH = width;
-        return VIEW_PANEL_WIDTH;
-      }
-
-      function getTrackOffset(view) {
-        var idx = order.indexOf(view);
-        if (idx < 0) return null;
-        var width =
-          VIEW_PANEL_WIDTH ||
-          measureViewPanelWidth() ||
-          window.innerWidth ||
-          document.documentElement.clientWidth ||
-          360;
-        return -(idx * width);
-      }
-
-      function trackTo(view, opts) {
-        var track = byId('viewsTrack');
-        var offset = getTrackOffset(view);
-        if (!track || offset == null) return;
-        var animate = !opts || opts.animate !== false;
-        if (!animate) {
-          track.classList.remove('is-moving');
-          track.style.transition = 'none';
-          track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
-          requestAnimationFrame(function () {
-            track.style.transition = VIEW_TRANSITION;
-          });
-        } else {
-          track.classList.add('is-moving');
-          track.style.transition = VIEW_TRANSITION;
-          requestAnimationFrame(function () {
-            track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
-          });
-        }
-        CURRENT_TRANSFORM = offset;
-      }
-
-      function freezeViewHeight(view) {
-        var wrap = byId('viewsWrapper');
-        var panel = byId('view-' + view);
-        if (!wrap || !panel || wrap.style.height) return;
-        var header = document.querySelector('header.navbar');
-        var footer = document.querySelector('.footer-nav:not([hidden])');
-        var viewportHeight =
-          (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
-        var minimumVisibleHeight = Math.max(
-          0,
-          viewportHeight - (header ? header.offsetHeight : 0) - (footer ? footer.offsetHeight : 0) - 24
-        );
-        var height = Math.max(panel.offsetHeight, minimumVisibleHeight);
-        if (height > 0) wrap.style.height = height + 'px';
-      }
-
-      function releaseViewHeight() {
-        var wrap = byId('viewsWrapper');
-        if (wrap) wrap.style.height = '';
-      }
 
       function setPanelInteractiveState(panel, isInteractive) {
         if (!panel) return;
@@ -12664,51 +12612,12 @@
         order.forEach(function (v) {
           var el = byId('view-' + v);
           if (!el) return;
-          if (v === view) {
-            el.classList.remove('is-hidden');
-            el.classList.add('show');
-            setPanelInteractiveState(el, true);
-          } else {
-            el.classList.add('is-hidden');
-            el.classList.remove('show');
-            setPanelInteractiveState(el, false);
-          }
+          var isActive = v === view;
+          el.hidden = !isActive;
+          el.classList.toggle('is-hidden', !isActive);
+          el.classList.toggle('show', isActive);
+          setPanelInteractiveState(el, isActive);
         });
-      }
-
-      function preparePanelTransition(fromView, toView, targetInteractive) {
-        freezeViewHeight(fromView);
-        order.forEach(function (v) {
-          var el = byId('view-' + v);
-          if (!el) return;
-          var visible = v === fromView || v === toView;
-          el.classList.toggle('is-hidden', !visible);
-          el.classList.toggle('show', visible);
-          setPanelInteractiveState(el, v === (targetInteractive ? toView : fromView));
-        });
-        var track = byId('viewsTrack');
-        if (track) track.classList.add('is-moving');
-      }
-
-      function waitForTrackTransition(sequence, callback) {
-        var track = byId('viewsTrack');
-        if (!track) {
-          callback();
-          return;
-        }
-        var settled = false;
-        var timer = 0;
-        function finish(event) {
-          if (event && (event.target !== track || event.propertyName !== 'transform')) return;
-          if (settled) return;
-          settled = true;
-          track.removeEventListener('transitionend', finish);
-          if (timer) clearTimeout(timer);
-          if (sequence !== VIEW_TRANSITION_SEQUENCE) return;
-          callback();
-        }
-        track.addEventListener('transitionend', finish);
-        timer = setTimeout(finish, VIEW_TRANSITION_MS + 100);
       }
 
       function loadViewContent(view, options) {
@@ -12749,39 +12658,17 @@
         if (order.indexOf(v) < 0) return;
         ensureAdminViewHidden();
         var options = opts || {};
-        var previousView = CURRENT_VIEW;
-        var shouldAnimate = options.animate !== false && previousView !== v;
-        var transitionSequence = ++VIEW_TRANSITION_SEQUENCE;
-        measureViewPanelWidth();
         CURRENT_VIEW = v;
         setActiveNav(v);
         updateViewHeader(v);
-        if (shouldAnimate) {
-          preparePanelTransition(previousView, v, true);
-        } else {
-          showPanel(v);
-        }
-        trackTo(v, { animate: shouldAnimate });
+        showPanel(v);
         if (!options.skipHistory) {
           pushViewHistoryState(v);
         } else {
           LAST_VIEW_HISTORY = v;
         }
-
-        function completeNavigation() {
-          showPanel(v);
-          releaseViewHeight();
-          var track = byId('viewsTrack');
-          if (track) track.classList.remove('is-moving');
-          if (!options.skipScroll) scrollToTopNow();
-          loadViewContent(v, options);
-        }
-
-        if (shouldAnimate) {
-          waitForTrackTransition(transitionSequence, completeNavigation);
-        } else {
-          completeNavigation();
-        }
+        if (!options.skipScroll) scrollToTopNow();
+        loadViewContent(v, options);
       }
 
       function handleViewHistoryPop(event) {
@@ -12844,16 +12731,6 @@
         }
         return Promise.resolve(loadHome({ force: opts.force === true }));
       }
-
-
-      window.addEventListener('resize', function () {
-        clearTimeout(_rszTimer);
-        _rszTimer = setTimeout(function () {
-          VIEW_PANEL_WIDTH = 0;
-          trackTo(CURRENT_VIEW, { animate: false });
-        }, 120);
-      });
-
       function initPullToRefresh() {
         var hasTouch = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
         if (!hasTouch) return;
