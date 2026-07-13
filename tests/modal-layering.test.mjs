@@ -38,6 +38,6 @@ test('メッセージ詳細はモバイル全画面用の固有ヘッダーを�
   assert.match(modalMarkup, /modal-dialog modal-fullscreen-sm-down/);
   assert.match(modalMarkup, /aria-labelledby="messageDetailModalTitle"/);
   assert.match(modalMarkup, /id="messageDetailModalTitle"/);
-  assert.match(modalMarkup, /aria-label="メッセージ詳細を閉じる"/);
   assert.match(modalMarkup, /class="material-icons" aria-hidden="true">arrow_back/);
+  assert.match(modalMarkup, /class="visually-hidden" data-i18n="btn_back">戻る/);
 });
