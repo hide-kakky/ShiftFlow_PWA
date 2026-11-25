@@ -27,7 +27,8 @@ function fixture({ storage = new Map(), pageVersion = '2.3.10', navigationType =
     'app-update-notice': { hidden: true },
     'app-update-version': { textContent: '' },
     'app-update-now': new EventTarget(),
-    'app-update-complete': { hidden: true, textContent: '' },
+    'app-update-complete': { hidden: true },
+    'app-update-complete-label': { textContent: '' },
   };
   const runtime = vm.createContext({
     navigator: { serviceWorker }, document, APP_VERSION_LABEL: pageVersion,
@@ -125,7 +126,7 @@ test('新版を実際に読み込んでから完了を表示し、3.2秒で消�
   b.report('2.3.11');
   assert.equal(b.nodes['app-update-notice'].hidden, true);
   assert.equal(b.nodes['app-update-complete'].hidden, false);
-  assert.match(b.nodes['app-update-complete'].textContent, /更新されました（2\.3\.11）/);
+  assert.match(b.nodes['app-update-complete-label'].textContent, /更新されました（2\.3\.11）/);
   b.expire(3200);
   b.report('2.3.11');
   assert.equal(b.nodes['app-update-complete'].hidden, true);
@@ -134,7 +135,7 @@ test('新版を実際に読み込んでから完了を表示し、3.2秒で消�
 test('旧版からの初回再読み込みは実際に読み込んだ新版を一度だけ伝える', () => {
   const a = fixture({ pageVersion: '2.3.11', navigationType: 'reload' });
   a.report('2.3.11');
-  assert.equal(a.nodes['app-update-complete'].textContent, '最新版 2.3.11 を読み込みました');
+  assert.equal(a.nodes['app-update-complete-label'].textContent, '最新版 2.3.11 を読み込みました');
   a.expire(3200);
   const b = fixture({ storage: a.storage, pageVersion: '2.3.11', navigationType: 'reload' });
   b.report('2.3.11');
@@ -155,4 +156,25 @@ test('旧版の再ログイン通知を送らず、二つの公開ファイル�
   assert.equal(probe.length, 1);
   assert.equal(probe[0].type, 'SHIFT_FLOW_APP_VERSION');
   assert.equal(probe[0].version, workerVersion);
+});
+
+test('中央案内は確認画面と同じ面・主ボタンを使用し、完了トーストは別ラベルを持つ', () => {
+  const panel = html.slice(html.indexOf('<aside id="app-update-notice"'), html.indexOf('<!-- /COMPONENT: 通知エリア -->'));
+  assert.match(panel, /class="modal-content modal-modern"/);
+  assert.match(panel, /id="app-update-now" class="btn btn-primary"/);
+  assert.match(panel, /id="app-update-complete" role="status"/);
+  assert.match(panel, /id="app-update-complete-label"/);
+  assert.match(html, /#app-update-now \{\s*min-height: 44px/);
+});
+
+test('ログイン時に画面全体を表示しても、空の更新案内や完了トーストは表示しない', () => {
+  const panel = html.slice(html.indexOf('<aside id="app-update-notice"'), html.indexOf('<!-- /COMPONENT: 通知エリア -->'));
+  assert.doesNotMatch(panel, /data-app-shell/);
+  assert.match(panel, /<aside[^>]+ hidden>/);
+  assert.match(panel, /id="app-update-complete"[^>]+ hidden>/);
+  const a = fixture();
+  a.document.body.classList.contains = name => name === 'auth-screen';
+  a.report('2.3.11');
+  assert.equal(a.nodes['app-update-notice'].hidden, true);
+  assert.equal(a.nodes['app-update-complete'].hidden, true);
 });

@@ -4295,44 +4295,94 @@
           padding: 24px;
         }
       }
-      #app-update-notice {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 1040;
-        width: max-content;
-        max-width: min(30rem, calc(100vw - 2rem));
-        padding: 0.65rem 0.75rem;
-        display: flex;
-        align-items: center;
-        gap: 0.65rem;
-        background: var(--bs-body-bg);
-        color: var(--bs-body-color);
-        border: 1px solid var(--bs-border-color);
-        border-radius: 0.75rem;
-        box-shadow: 0 0.25rem 1rem #0002;
-        font-size: 0.875rem;
-      }
+      #app-update-notice,
       #app-update-complete {
         position: fixed;
-        top: calc(0.75rem + env(safe-area-inset-top, 0px));
         left: 50%;
+        font-family: var(--app-font);
+        color: var(--text-900);
+      }
+      #app-update-notice {
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1040;
+        width: min(25rem, calc(100% - 2rem));
+      }
+      #app-update-notice .modal-header {
+        justify-content: flex-start;
+        gap: 0.75rem;
+        padding: 1rem 1.25rem;
+      }
+      #app-update-notice .modal-title {
+        margin: 0;
+        font-size: 1.0625rem;
+        line-height: 1.35;
+      }
+      #app-update-notice .modal-body,
+      #app-update-notice .modal-footer {
+        padding: 0.875rem 1.25rem;
+      }
+      #app-update-version {
+        margin: 0;
+        color: var(--text-700);
+        font-size: 0.9375rem;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+      }
+      .app-update-symbol {
+        display: inline-grid;
+        flex: none;
+        place-items: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 0.75rem;
+        background: var(--alert-info-bg);
+        color: var(--primary-ink);
+      }
+      .app-update-symbol svg {
+        display: block;
+        width: 1.125rem;
+        height: 1.125rem;
+      }
+      #app-update-now {
+        min-height: 44px;
+        margin: 0;
+        padding-inline: 1.125rem;
+      }
+      #app-update-complete {
+        top: calc(0.75rem + var(--safe-top, 0px));
         transform: translateX(-50%);
         z-index: 1050;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
         width: max-content;
-        max-width: calc(100vw - 2rem);
-        padding: 0.55rem 0.85rem;
-        background: var(--bs-success-bg-subtle);
-        color: var(--bs-success-text-emphasis);
-        border: 1px solid var(--bs-success-border-subtle);
-        border-radius: 0.75rem;
-        box-shadow: 0 0.25rem 1rem #0002;
+        max-width: calc(100% - 2rem);
+        padding: 0.5rem 0.875rem 0.5rem 0.55rem;
+        border: 1px solid var(--card-border);
+        border-radius: 999px;
+        background: var(--card);
+        box-shadow: var(--card-shadow);
         font-size: 0.875rem;
+        font-weight: 600;
         pointer-events: none;
       }
-      #app-update-notice[hidden], #app-update-complete[hidden] { display: none; }
-      #app-update-now { min-height: 2.25rem; white-space: nowrap; }
+      #app-update-complete .app-update-symbol {
+        width: 1.625rem;
+        height: 1.625rem;
+        border-radius: 50%;
+        background: var(--priority-low-bg);
+        color: var(--priority-low-text);
+      }
+      #app-update-complete .app-update-symbol svg { width: 1rem; height: 1rem; }
+      #app-update-notice[hidden], #app-update-complete[hidden],
+      body.auth-screen :is(#app-update-notice, #app-update-complete),
+      body.bootstrapping :is(#app-update-notice, #app-update-complete) {
+        display: none;
+      }
+      @media (max-width: 575.98px) {
+        #app-update-now { width: 100%; }
+      }
       #notification-area {
         position: fixed;
         top: 10px;
@@ -5271,11 +5321,30 @@
 
     <!-- COMPONENT: 通知エリア（トースト表示） -->
     <div id="notification-area" data-app-shell hidden></div>
-    <aside id="app-update-notice" data-app-shell hidden>
-      <span id="app-update-version" role="status"></span>
-      <button id="app-update-now" class="btn btn-sm btn-primary" type="button">今すぐ更新</button>
+    <aside id="app-update-notice" aria-labelledby="app-update-title" hidden>
+      <div class="modal-content modal-modern">
+        <header class="modal-header">
+          <span class="app-update-symbol" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v12m-4-4 4 4 4-4M5 17v3h14v-3"/>
+            </svg>
+          </span>
+          <h2 class="modal-title" id="app-update-title">アプリの更新</h2>
+        </header>
+        <div class="modal-body"><p id="app-update-version" role="status"></p></div>
+        <footer class="modal-footer">
+          <button id="app-update-now" class="btn btn-primary" type="button">今すぐ更新</button>
+        </footer>
+      </div>
     </aside>
-    <div id="app-update-complete" role="status" data-app-shell hidden></div>
+    <div id="app-update-complete" role="status" hidden>
+      <span class="app-update-symbol" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 4 4L19 6"/>
+        </svg>
+      </span>
+      <span id="app-update-complete-label"></span>
+    </div>
     <!-- /COMPONENT: 通知エリア -->
 
     <!-- ===== Pull-to-refresh indicator ===== -->
@@ -11215,6 +11284,7 @@
         var label = byId('app-update-version');
         var button = byId('app-update-now');
         var toast = byId('app-update-complete');
+        var toastLabel = byId('app-update-complete-label');
         var nextVersion = '';
         var offeredVersion = '';
         var completion = '';
@@ -11225,7 +11295,7 @@
         var lastForegroundCheck = Date.now();
         var pendingKey = 'shiftflow:app-update:pending';
         var seenKey = 'shiftflow:app-update:seen-version';
-        if (!notice || !label || !button || !toast) return;
+        if (!notice || !label || !button || !toast || !toastLabel) return;
         var pending = null;
         var legacyReload = false;
         try {
@@ -11238,7 +11308,7 @@
 
         function canShowNotice() {
           if (document.hidden || CURRENT_VIEW !== 'home') return false;
-          if (document.body.classList.contains('bootstrapping')) return false;
+          if (document.body.classList.contains('bootstrapping') || document.body.classList.contains('auth-screen')) return false;
           if (document.querySelector('.modal.show, dialog[open], .modal-open, .app-confirm-open')) return false;
           var focus = document.activeElement;
           return !focus || !focus.closest('input, textarea, select, [contenteditable="true"]');
@@ -11263,7 +11333,7 @@
           if (!notice.hidden || !toast.hidden) return;
           var showingCompletion = !!completion;
           if (showingCompletion) {
-            toast.textContent = completion;
+            toastLabel.textContent = completion;
             toast.hidden = false;
           } else {
             button.disabled = false;
