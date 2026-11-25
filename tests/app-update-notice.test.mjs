@@ -27,6 +27,7 @@ function fixture({ storage = new Map(), pageVersion = '2.3.10', navigationType =
     'app-update-notice': { hidden: true },
     'app-update-version': { textContent: '' },
     'app-update-now': new EventTarget(),
+    'app-update-complete': { hidden: true, textContent: '' },
   };
   const runtime = vm.createContext({
     navigator: { serviceWorker }, document, APP_VERSION_LABEL: pageVersion,
@@ -68,7 +69,7 @@ test('稼働版の通知は新しい場合だけ案内し、押した画面だ�
   a.report('2.3.11');
   b.report('2.3.11');
   assert.equal(a.nodes['app-update-notice'].hidden, false);
-  assert.match(a.nodes['app-update-version'].textContent, /2\.3\.11/);
+  assert.equal(a.nodes['app-update-version'].textContent, '新しいバージョン（2.3.11）を利用できます。');
   a.click();
   a.click();
   assert.equal(a.reloads(), 1);
@@ -122,22 +123,22 @@ test('新版を実際に読み込んでから完了を表示し、3.2秒で消�
   b.report('2.3.10');
   assert.equal(b.nodes['app-update-notice'].hidden, true);
   b.report('2.3.11');
-  assert.equal(b.nodes['app-update-notice'].hidden, false);
-  assert.equal(b.nodes['app-update-now'].hidden, true);
-  assert.match(b.nodes['app-update-version'].textContent, /更新されました（2\.3\.11）/);
+  assert.equal(b.nodes['app-update-notice'].hidden, true);
+  assert.equal(b.nodes['app-update-complete'].hidden, false);
+  assert.match(b.nodes['app-update-complete'].textContent, /更新されました（2\.3\.11）/);
   b.expire(3200);
   b.report('2.3.11');
-  assert.equal(b.nodes['app-update-notice'].hidden, true);
+  assert.equal(b.nodes['app-update-complete'].hidden, true);
 });
 
-test('2.3.0からの初回再読み込みは実際に読み込んだ新版を一度だけ伝える', () => {
-  const a = fixture({ navigationType: 'reload' });
-  a.report('2.3.10');
-  assert.equal(a.nodes['app-update-version'].textContent, '最新版 2.3.10 を読み込みました');
+test('旧版からの初回再読み込みは実際に読み込んだ新版を一度だけ伝える', () => {
+  const a = fixture({ pageVersion: '2.3.11', navigationType: 'reload' });
+  a.report('2.3.11');
+  assert.equal(a.nodes['app-update-complete'].textContent, '最新版 2.3.11 を読み込みました');
   a.expire(3200);
-  const b = fixture({ storage: a.storage, navigationType: 'reload' });
-  b.report('2.3.10');
-  assert.equal(b.nodes['app-update-notice'].hidden, true);
+  const b = fixture({ storage: a.storage, pageVersion: '2.3.11', navigationType: 'reload' });
+  b.report('2.3.11');
+  assert.equal(b.nodes['app-update-complete'].hidden, true);
 });
 
 test('旧版の再ログイン通知を送らず、二つの公開ファイルの版を一致させる', () => {

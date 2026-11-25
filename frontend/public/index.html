@@ -4314,7 +4314,24 @@
         box-shadow: 0 0.25rem 1rem #0002;
         font-size: 0.875rem;
       }
-      #app-update-notice[hidden] { display: none; }
+      #app-update-complete {
+        position: fixed;
+        top: calc(0.75rem + env(safe-area-inset-top, 0px));
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1050;
+        width: max-content;
+        max-width: calc(100vw - 2rem);
+        padding: 0.55rem 0.85rem;
+        background: var(--bs-success-bg-subtle);
+        color: var(--bs-success-text-emphasis);
+        border: 1px solid var(--bs-success-border-subtle);
+        border-radius: 0.75rem;
+        box-shadow: 0 0.25rem 1rem #0002;
+        font-size: 0.875rem;
+        pointer-events: none;
+      }
+      #app-update-notice[hidden], #app-update-complete[hidden] { display: none; }
       #app-update-now { min-height: 2.25rem; white-space: nowrap; }
       #notification-area {
         position: fixed;
@@ -5258,6 +5275,7 @@
       <span id="app-update-version" role="status"></span>
       <button id="app-update-now" class="btn btn-sm btn-primary" type="button">今すぐ更新</button>
     </aside>
+    <div id="app-update-complete" role="status" data-app-shell hidden></div>
     <!-- /COMPONENT: 通知エリア -->
 
     <!-- ===== Pull-to-refresh indicator ===== -->
@@ -11196,6 +11214,7 @@
         var notice = byId('app-update-notice');
         var label = byId('app-update-version');
         var button = byId('app-update-now');
+        var toast = byId('app-update-complete');
         var nextVersion = '';
         var offeredVersion = '';
         var completion = '';
@@ -11206,12 +11225,12 @@
         var lastForegroundCheck = Date.now();
         var pendingKey = 'shiftflow:app-update:pending';
         var seenKey = 'shiftflow:app-update:seen-version';
-        if (!notice || !label || !button) return;
+        if (!notice || !label || !button || !toast) return;
         var pending = null;
         var legacyReload = false;
         try {
           pending = JSON.parse(sessionStorage.getItem(pendingKey) || 'null');
-          legacyReload = APP_VERSION_LABEL === '2.3.10' && !pending &&
+          legacyReload = ['2.3.10', '2.3.11'].includes(APP_VERSION_LABEL) && !pending &&
             !sessionStorage.getItem(seenKey) &&
             window.performance?.getEntriesByType('navigation')[0]?.type === 'reload';
           sessionStorage.setItem(seenKey, APP_VERSION_LABEL);
@@ -11229,6 +11248,7 @@
           if (timer) clearTimeout(timer);
           timer = 0;
           notice.hidden = true;
+          toast.hidden = true;
         }
 
         function render() {
@@ -11240,13 +11260,17 @@
           }
           if (!completion && (!nextVersion || (offeredVersion === nextVersion && !deferredForEdit))) return;
           deferredForEdit = false;
-          if (!notice.hidden) return;
+          if (!notice.hidden || !toast.hidden) return;
           var showingCompletion = !!completion;
-          button.hidden = showingCompletion;
-          button.disabled = false;
-          label.textContent = showingCompletion ? completion : 'ShiftFlow ' + nextVersion + ' に更新できます';
-          notice.hidden = false;
-          if (!showingCompletion) offeredVersion = nextVersion;
+          if (showingCompletion) {
+            toast.textContent = completion;
+            toast.hidden = false;
+          } else {
+            button.disabled = false;
+            label.textContent = '新しいバージョン（' + nextVersion + '）を利用できます。';
+            notice.hidden = false;
+            offeredVersion = nextVersion;
+          }
           timer = setTimeout(function () {
             if (showingCompletion) completion = '';
             clearNotice();
