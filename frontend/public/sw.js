@@ -1,5 +1,5 @@
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.3.10';
 
 const CACHE_PREFIX = 'shiftflow-';
 const APP_SHELL_CACHE = `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
@@ -115,7 +115,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 function cacheFirstAppShell(request) {
-  return caches.match(request).then((cachedResponse) => {
+  return caches.open(APP_SHELL_CACHE).then((cache) => cache.match(request)).then((cachedResponse) => {
     if (cachedResponse) {
       return cachedResponse;
     }

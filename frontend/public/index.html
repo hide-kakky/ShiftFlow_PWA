@@ -4297,10 +4297,12 @@
       }
       #app-update-notice {
         position: fixed;
-        top: calc(4.75rem + env(safe-area-inset-top, 0px));
-        inset-inline-end: max(0.75rem, env(safe-area-inset-right, 0px));
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         z-index: 1040;
-        max-width: calc(100vw - 1.5rem);
+        width: max-content;
+        max-width: min(30rem, calc(100vw - 2rem));
         padding: 0.65rem 0.75rem;
         display: flex;
         align-items: center;
@@ -11195,30 +11197,66 @@
         var label = byId('app-update-version');
         var button = byId('app-update-now');
         var nextVersion = '';
+        var offeredVersion = '';
+        var completion = '';
+        var deferredForEdit = false;
+        var timer = 0;
         var refreshQueued = false;
         var reloading = false;
         var lastForegroundCheck = Date.now();
+        var pendingKey = 'shiftflow:app-update:pending';
+        var seenKey = 'shiftflow:app-update:seen-version';
         if (!notice || !label || !button) return;
+        var pending = null;
+        var legacyReload = false;
+        try {
+          pending = JSON.parse(sessionStorage.getItem(pendingKey) || 'null');
+          legacyReload = APP_VERSION_LABEL === '2.3.10' && !pending &&
+            !sessionStorage.getItem(seenKey) &&
+            window.performance?.getEntriesByType('navigation')[0]?.type === 'reload';
+          sessionStorage.setItem(seenKey, APP_VERSION_LABEL);
+        } catch (_err) {}
 
-        function canOfferUpdate() {
-          if (!nextVersion || document.hidden || CURRENT_VIEW !== 'home') return false;
+        function canShowNotice() {
+          if (document.hidden || CURRENT_VIEW !== 'home') return false;
           if (document.body.classList.contains('bootstrapping')) return false;
           if (document.querySelector('.modal.show, dialog[open], .modal-open, .app-confirm-open')) return false;
           var focus = document.activeElement;
           return !focus || !focus.closest('input, textarea, select, [contenteditable="true"]');
         }
 
+        function clearNotice() {
+          if (timer) clearTimeout(timer);
+          timer = 0;
+          notice.hidden = true;
+        }
+
         function render() {
           refreshQueued = false;
-          notice.hidden = reloading || !canOfferUpdate();
-          if (!notice.hidden) {
-            var message = 'ShiftFlow ' + nextVersion + ' に更新できます';
-            if (label.textContent !== message) label.textContent = message;
+          if (reloading || !canShowNotice()) {
+            if (!notice.hidden) deferredForEdit = true;
+            clearNotice();
+            return;
           }
+          if (!completion && (!nextVersion || (offeredVersion === nextVersion && !deferredForEdit))) return;
+          deferredForEdit = false;
+          if (!notice.hidden) return;
+          var showingCompletion = !!completion;
+          button.hidden = showingCompletion;
+          button.disabled = false;
+          label.textContent = showingCompletion ? completion : 'ShiftFlow ' + nextVersion + ' に更新できます';
+          notice.hidden = false;
+          if (!showingCompletion) offeredVersion = nextVersion;
+          timer = setTimeout(function () {
+            if (showingCompletion) completion = '';
+            clearNotice();
+            if (!completion && (!nextVersion || offeredVersion === nextVersion)) observer.disconnect();
+            queueRender();
+          }, showingCompletion ? 3200 : 15000);
         }
 
         function queueRender() {
-          if (!nextVersion || refreshQueued) return;
+          if ((!nextVersion && !completion) || refreshQueued) return;
           refreshQueued = true;
           window.requestAnimationFrame(render);
         }
@@ -11232,18 +11270,34 @@
           if (event.source !== serviceWorker.controller || event.data?.type !== 'SHIFT_FLOW_APP_VERSION') return;
           var version = event.data.version;
           if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) return;
-          nextVersion = isNewerVersion(version, APP_VERSION_LABEL) ? version : '';
-          if (!nextVersion) { observer.disconnect(); notice.hidden = true; return; }
-          // 更新がある間だけ、オーバーレイの開閉や画面切替を監視する。
-          observer.observe(document.body, {
-            subtree: true, attributes: true, attributeFilter: ['class', 'open'],
-          });
+          // ページと稼働ワーカーが同じ新版を指すまで成功表示しない。
+          if (version === APP_VERSION_LABEL && (pending || legacyReload)) {
+            if (pending && Date.now() - pending.at < 300000 &&
+                isNewerVersion(APP_VERSION_LABEL, pending.from) &&
+                (APP_VERSION_LABEL === pending.to || isNewerVersion(APP_VERSION_LABEL, pending.to))) {
+              completion = '更新されました（' + APP_VERSION_LABEL + '）';
+            } else if (legacyReload) {
+              // 旧画面のボタンは更新の記録を残さないため、実際に読み込んだ版だけを伝える。
+              completion = '最新版 ' + APP_VERSION_LABEL + ' を読み込みました';
+            }
+            pending = null;
+            legacyReload = false;
+            try { sessionStorage.removeItem(pendingKey); } catch (_err) {}
+          }
+          var newVersion = isNewerVersion(version, APP_VERSION_LABEL) ? version : '';
+          if (nextVersion !== newVersion && !completion) clearNotice();
+          nextVersion = newVersion;
+          if (!nextVersion && !completion) { observer.disconnect(); clearNotice(); return; }
+          if (completion || offeredVersion !== nextVersion || deferredForEdit) {
+            observer.observe(document.body, {
+              subtree: true, attributes: true, attributeFilter: ['class', 'open'],
+            });
+          }
           queueRender();
         });
         document.addEventListener('visibilitychange', function () {
           if (!document.hidden) {
             requestActiveVersion();
-            // 長く開いた画面では、復帰時だけ静的なワーカーの更新を確認する。
             if (Date.now() - lastForegroundCheck >= 300000) {
               lastForegroundCheck = Date.now();
               serviceWorker.getRegistration().then(function (registration) {
@@ -11258,15 +11312,20 @@
         serviceWorker.addEventListener('controllerchange', function () {
           nextVersion = '';
           observer.disconnect();
-          notice.hidden = true;
+          clearNotice();
           requestActiveVersion();
         });
         serviceWorker.ready.then(requestActiveVersion);
         requestActiveVersion();
         button.addEventListener('click', function () {
-          if (reloading || !canOfferUpdate()) return;
+          if (reloading || notice.hidden || !nextVersion || !canShowNotice()) return;
           reloading = true;
           button.disabled = true;
+          try {
+            sessionStorage.setItem(pendingKey, JSON.stringify({
+              from: APP_VERSION_LABEL, to: nextVersion, at: Date.now(),
+            }));
+          } catch (_err) {}
           // 操作したウィンドウだけ再読み込みする。他タブの編集はそのまま残す。
           window.location.reload();
         });
