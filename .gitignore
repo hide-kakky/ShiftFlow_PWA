@@ -35,3 +35,9 @@ _worker.bundle
 # ログ・一時ファイル
 *.log
 !.keep
+
+# ローカルで生成するWeb Push鍵
+.local-web-push.json
+
+# 私有UI比較用の画像・生成物
+.ui-review/

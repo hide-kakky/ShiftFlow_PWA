@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+const source = await readFile(new URL('../frontend/public/index.html', import.meta.url), 'utf8');
+const dark = source.match(/\/\* ===== Dark theme overrides ===== \*\/\s*:root\[data-theme='dark'\] \{([\s\S]*?)\n      \}/)[1];
+function color(name) { return dark.match(new RegExp(`--${name}: (#[0-9a-f]{6});`))[1]; }
+function luminance(hex) {
+ const rgb = hex.slice(1).match(/../g).map(x => parseInt(x,16)/255).map(x=>x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4);
+ return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+}
+function contrast(a,b) { const x=luminance(a), y=luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); }
+test('ダークの本文・補助文・文字アクセントは基本背景で4.5:1以上',()=>{
+ for(const ink of ['text-900','text-700','muted','primary-ink','primary-ink-hover'])
+  for(const bg of ['surface','card','input-bg'])
+   assert.ok(contrast(color(ink),color(bg))>=4.5,`${ink}/${bg}`);
+});
+test('歓迎ブロックを除去しても新規作成のFABを残す',()=>{
+ assert.doesNotMatch(source, /<section class="home-hero"/);
+ assert.match(source, /id="fab/);
+ assert.match(source, /id="home-today-tasks"/);
+ assert.match(source, /id="home-unread"/);
+});
+test('広幅のshell上限を解除しhomeの列が縮小可能',()=>{
+ assert.doesNotMatch(source,/max-width: (1600|1760)px/);
+ assert.match(source,/grid-template-columns: 220px minmax\(0, 1fr\)/);
+ assert.match(source,/@media \(min-width: 1600px\)[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+test('部品ライブラリの文字色もダークテーマへ追従',()=>{
+ assert.match(source,/--bs-body-color: var\(--text-900\)/);
+ assert.match(source,/:root\[data-theme='dark'\] \.form-text/);
+});

@@ -241,7 +241,9 @@ export async function verifyGoogleIdToken(env, config, idToken) {
     try {
       return await verifyWithJwks(idToken, googleClientId);
     } catch (err) {
-      console.warn('[ShiftFlow][Auth] JWKS verification failed; falling back to tokeninfo', err);
+      console.warn('[ShiftFlow][Auth] JWKS verification failed; falling back to tokeninfo', {
+        reasonCode: 'jwks_verification_failed',
+      });
       return verifyViaTokenInfo(idToken, googleClientId);
     }
   }

@@ -25,7 +25,7 @@ test('メッセージカードはコメント件数と新着コメントを表�
 });
 
 test('未読一覧とホームは既読後の新着コメントも対象にする', () => {
-  const filterBlock = sliceBetween('function filterMessages', 'function getMessagesCacheKey');
+  const filterBlock = sliceBetween('function filterMessages', 'function loadMessagesFromCache');
   const homeBlock = sliceBetween('function renderHomeView', 'function collectActiveTaskRows');
   assert.match(filterBlock, /!x\.isRead \|\| x\.hasNewComment/);
   assert.match(homeBlock, /!x\.isRead \|\| x\.hasNewComment/);

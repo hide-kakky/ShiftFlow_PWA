@@ -1,0 +1,159 @@
+/* 承認されたカードUI。既存の操作と状態表現を維持する。 */
+html, body { scroll-behavior: auto !important; }
+.message-list-more { display: flex; justify-content: center; padding: 12px 0; }
+.message-list-more[hidden] { display: none; }
+/* 動く親と内側で背景ぼかしを重ねない。 */
+header.navbar { -webkit-backdrop-filter: none; backdrop-filter: none; }
+header.navbar > .container-xl, .footer-nav .container-fluid { -webkit-backdrop-filter: saturate(165%) blur(12px); backdrop-filter: saturate(165%) blur(12px); }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  header.navbar > .container-xl, .footer-nav .container-fluid { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+:root {
+  --compact-accent: #0879dc;
+  --compact-rule: #9ebbe3;
+  --compact-label: #deebfc;
+  --compact-left: #a3bfdf;
+  --compact-shadow: 0 3px 12px rgba(74, 109, 169, .055);
+}
+:root[data-theme='dark'] {
+  --compact-accent: #a8c7ff;
+  --compact-rule: #465f8b;
+  --compact-label: #1d3154;
+  --compact-left: #5577a8;
+  --compact-shadow: 0 3px 14px rgba(0, 0, 0, .15);
+}
+.card.app-card:hover, .card.app-card:focus-within { transform: none; }
+.card.app-card:focus-within { outline: 2px solid var(--compact-accent); outline-offset: 2px; }
+.card.app-card.msg-card,
+.card.app-card.task-card,
+:root[data-theme='dark'] .card.app-card.msg-card,
+:root[data-theme='dark'] .card.app-card.task-card {
+  border: 1px solid var(--card-border);
+  border-left: 5px solid var(--compact-left);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--compact-shadow);
+  margin-bottom: 10px !important;
+  color: var(--text-900);
+  overflow: hidden;
+}
+.card.app-card.msg-card.unread::after,
+.card.app-card.task-card.task-card-attention::after { display: none; }
+.card.app-card.msg-card .app-card-body { padding: 8px 14px 10px; display: block; }
+.msg-card .msg-link, .msg-card .msg-content { display: block; min-width: 0; width: 100%; }
+.msg-card .msg-lines { gap: 3px; }
+.msg-card .msg-title-line { flex-wrap: nowrap; gap: 10px; padding-right: 30px; min-height: 32px; }
+.msg-card .msg-title { color: var(--text-900); font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; min-width: 0; }
+.msg-card .msg-title-thumb, .msg-card .msg-avatar, .msg-card .msg-avatar--lg { width: 32px; height: 32px; flex-shrink: 0; }
+.msg-card .msg-avatar img { object-fit: cover; }
+.msg-card .msg-avatar--initials { font-size: .78rem; letter-spacing: 0; }
+.msg-card .msg-preview { color: var(--text-700); font-size: .92rem; line-height: 1.4; overflow-wrap: anywhere; }
+.msg-card .msg-meta-text { flex-direction: row; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.msg-card .msg-meta-author, .msg-card .msg-meta-time { font-size: .8rem; line-height: 1.35; }
+.msg-card .msg-meta-time::before { content: '·'; padding-right: 6px; }
+.msg-card .msg-meta-author { font-weight: 700; }
+.msg-card .msg-actions { top: 1px; right: 1px; bottom: auto; }
+.msg-card .msg-actions .btn.msg-action-btn--icon { width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: 12px; }
+.msg-card .msg-actions .btn:hover { background: var(--tab-hover-bg); }
+.msg-card .pin-toggle-icon { font-size: 21px; color: var(--muted); }
+.msg-card .pin-toggle-icon--active { color: var(--compact-accent); }
+.msg-card .msg-state-badge, .msg-card .msg-comment-badge { font-size: .67rem; padding: 1px 5px; line-height: 1.4; margin: 0; }
+.msg-card .msg-state-badge { color: var(--compact-accent); background: var(--compact-label); }
+.msg-card .msg-signals { display: inline-flex; align-items: center; gap: 4px; }
+.message-mode { position: fixed; z-index: 1025; isolation: isolate; display: grid; grid-template-columns: 1fr 1fr; left: auto; right: calc(90px + var(--safe-right)); bottom: calc(var(--fab-rest-bottom) + 15px); width: min(260px, calc(100vw - 104px - var(--safe-left) - var(--safe-right))); padding: 2px; margin: 0; transform: translateY(min(0px, calc(var(--fab-rest-bottom) - var(--footer-h) - var(--footer-bottom-inset) - 14px + var(--message-mode-follow-offset, 0px)))); will-change: transform; border: 1px solid var(--card-border); border-radius: 999px; background: var(--glass-surface); box-shadow: 0 4px 18px rgba(74, 109, 169, .12); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); min-height: 32px; touch-action: pan-y; }
+.message-mode__thumb { position: absolute; z-index: -1; inset: 4px auto 4px 4px; width: calc(50% - 4px); border-radius: 999px; background: linear-gradient(180deg, #238de6, #0874d5); box-shadow: 0 2px 5px rgba(8, 116, 213, .13); transition: transform 180ms ease; }
+.message-mode--unread .message-mode__thumb { transform: translateX(100%); }
+.message-mode button { min-height: 28px; padding: 3px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: .83rem; line-height: 1.4; font-weight: 700; }
+.message-mode button[aria-pressed='true'] { color: white; }
+.message-mode button:focus-visible { outline: 2px solid var(--compact-accent); outline-offset: 3px; }
+.message-divider { display: flex; align-items: center; gap: 8px; margin: 14px 0 10px; color: var(--primary-ink); font-size: .8rem; font-weight: 500; line-height: 1.5; }
+.message-divider::after { content: ''; height: 1px; flex: 1; background: var(--compact-rule); }
+.message-divider__label { border-radius: 999px; padding: 2px 8px; background: var(--compact-label); white-space: nowrap; }
+.message-divider--pin { color: var(--compact-accent); margin-top: 8px; }
+.message-divider--pin .material-icons { font-size: 20px; }
+/* ホームは見出しとカード面の一層で構成する。 */
+.shift-home-card .shift-home-title { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.home-panel-grid, .standalone-condensed .home-panel-grid { gap: 22px; }
+.home-panel { background: transparent; border: 0; box-shadow: none; padding: 0; border-radius: 0; }
+.home-panel__head { margin-bottom: 10px; gap: 8px; }
+.home-panel__head h3 { font-size: 1.1rem; margin: 0; }
+.home-panel__head .link-soft { font-size: .82rem; white-space: nowrap; }
+#home-today-tasks, #home-shift-messages, #home-unread,
+.standalone-condensed #home-today-tasks, .standalone-condensed #home-unread { margin-top: 0; margin-bottom: 0; }
+.card.app-card.task-card .app-card-body { padding: 12px 14px; gap: 6px; }
+.task-card .task-info-wrap { gap: 4px; }
+.task-card .task-title-line strong { font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.task-card .task-meta-line { display: inline-flex; margin-right: 6px; margin-bottom: 2px; }
+.task-card .badge-soft { font-size: .72rem; padding: 2px 7px; }
+.task-card .badge-soft .material-icons, .task-card .badge-soft .material-icons-outlined { font-size: 14px; }
+.task-status-label { display: inline-flex; margin-right: 6px; font-size: .72rem; font-weight: 700; color: var(--primary-ink); }
+.task-card .task-assignee-line, .task-card .app-card-meta { font-size: .83rem; line-height: 1.45; }
+.card.app-card.task-card.task-card-overdue-pending { border-left-color: #dc4d45; }
+.card.app-card.task-card.task-card-overdue-inprogress { border-left-color: #d78b2e; }
+.card.app-card.task-card.task-card-completed { border-left-color: #a2adbd; }
+/* 設定の余白を詰め、通知設定の保存操作は分けて維持する。 */
+.settings-layout { gap: 14px; }
+.settings-layout .settings-block { padding: 18px; border-radius: 18px; box-shadow: var(--compact-shadow); }
+.settings-block-header { gap: 10px; margin-bottom: 14px; }
+.settings-block-header h5 { font-size: 1.05rem; }
+.settings-block-header p { font-size: .82rem; }
+.settings-block-header .settings-block-icon { width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0; }
+.settings-profile-body { gap: 16px; }
+.settings-avatar-shell { gap: 8px; }
+.settings-avatar { width: 72px; height: 72px; border-radius: 22px; box-shadow: none; }
+.settings-upload-note { padding: 0; background: transparent; border-radius: 0; margin-top: 6px; color: var(--muted); font-size: .78rem; }
+:root[data-theme='dark'] .settings-upload-note { background: transparent; color: var(--muted); }
+.settings-avatar-shell .settings-upload-note { justify-content: center; }
+.settings-theme-grid { grid-template-columns: 1fr; gap: 6px; }
+.settings-theme-guide p { margin: 0 !important; font-size: .78rem; }
+.theme-status { margin-top: 8px; padding: 4px 9px; font-size: .78rem; }
+body[data-view='settings'] .fab { display: none; }
+.modal-modern .modal-body { padding: 16px; }
+.modal-modern .modal-body .form-section { padding: 14px; border-radius: 14px; box-shadow: none; margin-bottom: 12px; }
+.modal-modern .modal-body .msg-meta-text { gap: 3px; }
+@media (max-width: 767.98px) {
+  #view-messages { padding-top: 0; }
+  .home-panel-grid, .standalone-condensed .home-panel-grid { gap: 20px; }
+  .settings-layout .settings-block { padding: 16px; }
+  .settings-profile-body { grid-template-columns: 1fr; }
+  .settings-avatar-shell { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 6px 12px; }
+  .settings-avatar { grid-column: 1; grid-row: 1 / 4; width: 64px; height: 64px; }
+  .settings-avatar-shell .btn { grid-column: 2; min-height: 44px; }
+  .settings-avatar-shell .settings-image-meta, .settings-avatar-shell .settings-upload-note { grid-column: 2; justify-content: flex-start; margin: 0; }
+  .settings-layout .form-control, .settings-layout .form-select { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .message-mode__thumb { transition: none; } }
+.task-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.task-badges .task-meta-line, .task-badges .task-status-label { margin: 0; }
+:root[data-theme='dark'] .home-panel { background: transparent; border: 0; box-shadow: none; }
+/* 既存の状態セレクターに合わせ、背景と影を統一する。 */
+.card.app-card.msg-card:is(.unread, .msg-card--pinned),
+:root[data-theme='dark'] .card.app-card.msg-card:is(.unread, .msg-card--pinned),
+.card.app-card.task-card:is(.task-card-attention, .task-card-completed, .task-card-overdue-pending, .task-card-overdue-inprogress),
+:root[data-theme='dark'] .card.app-card.task-card:is(.task-card-attention, .task-card-completed, .task-card-overdue-pending, .task-card-overdue-inprogress) {
+  background: var(--card);
+  box-shadow: var(--compact-shadow);
+}
+.card.app-card.msg-card:is(.unread, .msg-card--pinned),
+:root[data-theme='dark'] .card.app-card.msg-card:is(.unread, .msg-card--pinned) { border-left-color: var(--compact-left); }
+:root[data-theme='dark'] .card.app-card:hover, :root[data-theme='dark'] .card.app-card:focus-within { transform: none; }
+@media (max-width: 767.98px) { .page-body { margin-top: 4px; } }
+.msg-card .msg-content { padding-right: 0; }
+:root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-pending { border-left-color: #ef8279; }
+:root[data-theme='dark'] .card.app-card.task-card.task-card-overdue-inprogress { border-left-color: #efb45d; }
+:root[data-theme='dark'] .card.app-card.task-card.task-card-completed { border-left-color: #8493ad; }
+/* 下部に固定し、最後のカードもバーより上へスクロールできる余白を確保する。 */
+.message-mode__thumb { inset: 2px auto 2px 2px; width: calc(50% - 2px); }
+#view-messages { touch-action: pan-y; min-height: calc(100dvh - var(--header-h) - var(--footer-h) - 24px); }
+body[data-view='messages'] .page-body { padding-bottom: calc(var(--footer-h) + var(--footer-bottom-inset) + 90px); }
+body.fab-menu-open .message-mode { visibility: hidden; pointer-events: none; }
+@media (min-width: 768px) {
+  .message-mode { right: 100px; bottom: 40px; transform: none; }
+  body[data-view='messages'] .page-body { padding-bottom: 112px; }
+}
+@media (max-width: 767.98px) {
+  body[data-view='messages'] .page-body { margin-top: 0; padding-top: 0; }
+}
+.card.app-card.msg-card .app-card-body { padding-top: 6px; padding-bottom: 8px; }
+.msg-card .msg-preview { font-size: .88rem; line-height: 1.35; }
+.msg-card .msg-actions .btn.msg-action-btn--icon { box-shadow: none; }

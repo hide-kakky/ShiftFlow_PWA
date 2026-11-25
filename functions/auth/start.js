@@ -1,5 +1,8 @@
 import { loadConfig } from '../api/config.js';
 import { createPkcePair, persistAuthInit } from '../utils/session.js';
+import { recordAuthEvent } from '../utils/auditEvents.js';
+import { recordAuthInfrastructureFailure } from '../utils/authDiagnostics.js';
+import { checkAuthRateLimit } from '../utils/authRateLimit.js';
 
 const CANONICAL_DOMAIN = 'shiftflow.pages.dev';
 const CALLBACK_URL = `https://${CANONICAL_DOMAIN}/auth/callback`;
@@ -11,7 +14,7 @@ function resolveRequestId(request) {
     request.headers.get('x-shiftflow-request-id') ||
     '';
   const trimmed = header.trim();
-  if (trimmed) return trimmed;
+  if (trimmed && trimmed.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(trimmed)) return trimmed;
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -67,16 +70,72 @@ function cookie(name, value, { maxAge } = {}) {
   return parts.join('; ');
 }
 
+async function recordStartFailure(env, requestId, reasonCode, authAttemptId) {
+  await recordAuthEvent(env, {
+    eventType: 'authentication.failed',
+    outcome: 'failure',
+    reasonCode,
+    requestId,
+    route: '/auth/start',
+    source: 'oauth_start',
+    authAttemptId,
+  });
+  await recordAuthInfrastructureFailure(env, {
+    event: 'auth_start_failed',
+    reasonCode,
+    requestId,
+    route: '/auth/start',
+    phase: 'oauth_start',
+    httpStatus: 503,
+  });
+}
+
 export async function onRequest({ request, env }) {
   const requestUrl = new URL(request.url);
-  const config = loadConfig(env);
-  const clientId = config.googleClientId || env?.GOOGLE_OAUTH_CLIENT_ID || '';
   const requestId = resolveRequestId(request);
-  if (!clientId) {
+  const authAttemptId = crypto.randomUUID();
+  const rateLimit = await checkAuthRateLimit(env, request, {
+    route: 'auth_start',
+    limit: 20,
+    windowSeconds: 60,
+  });
+  if (!rateLimit.allowed) {
+    console.warn('[auth/start] request rejected', {
+      rid: requestId,
+      reasonCode: rateLimit.reason,
+    });
+    const errorCode = rateLimit.reason === 'rate_limited' ? 'rate' : 'server';
+    const headers = new Headers({ Location: buildSigninErrorPath(errorCode, requestId) });
+    if (rateLimit.retryAfterSeconds) {
+      headers.set('Retry-After', String(rateLimit.retryAfterSeconds));
+    }
+    return new Response(null, { status: 302, headers });
+  }
+  let config;
+  try {
+    config = loadConfig(env);
+  } catch (_error) {
+    await recordStartFailure(env, requestId, 'oauth_configuration_load_failed', authAttemptId);
     const headers = new Headers({ Location: buildSigninErrorPath('config', requestId) });
     return new Response(null, { status: 302, headers });
   }
-  const { verifier, challenge } = await createPkcePair();
+  const clientId = config.googleClientId || env?.GOOGLE_OAUTH_CLIENT_ID || '';
+  if (!clientId) {
+    await recordStartFailure(env, requestId, 'oauth_client_configuration_missing', authAttemptId);
+    const headers = new Headers({ Location: buildSigninErrorPath('config', requestId) });
+    return new Response(null, { status: 302, headers });
+  }
+  let verifier;
+  let challenge;
+  try {
+    const pair = await createPkcePair();
+    verifier = pair.verifier;
+    challenge = pair.challenge;
+  } catch (_error) {
+    await recordStartFailure(env, requestId, 'oauth_pkce_generation_failed', authAttemptId);
+    const headers = new Headers({ Location: buildSigninErrorPath('server', requestId) });
+    return new Response(null, { status: 302, headers });
+  }
   const state = crypto.randomUUID().replace(/-/g, '');
   let returnToInput =
     requestUrl.searchParams.get('returnTo') || requestUrl.searchParams.get('return_to') || '';
@@ -98,12 +157,14 @@ export async function onRequest({ request, env }) {
       issuedAt: Date.now(),
       returnTo,
       requestId,
+      authAttemptId,
     });
   } catch (err) {
     console.error('[auth/start] persistAuthInit failed', {
       rid: requestId,
-      message: err && err.message ? err.message : String(err),
+      reasonCode: 'oauth_auth_init_persist_failed',
     });
+    await recordStartFailure(env, requestId, 'oauth_auth_init_persist_failed', authAttemptId);
     const headers = new Headers({ Location: buildSigninErrorPath('server', requestId) });
     return new Response(null, { status: 302, headers });
   }
@@ -146,7 +207,7 @@ export async function onRequest({ request, env }) {
     rid: requestId,
     stateLength: state.length,
     verifierLength: verifier.length,
-    returnTo,
+    returnPathLength: returnTo.length,
   });
 
   return new Response(null, { status: 302, headers });

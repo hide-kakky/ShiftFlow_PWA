@@ -75,6 +75,8 @@ export class SqliteD1 {
   constructor() {
     this.database = new DatabaseSync(':memory:');
     this.database.exec('PRAGMA foreign_keys = ON;');
+    this.batchTail = Promise.resolve();
+    this.sessionConsistencyModes = [];
   }
 
   exec(sql) {
@@ -85,22 +87,32 @@ export class SqliteD1 {
     return new SqliteD1Statement(this.database.prepare(sql));
   }
 
+  withSession(firstQueryConsistency) {
+    this.sessionConsistencyModes.push(firstQueryConsistency);
+    return this;
+  }
+
   async batch(statements) {
-    this.database.exec('BEGIN;');
-    try {
-      const results = [];
-      for (const statement of statements) {
-        if (!statement || typeof statement.run !== 'function') {
-          throw new TypeError('batch() には bind 済みの D1 statement が必要です。');
+    const runBatch = async () => {
+      this.database.exec('BEGIN;');
+      try {
+        const results = [];
+        for (const statement of statements) {
+          if (!statement || typeof statement.run !== 'function') {
+            throw new TypeError('batch() には bind 済みの D1 statement が必要です。');
+          }
+          results.push(await statement.run());
         }
-        results.push(await statement.run());
+        this.database.exec('COMMIT;');
+        return results;
+      } catch (error) {
+        this.database.exec('ROLLBACK;');
+        throw error;
       }
-      this.database.exec('COMMIT;');
-      return results;
-    } catch (error) {
-      this.database.exec('ROLLBACK;');
-      throw error;
-    }
+    };
+    const queued = this.batchTail.then(runBatch, runBatch);
+    this.batchTail = queued.catch(() => undefined);
+    return queued;
   }
 
   get(sql, ...values) {

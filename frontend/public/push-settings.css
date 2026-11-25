@@ -1,0 +1,12 @@
+#push-settings .push-actions { display:flex; flex-wrap:wrap; gap:.6rem; margin:1rem 0; }
+#push-settings button, #push-settings summary, #push-settings .push-option { min-height:44px; }
+#push-settings .push-folder { border:1px solid var(--glass-border); border-radius:12px; margin:.6rem 0; overflow:hidden; }
+#push-settings summary { padding:.7rem 1rem; cursor:pointer; font-weight:600; overflow-wrap:anywhere; }
+#push-settings fieldset { min-width:0; padding:.5rem 1rem; }
+#push-settings .push-option { display:flex; align-items:center; gap:.75rem; padding:.45rem 0; cursor:pointer; }
+#push-settings input[type=checkbox] { flex:0 0 auto; width:1.25rem; height:1.25rem; accent-color:var(--bs-primary,#517cb2); }
+#push-settings input:focus-visible, #push-settings summary:focus-visible { outline:3px solid currentColor; outline-offset:3px; }
+#push-status { margin:.5rem 0; font-weight:600; }
+#push-save-note { margin-top:.75rem; overflow-wrap:anywhere; }
+#push-settings .push-note { font-size:.9rem; line-height:1.6; }
+#push-settings .push-unfiled { margin-top:1rem; }

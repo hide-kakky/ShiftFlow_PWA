@@ -13,6 +13,7 @@ import {
   PROFILE_IMAGE_MAX_BYTES,
   MESSAGE_ATTACHMENT_MAX_BYTES,
   MESSAGE_ATTACHMENT_LIMIT,
+  API_JSON_BODY_MAX_BYTES,
   ALLOWED_IMAGE_MIME_TYPES,
   MIME_EXTENSION_MAP,
   CORS_ALLOWED_HEADERS,
@@ -20,8 +21,12 @@ import {
   REDIRECT_STATUSES,
   SENSITIVE_META_KEYWORDS,
   ACTIVE_ACCESS_CACHE_TTL_MS,
-  DIAGNOSTIC_ROUTE,
 } from './constants.js';
+import { recordAuthEvent } from '../utils/auditEvents.js';
+import { handleNotificationApi, buildPushEventStatement, drainNotifications, renewNotificationSession } from '../utils/notifications.js';
+import { isPushConfigured, sha256 } from '../utils/webPush.js';
+import { computeAppBadge } from '../utils/appBadge.js';
+import { captureDiagnostics, sanitizeDiagnosticMeta } from '../utils/diagnostics.js';
 
 const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com']);
 const ACCESS_CACHE = new Map();
@@ -41,6 +46,138 @@ const SUPPORTED_TIMEZONES = [
   'America/Los_Angeles',
   'Europe/London',
 ];
+const API_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const API_IDEMPOTENCY_PRUNE_LIMIT = 100;
+const STORAGE_UPLOAD_CLEANUP_GRACE_MS = 15 * 60 * 1000;
+const STORAGE_CLEANUP_LEASE_MS = 60 * 1000;
+const STAGED_ATTACHMENT_TTL_MS = 30 * 60 * 1000;
+const STAGED_ATTACHMENT_ROUTES = new Set([
+  'stageAttachment',
+  'stageMessageAttachment',
+  'stageProfileAttachment',
+]);
+const STAGED_UPLOAD_CONCURRENCY_LIMIT = 2;
+let activeStagedUploadCount = 0;
+
+function tryAcquireStagedUploadSlot() {
+  if (activeStagedUploadCount >= STAGED_UPLOAD_CONCURRENCY_LIMIT) return null;
+  activeStagedUploadCount += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeStagedUploadCount = Math.max(0, activeStagedUploadCount - 1);
+  };
+}
+
+function createServiceUnavailableError(code, message) {
+  const normalizedCode = String(code || 'service_unavailable');
+  const error = new Error(message || normalizedCode);
+  error.code = normalizedCode;
+  error.httpStatus = 503;
+  error.isShiftFlowServiceError = true;
+  return error;
+}
+const LEGACY_READ_ONLY_POST_ROUTES = new Set([
+  'getBootstrapData',
+  'getHomeContent',
+  'listMyTasks',
+  'listCreatedTasks',
+  'listAllTasks',
+  'getMessages',
+  'getMessageById',
+  'getTaskById',
+  'getUserSettings',
+  'listActiveUsers',
+  'listActiveFolders',
+  'adminListUsers',
+  'adminListOrganizations',
+  'adminGetOrganization',
+  'getAuditLogs',
+]);
+const LEGACY_MUTATION_ROUTES = new Set([
+  'saveNotificationSettings',
+  'registerPushSubscription',
+  'removePushSubscription',
+  'testPushNotification',
+  'addNewComment',
+  'addNewMessage',
+  'addNewTask',
+  'adminRetryStorageCleanup',
+  'adminUpdateOrganization',
+  'adminUpdateUser',
+  'completeTask',
+  'deleteMessageById',
+  'deleteTaskById',
+  'markMemoAsRead',
+  'markMemosReadBulk',
+  'saveUserSettings',
+  'stageAttachment',
+  'stageMessageAttachment',
+  'stageProfileAttachment',
+  'toggleMemoRead',
+  'updateTask',
+]);
+
+function isD1MutationRequest(route, method) {
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  const normalizedRoute = String(route || '');
+  if (LEGACY_MUTATION_ROUTES.has(normalizedRoute)) return true;
+  if (LEGACY_READ_ONLY_POST_ROUTES.has(normalizedRoute)) return false;
+  if (normalizedRoute === 'folders') return normalizedMethod === 'POST';
+  if (normalizedRoute.startsWith('folders/')) {
+    return normalizedMethod === 'PATCH' || normalizedMethod === 'DELETE';
+  }
+  if (normalizedRoute === 'templates') return normalizedMethod === 'POST';
+  if (/^messages\/[^/]+\/pin$/.test(normalizedRoute)) return normalizedMethod === 'POST';
+  return false;
+}
+
+function isAllowedMutationMethod(route, method) {
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  const normalizedRoute = String(route || '');
+  if (LEGACY_MUTATION_ROUTES.has(normalizedRoute)) return normalizedMethod === 'POST';
+  if (normalizedRoute === 'folders' || normalizedRoute === 'templates') {
+    return normalizedMethod === 'POST';
+  }
+  if (normalizedRoute.startsWith('folders/')) {
+    return normalizedMethod === 'PATCH' || normalizedMethod === 'DELETE';
+  }
+  if (/^messages\/[^/]+\/pin$/.test(normalizedRoute)) return normalizedMethod === 'POST';
+  return false;
+}
+
+function canBindMutationForRole(route, role) {
+  const normalizedRoute = String(route || '');
+  if (
+    normalizedRoute === 'adminUpdateOrganization' ||
+    normalizedRoute === 'folders' ||
+    normalizedRoute === 'templates' ||
+    normalizedRoute.startsWith('folders/')
+  ) {
+    return isManagerRole(role);
+  }
+  if (/^messages\/[^/]+\/pin$/.test(normalizedRoute)) {
+    return new Set(['admin', 'manager', 'member']).has(String(role || '').toLowerCase());
+  }
+  return true;
+}
+
+const REPLAY_SAFE_MUTATION_ROUTES = new Set([
+  'addNewComment',
+  'addNewMessage',
+  'addNewTask',
+  'folders',
+  'saveUserSettings',
+  'stageAttachment',
+  'stageMessageAttachment',
+  'stageProfileAttachment',
+  'templates',
+]);
+
+function canReplayMutationRoute(route) {
+  return REPLAY_SAFE_MUTATION_ROUTES.has(String(route || ''));
+}
 
 function sanitizeLogMeta(meta) {
   if (!meta || typeof meta !== 'object') {
@@ -191,7 +328,12 @@ function errorResponse(status, origin, requestId, where, code, reason, extraPayl
   return jsonResponse(status, payload, origin, requestId, extraHeaders);
 }
 
-function createRequestId() {
+function createRequestId(request) {
+  const received = request?.headers?.get('X-ShiftFlow-Request-Id') || '';
+  const normalized = String(received).trim();
+  if (normalized && normalized.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(normalized)) {
+    return normalized;
+  }
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -285,6 +427,300 @@ function generateTaskId() {
 
 function generateCommentId() {
   return createUlid(Date.now());
+}
+
+async function createRequestScopedId(options) {
+  const kind = String(options?.kind || '').trim();
+  const orgId = normalizeIdValue(options?.orgId);
+  const actorUserId = normalizeIdValue(options?.actorUserId);
+  const requestId = String(options?.requestId || '').trim();
+  const resourceScope = String(options?.resourceScope || '').trim();
+  if (!kind || !orgId || !actorUserId || !requestId) {
+    const error = new Error('Request-scoped IDs require kind, org, actor, and request ID.');
+    error.code = 'request_scope_invalid';
+    throw error;
+  }
+  const material = [kind, orgId, actorUserId, requestId, resourceScope]
+    .map((value) => `${value.length}:${value}`)
+    .join('|');
+  if (
+    typeof TextEncoder !== 'undefined' &&
+    typeof crypto !== 'undefined' &&
+    crypto.subtle
+  ) {
+    const bytes = new TextEncoder().encode(material);
+    return (await computeSha256Hex(bytes.buffer)).slice(0, 32);
+  }
+  // WebCryptoを提供しない限定テスト環境向けの決定的fallback。
+  const seeds = [2166136261, 2246822519, 3266489917, 668265263];
+  return seeds
+    .map((seed) => {
+      let hash = seed >>> 0;
+      for (let index = 0; index < material.length; index += 1) {
+        hash ^= material.charCodeAt(index);
+        hash = Math.imul(hash, 16777619) >>> 0;
+      }
+      return hash.toString(16).padStart(8, '0');
+    })
+    .join('');
+}
+
+const IDEMPOTENCY_INLINE_STRING_MAX_CHARS = 64 * 1024;
+const IDEMPOTENCY_PAYLOAD_MAX_DEPTH = 64;
+const IDEMPOTENCY_PAYLOAD_MAX_NODES = 10_000;
+const IDEMPOTENCY_BINARY_FIELD_NAMES = new Set(['dataUri', 'imageData']);
+
+function createIdempotencyPayloadComplexityError() {
+  const error = new Error('Request structure is too complex for idempotency processing.');
+  error.code = 'request_structure_too_complex';
+  return error;
+}
+
+async function createIdempotencyStringNode(value, fieldName = '') {
+  const shouldDigest =
+    IDEMPOTENCY_BINARY_FIELD_NAMES.has(fieldName) ||
+    value.length > IDEMPOTENCY_INLINE_STRING_MAX_CHARS ||
+    value.startsWith('data:');
+  if (!shouldDigest) return ['string', value];
+  // 添付は最大10MB×5件。巨大文字列をcanonical JSONへ複製せず、1件ずつdigestして解放する。
+  const bytes = new TextEncoder().encode(value);
+  const sha256 = await computeSha256Hex(bytes.buffer);
+  return ['string-sha256', value.length, sha256];
+}
+
+async function buildIdempotencyPayloadManifestNode(value, fieldName, state, depth) {
+  if (depth > IDEMPOTENCY_PAYLOAD_MAX_DEPTH) {
+    throw createIdempotencyPayloadComplexityError();
+  }
+  state.nodes += 1;
+  if (state.nodes > IDEMPOTENCY_PAYLOAD_MAX_NODES) {
+    throw createIdempotencyPayloadComplexityError();
+  }
+  if (Array.isArray(value)) {
+    if (state.nodes + value.length > IDEMPOTENCY_PAYLOAD_MAX_NODES) {
+      throw createIdempotencyPayloadComplexityError();
+    }
+    const items = [];
+    for (const item of value) {
+      items.push(await buildIdempotencyPayloadManifestNode(item, '', state, depth + 1));
+    }
+    return ['array', items];
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (state.nodes + keys.length > IDEMPOTENCY_PAYLOAD_MAX_NODES) {
+      throw createIdempotencyPayloadComplexityError();
+    }
+    const entries = [];
+    for (const key of keys.sort()) {
+      if (value[key] !== undefined) {
+        entries.push([
+          key,
+          await buildIdempotencyPayloadManifestNode(value[key], key, state, depth + 1),
+        ]);
+      }
+    }
+    return ['object', entries];
+  }
+  if (typeof value === 'string') {
+    return createIdempotencyStringNode(value, fieldName);
+  }
+  if (value === null) return ['null'];
+  if (typeof value === 'number') return ['number', value];
+  if (typeof value === 'boolean') return ['boolean', value];
+  return ['other', String(value)];
+}
+
+export async function buildIdempotencyPayloadManifest(value, fieldName = '') {
+  return buildIdempotencyPayloadManifestNode(value, fieldName, { nodes: 0 }, 0);
+}
+
+export async function computeCanonicalPayloadSha256(payload) {
+  const manifest = await buildIdempotencyPayloadManifest(payload ?? {});
+  const canonicalPayload = JSON.stringify(manifest);
+  const bytes = new TextEncoder().encode(canonicalPayload);
+  return computeSha256Hex(bytes.buffer);
+}
+
+async function bindApiIdempotencyKey(db, options) {
+  const orgId = normalizeIdValue(options?.orgId);
+  const actorUserId = normalizeIdValue(options?.actorUserId);
+  const requestId = String(options?.requestId || '').trim();
+  const route = String(options?.route || '').trim();
+  if (!db || !orgId || !actorUserId || !requestId || !route) {
+    const error = new Error('Idempotency scope requires DB, org, actor, request ID, and route.');
+    error.code = 'idempotency_scope_invalid';
+    throw error;
+  }
+  const payloadSha256 = await computeCanonicalPayloadSha256(options?.payload ?? {});
+  const wallClockNow = Date.now();
+  const previousExact = await db
+    .prepare(
+      `
+      SELECT created_at_ms,
+             expires_at_ms
+        FROM api_idempotency_keys
+       WHERE org_id = ?1
+         AND actor_user_id = ?2
+         AND request_id = ?3
+         AND route = ?4
+       LIMIT 1
+    `
+    )
+    .bind(orgId, actorUserId, requestId, route)
+    .first();
+  const previousCreatedAt = Number(previousExact?.created_at_ms || 0);
+  const previousExpired = Number(previousExact?.expires_at_ms || 0) <= wallClockNow;
+  // TTL切れ直後の再利用が同じmillisecondでも、監査世代を必ず前世代より進める。
+  const now =
+    previousExact && previousExpired
+      ? Math.max(wallClockNow, previousCreatedAt + 1)
+      : wallClockNow;
+  const expiresAtMs = now + API_IDEMPOTENCY_TTL_MS;
+  const exactPruneResult = await db
+    .prepare(
+      `
+      DELETE FROM api_idempotency_keys
+       WHERE org_id = ?1
+         AND actor_user_id = ?2
+         AND request_id = ?3
+         AND route = ?4
+         AND expires_at_ms <= ?5
+    `
+    )
+    .bind(orgId, actorUserId, requestId, route, wallClockNow)
+    .run();
+  const remainingPruneLimit = Math.max(
+    0,
+    API_IDEMPOTENCY_PRUNE_LIMIT - Number(exactPruneResult?.meta?.changes || 0)
+  );
+  if (remainingPruneLimit > 0) {
+    await db
+      .prepare(
+        `
+        DELETE FROM api_idempotency_keys
+         WHERE idempotency_key_id IN (
+           SELECT idempotency_key_id
+             FROM api_idempotency_keys
+            WHERE expires_at_ms <= ?1
+            ORDER BY expires_at_ms ASC
+            LIMIT ?2
+         )
+      `
+      )
+      .bind(wallClockNow, remainingPruneLimit)
+      .run();
+  }
+  const keyId = await createRequestScopedId({
+    kind: 'api-idempotency-key',
+    orgId,
+    actorUserId,
+    requestId,
+    resourceScope: route,
+  });
+  const insertResult = await db
+    .prepare(
+      `
+      INSERT OR IGNORE INTO api_idempotency_keys (
+        idempotency_key_id,
+        org_id,
+        actor_user_id,
+        request_id,
+        route,
+        payload_sha256,
+        created_at_ms,
+        expires_at_ms
+      )
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `
+    )
+    .bind(keyId, orgId, actorUserId, requestId, route, payloadSha256, now, expiresAtMs)
+    .run();
+  const inserted = Number(insertResult?.meta?.changes || 0) > 0;
+
+  // INSERT OR IGNORE の直後にDB正本を再読し、並行要求でも先着payloadを基準に判定する。
+  const persisted = await db
+    .prepare(
+      `
+      SELECT idempotency_key_id,
+             payload_sha256,
+             created_at_ms,
+             expires_at_ms
+        FROM api_idempotency_keys
+       WHERE org_id = ?1
+         AND actor_user_id = ?2
+         AND request_id = ?3
+         AND route = ?4
+       LIMIT 1
+    `
+    )
+    .bind(orgId, actorUserId, requestId, route)
+    .first();
+  if (!persisted?.payload_sha256) {
+    const error = new Error('Failed to read the persisted idempotency key.');
+    error.code = 'idempotency_key_unavailable';
+    throw error;
+  }
+  return {
+    conflict: persisted.payload_sha256 !== payloadSha256,
+    inserted,
+    replay: !inserted && persisted.payload_sha256 === payloadSha256,
+    keyId: persisted.idempotency_key_id,
+    payloadSha256: persisted.payload_sha256,
+    createdAtMs: persisted.created_at_ms,
+    expiresAtMs: persisted.expires_at_ms,
+  };
+}
+
+async function releaseInsertedApiIdempotencyKey(db, options = {}) {
+  const orgId = normalizeIdValue(options.orgId || '');
+  const actorUserId = normalizeIdValue(options.actorUserId || '');
+  const requestId = String(options.requestId || '').trim();
+  const route = String(options.route || '').trim();
+  const keyId = normalizeIdValue(options.keyId || '');
+  const payloadSha256 = String(options.payloadSha256 || '').trim();
+  const createdAtMs = Number(options.createdAtMs);
+  const expiresAtMs = Number(options.expiresAtMs);
+  if (
+    options.inserted !== true ||
+    !db ||
+    !orgId ||
+    !actorUserId ||
+    !requestId ||
+    !route ||
+    !keyId ||
+    !/^[0-9a-f]{64}$/.test(payloadSha256) ||
+    !Number.isFinite(createdAtMs) ||
+    !Number.isFinite(expiresAtMs)
+  ) {
+    return false;
+  }
+  const result = await db
+    .prepare(
+      `
+      DELETE FROM api_idempotency_keys
+       WHERE idempotency_key_id = ?1
+         AND org_id = ?2
+         AND actor_user_id = ?3
+         AND request_id = ?4
+         AND route = ?5
+         AND payload_sha256 = ?6
+         AND created_at_ms = ?7
+         AND expires_at_ms = ?8
+    `
+    )
+    .bind(
+      keyId,
+      orgId,
+      actorUserId,
+      requestId,
+      route,
+      payloadSha256,
+      createdAtMs,
+      expiresAtMs
+    )
+    .run();
+  return Number(result?.meta?.changes || 0) > 0;
 }
 
 function normalizeEmailValue(value) {
@@ -408,6 +844,14 @@ function buildTaskMetaJson(payload) {
 function normalizeIdValue(value) {
   if (value === undefined || value === null) return '';
   return typeof value === 'string' ? value.trim() : String(value).trim();
+}
+
+function normalizeSettingsVersion(value) {
+  const normalized = normalizeIdValue(value).toLowerCase();
+  if (normalized === '0' || /^[0-9a-f]{32}$/.test(normalized)) {
+    return normalized;
+  }
+  return '';
 }
 
 function mergeMetaJson(existingJson, newJsonString) {
@@ -581,10 +1025,12 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
   } catch (err) {
     console.warn('[ShiftFlow][Auth] Failed to query D1 for access context', {
       requestId,
-      email,
-      message: err && err.message ? err.message : String(err),
+      reasonCode: 'd1_access_context_query_failed',
     });
-    return null;
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 access context is temporarily unavailable.'
+    );
   }
   if (!row) {
     logAuthInfo('No D1 access record found', { requestId, email });
@@ -638,12 +1084,6 @@ async function resolveAccessContextFromD1(db, tokenDetails, requestId) {
     reasonCode: allowed ? 'active' : hasMembership ? status || 'unknown' : 'no_membership',
     orgId: row.org_id || '',
   };
-  logAuthInfo('Resolved access context via D1', {
-    requestId,
-    email: context.email,
-    role: context.role,
-    status: context.status,
-  });
   return context;
 }
 
@@ -676,35 +1116,105 @@ function guessExtensionFromMime(mimeType) {
   return MIME_EXTENSION_MAP[normalized] || '';
 }
 
-function decodeDataUri(dataUri) {
-  if (typeof dataUri !== 'string') return null;
-  const trimmed = dataUri.trim();
-  if (!trimmed) return null;
-  const commaIndex = trimmed.indexOf(',');
-  if (!trimmed.startsWith('data:') || commaIndex === -1) return null;
-  const header = trimmed.slice(5, commaIndex);
-  const dataPart = trimmed.slice(commaIndex + 1).trim();
-  if (!dataPart) return null;
-  const metaParts = header.split(';').map((part) => part.trim()).filter(Boolean);
-  let mimeType = metaParts.length ? metaParts[0] : '';
-  const isBase64 = metaParts.includes('base64');
-  if (!isBase64) return null;
-  if (!mimeType) mimeType = 'application/octet-stream';
-  let binaryString;
+function parseRequestContentLength(request) {
+  const raw = request?.headers?.get('content-length');
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (!/^\d+$/.test(raw.trim())) return NaN;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : NaN;
+}
+
+async function readRequestBytesWithLimit(request, maxBytes) {
+  const normalizedMax = Number(maxBytes);
+  if (!request || !Number.isSafeInteger(normalizedMax) || normalizedMax < 0) {
+    throw new TypeError('A request and non-negative byte limit are required.');
+  }
+  const declaredLength = parseRequestContentLength(request);
+  if (Number.isNaN(declaredLength)) {
+    return { ok: false, code: 'invalid_content_length', status: 400, bytes: null };
+  }
+  if (declaredLength !== null && declaredLength > normalizedMax) {
+    return { ok: false, code: 'request_body_too_large', status: 413, bytes: null };
+  }
+  if (!request.body) {
+    const empty = new Uint8Array(0);
+    if (declaredLength !== null && declaredLength !== 0) {
+      return { ok: false, code: 'content_length_mismatch', status: 400, bytes: null };
+    }
+    return { ok: true, bytes: empty, sizeBytes: 0, declaredLength };
+  }
+  const reader = request.body.getReader();
+  // chunk配列は極小chunk大量送信で要素数オーバーヘッドが増えるため使わない。
+  // 長さ不明bodyは64KBから幾何拡張し、slow uploadが上限全量を先取りしない。
+  let capacity =
+    declaredLength === null ? Math.min(normalizedMax, 64 * 1024) : declaredLength;
+  let buffer = new Uint8Array(capacity);
+  let total = 0;
   try {
-    binaryString = atob(dataPart.replace(/\s+/g, ''));
-  } catch (_err) {
-    return null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+      const nextTotal = total + chunk.byteLength;
+      if (nextTotal > normalizedMax || (declaredLength !== null && nextTotal > capacity)) {
+        try {
+          await reader.cancel(
+            nextTotal > normalizedMax ? 'request_body_too_large' : 'content_length_mismatch'
+          );
+        } catch (_ignore) {
+          // 読み取り停止が失敗しても、上限超過bodyを後段へ渡さない。
+        }
+        return nextTotal > normalizedMax
+          ? { ok: false, code: 'request_body_too_large', status: 413, bytes: null }
+          : { ok: false, code: 'content_length_mismatch', status: 400, bytes: null };
+      }
+      if (nextTotal > capacity) {
+        const nextCapacity = Math.min(
+          normalizedMax,
+          Math.max(nextTotal, Math.max(64 * 1024, capacity * 2))
+        );
+        const expanded = new Uint8Array(nextCapacity);
+        expanded.set(buffer.subarray(0, total));
+        buffer = expanded;
+        capacity = nextCapacity;
+      }
+      buffer.set(chunk, total);
+      total = nextTotal;
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch (_ignore) {
+      // 既にcancel済みのreaderはreleaseできない実装がある。
+    }
   }
-  const length = binaryString.length;
-  const bytes = new Uint8Array(length);
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
+  if (declaredLength !== null && declaredLength !== total) {
+    return { ok: false, code: 'content_length_mismatch', status: 400, bytes: null };
   }
-  return {
-    mimeType: mimeType.toLowerCase(),
-    bytes,
-  };
+  const bytes = total === buffer.byteLength ? buffer : buffer.slice(0, total);
+  return { ok: true, bytes, sizeBytes: total, declaredLength };
+}
+
+function normalizeStagedAttachmentPurpose(route, rawPurpose) {
+  const normalizedRoute = String(route || '').trim();
+  if (normalizedRoute === 'stageMessageAttachment') return 'message';
+  if (normalizedRoute === 'stageProfileAttachment') return 'profile';
+  const purpose = String(rawPurpose || '').trim().toLowerCase();
+  return purpose === 'message' || purpose === 'profile' ? purpose : '';
+}
+
+function decodeStagedFileName(rawValue, fallback = 'attachment') {
+  const raw = typeof rawValue === 'string' ? rawValue.trim() : '';
+  if (!raw) return fallback;
+  try {
+    return decodeURIComponent(raw).slice(0, 255) || fallback;
+  } catch (_error) {
+    return raw.slice(0, 255) || fallback;
+  }
+}
+
+function resolveStagedAttachmentMaxBytes(purpose) {
+  return purpose === 'profile' ? PROFILE_IMAGE_MAX_BYTES : MESSAGE_ATTACHMENT_MAX_BYTES;
 }
 
 async function computeSha256Hex(buffer) {
@@ -745,11 +1255,22 @@ function extractAttachmentIdFromUrl(url) {
   }
 }
 
-function generateAttachmentId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID().replace(/-/g, '');
+function extractCanonicalProfileAttachmentId(url) {
+  if (!url || typeof url !== 'string') return '';
+  const normalized = url.trim();
+  if (!normalized || !normalized.startsWith('/api/downloadAttachment?')) return '';
+  try {
+    const parsed = new URL(normalized, 'https://shiftflow.invalid');
+    if (parsed.origin !== 'https://shiftflow.invalid') return '';
+    if (parsed.pathname !== '/api/downloadAttachment') return '';
+    const keys = Array.from(parsed.searchParams.keys());
+    if (keys.length !== 1 || keys[0] !== 'attachmentId') return '';
+    const attachmentId = normalizeIdValue(parsed.searchParams.get('attachmentId'));
+    if (!attachmentId) return '';
+    return buildAttachmentDownloadPath(attachmentId) === normalized ? attachmentId : '';
+  } catch (_err) {
+    return '';
   }
-  return 'att_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
 function buildContentDisposition(filename, disposition = 'inline') {
@@ -761,64 +1282,758 @@ function buildContentDisposition(filename, disposition = 'inline') {
   return `${disposition}; filename="${asciiName || 'file'}"; filename*=UTF-8''${utf8}`;
 }
 
-async function storeDataUriInR2(env, options) {
-  if (!env || !env.R2) {
-    const err = new Error('R2 bucket is not configured.');
-    err.code = 'r2_unavailable';
-    throw err;
-  }
-  const dataUri = typeof options?.dataUri === 'string' ? options.dataUri : '';
-  const parsed = decodeDataUri(dataUri);
-  if (!parsed) {
-    const err = new Error('Invalid image data.');
-    err.code = 'invalid_data_uri';
-    throw err;
-  }
-  const mimeType = parsed.mimeType;
+function buildStagedAttachmentStorageDescriptor(options) {
+  const purpose = options?.purpose === 'profile' ? 'profile' : 'message';
+  const mimeType = String(options?.mimeType || '').trim().toLowerCase();
   if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
-    const err = new Error('Unsupported MIME type.');
-    err.code = 'unsupported_mime_type';
-    throw err;
+    const error = new Error('Unsupported MIME type.');
+    error.code = 'unsupported_mime_type';
+    throw error;
   }
-  const byteLength = parsed.bytes.byteLength;
-  const maxBytes = Number(options?.maxBytes) || PROFILE_IMAGE_MAX_BYTES;
-  if (byteLength > maxBytes) {
-    const err = new Error('File size exceeds allowed limit.');
-    err.code = 'file_too_large';
-    throw err;
+  const stageId = normalizeIdValue(options?.stageId);
+  const orgId = normalizeIdValue(options?.orgId);
+  const ownerUserId = normalizeIdValue(options?.ownerUserId);
+  if (!stageId || !orgId || !ownerUserId) {
+    const error = new Error('Staged attachment scope is unavailable.');
+    error.code = 'attachment_scope_unavailable';
+    throw error;
   }
-  const attachmentId = normalizeIdValue(options?.attachmentId) || generateAttachmentId();
-  const fileNameHint = typeof options?.fileNameHint === 'string' ? options.fileNameHint : '';
-  const baseName = sanitizeFileBaseName(fileNameHint || attachmentId);
+  const baseName = sanitizeFileBaseName(options?.fileName || stageId, 'attachment');
   const extension = guessExtensionFromMime(mimeType) || 'bin';
   const finalFileName = `${baseName}.${extension}`;
-  const keyPrefix = typeof options?.keyPrefix === 'string' && options.keyPrefix ? options.keyPrefix : 'uploads';
-  const key = `${keyPrefix}/${attachmentId}/${finalFileName}`;
-  const buffer = parsed.bytes.buffer.slice(parsed.bytes.byteOffset, parsed.bytes.byteOffset + parsed.bytes.byteLength);
-  const checksum = await computeSha256Hex(buffer);
-  await env.R2.put(key, buffer, {
+  const category = purpose === 'profile' ? 'profiles' : 'messages';
+  // claim後も同じobjectをlive正本として使うため、expiryを連想するstaged prefixには置かない。
+  // user IDやemailをobject keyへ露出せず、owner scopeはD1 metadataだけで管理する。
+  const key = `orgs/${orgId}/${category}/objects/${stageId}/${finalFileName}`;
+  const checksum = String(options?.checksum || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(checksum)) {
+    const error = new Error('Attachment checksum is unavailable.');
+    error.code = 'attachment_checksum_invalid';
+    throw error;
+  }
+  return { stageId, orgId, ownerUserId, purpose, mimeType, fileName: finalFileName, key, checksum };
+}
+
+async function storeStagedBytesInR2(env, options) {
+  if (!env?.R2 || typeof env.R2.put !== 'function') {
+    const error = new Error('R2 bucket is not configured.');
+    error.code = 'r2_unavailable';
+    throw error;
+  }
+  const bytes = options?.bytes instanceof Uint8Array ? options.bytes : null;
+  const purpose = options?.purpose === 'profile' ? 'profile' : 'message';
+  const maxBytes = resolveStagedAttachmentMaxBytes(purpose);
+  if (!bytes || bytes.byteLength < 1) {
+    const error = new Error('Attachment body is empty.');
+    error.code = 'attachment_data_missing';
+    throw error;
+  }
+  if (bytes.byteLength > maxBytes) {
+    const error = new Error('File size exceeds allowed limit.');
+    error.code = 'file_too_large';
+    throw error;
+  }
+  const descriptor = buildStagedAttachmentStorageDescriptor(options);
+  await env.R2.put(descriptor.key, bytes, {
     httpMetadata: {
-      contentType: mimeType,
-      cacheControl: 'public, max-age=31536000',
-      contentDisposition: buildContentDisposition(finalFileName),
+      contentType: descriptor.mimeType,
+      cacheControl: 'private, no-store',
+      contentDisposition: buildContentDisposition(descriptor.fileName),
+    },
+    customMetadata: {
+      sha256: descriptor.checksum,
+      purpose: descriptor.purpose,
+      stageId: descriptor.stageId,
     },
   });
   return {
-    attachmentId,
-    key,
-    mimeType,
-    size: byteLength,
-    checksum,
-    fileName: finalFileName,
+    stageId: descriptor.stageId,
+    key: descriptor.key,
+    mimeType: descriptor.mimeType,
+    size: bytes.byteLength,
+    checksum: descriptor.checksum,
+    fileName: descriptor.fileName,
   };
 }
 
-function getPrimarySharedSecret(config) {
-  if (!config) return '';
-  if (Array.isArray(config.sharedSecrets) && config.sharedSecrets.length) {
-    return config.sharedSecrets[0];
+function buildStagedAttachmentClientResult(row, options = {}) {
+  return {
+    stagedAttachmentId: row?.staged_attachment_id || '',
+    expiresAtMs: Number(row?.expires_at_ms || 0),
+    fileName: row?.file_name || '',
+    mimeType: row?.content_type || '',
+    sizeBytes: Number(row?.size_bytes || 0),
+    checksum: row?.checksum || '',
+    purpose: row?.purpose || '',
+    status: row?.status || '',
+    idempotentReplay: options.idempotentReplay === true,
+  };
+}
+
+async function loadStagedAttachmentById(db, stagedAttachmentId) {
+  const normalizedId = normalizeIdValue(stagedAttachmentId);
+  if (!db || !normalizedId) return null;
+  return db
+    .prepare(
+      `
+      SELECT staged_attachment_id,
+             org_id,
+             owner_user_id,
+             owner_membership_id,
+             purpose,
+             file_name,
+             content_type,
+             size_bytes,
+             checksum,
+             r2_key,
+             request_id,
+             request_payload_sha256,
+             request_generation_ms,
+             status,
+             claimed_target_type,
+             claimed_target_id,
+             claimed_at_ms,
+             created_at_ms,
+             updated_at_ms,
+             expires_at_ms
+        FROM staged_attachments
+       WHERE staged_attachment_id = ?1
+       LIMIT 1
+    `
+    )
+    .bind(normalizedId)
+    .first();
+}
+
+async function pruneReleasedStagedAttachmentTombstones(db, context = {}) {
+  const orgId = normalizeIdValue(context.orgId);
+  const ownerUserId = normalizeIdValue(context.ownerUserId);
+  const now = Number(context.now || Date.now());
+  if (!db || !orgId || !ownerUserId || !Number.isFinite(now)) return;
+  // R2 cleanup後もidempotency世代が有効な間はrowをtombstoneとして保持する。
+  // 古いupload requestの再送で新しいprofile stageを巻き戻さないための境界。
+  await db
+    .prepare(
+      `
+      DELETE FROM staged_attachments
+       WHERE staged_attachment_id IN (
+         SELECT staged.staged_attachment_id
+           FROM staged_attachments staged
+          WHERE staged.org_id = ?1
+            AND staged.owner_user_id = ?2
+            AND (
+              (staged.status <> 'claimed'
+                AND (staged.status IN ('superseded', 'failed') OR staged.expires_at_ms <= ?3))
+              OR
+              (staged.status = 'claimed'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM attachments live_attachment
+                   WHERE live_attachment.attachment_id = staged.staged_attachment_id
+                ))
+            )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM storage_cleanup_jobs cleanup
+               WHERE cleanup.r2_key = staged.r2_key
+            )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM api_idempotency_keys idem
+               WHERE idem.org_id = staged.org_id
+                 AND idem.actor_user_id = staged.owner_user_id
+                 AND idem.request_id = staged.request_id
+                 AND idem.payload_sha256 = staged.request_payload_sha256
+                 AND idem.created_at_ms = staged.request_generation_ms
+            )
+          ORDER BY staged.updated_at_ms ASC
+          LIMIT 25
+       )
+    `
+    )
+    .bind(orgId, ownerUserId, now)
+    .run();
+}
+
+async function resolveStagedAttachmentsForClaim(db, options = {}) {
+  const rawIds = Array.isArray(options.stagedAttachmentIds)
+    ? options.stagedAttachmentIds
+    : [];
+  const ids = rawIds.map((value) => normalizeIdValue(value)).filter(Boolean);
+  if (!db || !ids.length || ids.length !== rawIds.length || new Set(ids).size !== ids.length) {
+    return null;
   }
-  return config.sharedSecret || '';
+  const orgId = normalizeIdValue(options.orgId);
+  const ownerUserId = normalizeIdValue(options.ownerUserId);
+  const ownerMembershipId = normalizeIdValue(options.ownerMembershipId);
+  const purpose = options.purpose === 'profile' ? 'profile' : 'message';
+  const targetType = options.targetType === 'user_settings' ? 'user_settings' : 'message';
+  const targetId = normalizeIdValue(options.targetId);
+  if (!orgId || !ownerUserId || !ownerMembershipId || !targetId) return null;
+  const placeholders = ids.map((_, index) => `?${index + 4}`).join(', ');
+  const result = await db
+    .prepare(
+      `
+      SELECT staged_attachment_id,
+             org_id,
+             owner_user_id,
+             owner_membership_id,
+             purpose,
+             file_name,
+             content_type,
+             size_bytes,
+             checksum,
+             r2_key,
+             status,
+             claimed_target_type,
+             claimed_target_id,
+             claimed_at_ms,
+             created_at_ms,
+             expires_at_ms
+        FROM staged_attachments
+       WHERE org_id = ?1
+         AND owner_user_id = ?2
+         AND owner_membership_id = ?3
+         AND staged_attachment_id IN (${placeholders})
+    `
+    )
+    .bind(orgId, ownerUserId, ownerMembershipId, ...ids)
+    .all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  const byId = new Map(rows.map((row) => [normalizeIdValue(row?.staged_attachment_id), row]));
+  const now = Date.now();
+  const ordered = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row || row.purpose !== purpose || !isR2KeyWithinOrg(row.r2_key, orgId)) return null;
+    const ready = row.status === 'ready' && Number(row.expires_at_ms || 0) > now;
+    const alreadyClaimed =
+      row.status === 'claimed' &&
+      row.claimed_target_type === targetType &&
+      row.claimed_target_id === targetId;
+    if (!ready && !alreadyClaimed) return null;
+    ordered.push(row);
+  }
+  return ordered;
+}
+
+function buildStagedAttachmentClaimStatement(db, row, context = {}) {
+  if (!db || !row) return null;
+  const stagedAttachmentId = normalizeIdValue(row.staged_attachment_id);
+  const orgId = normalizeIdValue(context.orgId);
+  const ownerUserId = normalizeIdValue(context.ownerUserId);
+  const ownerMembershipId = normalizeIdValue(context.ownerMembershipId);
+  const targetType = context.targetType === 'user_settings' ? 'user_settings' : 'message';
+  const targetId = normalizeIdValue(context.targetId);
+  const purpose = context.purpose === 'profile' ? 'profile' : 'message';
+  if (!stagedAttachmentId || !orgId || !ownerUserId || !ownerMembershipId || !targetId) {
+    return null;
+  }
+  const now = Number(context.claimedAtMs || Date.now());
+  let targetGuard = '';
+  const bindValues = [
+    stagedAttachmentId,
+    orgId,
+    ownerUserId,
+    ownerMembershipId,
+    purpose,
+    targetType,
+    targetId,
+    now,
+  ];
+  if (targetType === 'message') {
+    targetGuard = `
+      AND EXISTS (
+        SELECT 1
+          FROM messages claim_target
+         WHERE claim_target.message_id = ?7
+           AND claim_target.org_id = ?2
+      )`;
+  } else {
+    const expectedSettingsVersion = normalizeSettingsVersion(context.expectedSettingsVersion);
+    if (!expectedSettingsVersion) return null;
+    bindValues.push(expectedSettingsVersion);
+    targetGuard = `
+      AND EXISTS (
+        SELECT 1
+          FROM users claim_target
+         WHERE claim_target.user_id = ?3
+           AND claim_target.settings_version = ?9
+      )`;
+  }
+  return db
+    .prepare(
+      `
+      UPDATE staged_attachments
+         SET status = 'claimed',
+             claimed_target_type = ?6,
+             claimed_target_id = ?7,
+             claimed_at_ms = CASE WHEN status = 'ready' THEN ?8 ELSE claimed_at_ms END,
+             updated_at_ms = MAX(updated_at_ms, ?8)
+       WHERE staged_attachment_id = ?1
+         AND org_id = ?2
+         AND owner_user_id = ?3
+         AND owner_membership_id = ?4
+         AND purpose = ?5
+         AND (
+           (status = 'ready'
+             AND expires_at_ms > ?8
+             AND claimed_target_type IS NULL
+             AND claimed_target_id IS NULL)
+           OR
+           (status = 'claimed'
+             AND claimed_target_type = ?6
+             AND claimed_target_id = ?7)
+         )
+         AND NOT EXISTS (
+           SELECT 1
+             FROM storage_cleanup_jobs cleanup_guard
+            WHERE cleanup_guard.r2_key = staged_attachments.r2_key
+              AND cleanup_guard.org_id = staged_attachments.org_id
+              AND cleanup_guard.lease_token IS NOT NULL
+         )
+         ${targetGuard}
+    `
+    )
+    .bind(...bindValues);
+}
+
+function buildStagedMessageAttachmentLinkStatement(db, stagedAttachmentId, messageId, orgId) {
+  if (!db) return null;
+  return db
+    .prepare(
+      `
+      INSERT OR IGNORE INTO message_attachments (message_id, attachment_id)
+      SELECT ?2, ?1
+       WHERE EXISTS (
+         SELECT 1
+           FROM staged_attachments staged
+          WHERE staged.staged_attachment_id = ?1
+            AND staged.org_id = ?3
+            AND staged.status = 'claimed'
+            AND staged.claimed_target_type = 'message'
+            AND staged.claimed_target_id = ?2
+       )
+    `
+    )
+    .bind(stagedAttachmentId, messageId, orgId);
+}
+
+async function handleStageAttachmentRoute(options) {
+  const {
+    db,
+    env,
+    requestId,
+    allowedOrigin,
+    config,
+    tokenDetails,
+    accessContext,
+    idempotencyContext,
+    binaryUpload,
+  } = options || {};
+  const purpose = binaryUpload?.purpose === 'profile' ? 'profile' : 'message';
+  const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
+  const membership = actorEmail
+    ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+    : null;
+  const orgId = normalizeIdValue(accessContext?.orgId || '');
+  const ownerUserId = normalizeIdValue(accessContext?.userId || '');
+  if (
+    !membership?.membership_id ||
+    membership.org_id !== orgId ||
+    membership.user_id !== ownerUserId
+  ) {
+    return errorResponse(
+      403,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      'attachment_scope_unavailable',
+      '添付ファイルの所有者と所属組織を確認できません。'
+    );
+  }
+  if (!(binaryUpload?.bytes instanceof Uint8Array) || binaryUpload.bytes.byteLength < 1) {
+    return errorResponse(
+      400,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      'attachment_data_missing',
+      '添付ファイルのデータが空です。'
+    );
+  }
+  const requestGenerationMs = Number(idempotencyContext?.createdAtMs || 0);
+  if (!Number.isFinite(requestGenerationMs) || requestGenerationMs <= 0) {
+    return errorResponse(
+      503,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      'idempotency_generation_unavailable',
+      'アップロード操作の世代を確認できませんでした。新しい操作としてやり直してください。'
+    );
+  }
+  await pruneReleasedStagedAttachmentTombstones(db, {
+    orgId,
+    ownerUserId,
+    now: Date.now(),
+  });
+  const stagedAttachmentId = await createRequestScopedId({
+    kind: 'staged-attachment',
+    orgId,
+    actorUserId: ownerUserId,
+    requestId,
+    resourceScope: `${purpose}:${idempotencyContext?.payloadSha256 || ''}:${requestGenerationMs}`,
+  });
+  const descriptor = buildStagedAttachmentStorageDescriptor({
+    ...binaryUpload,
+    stageId: stagedAttachmentId,
+    orgId,
+    ownerUserId,
+  });
+  const now = Date.now();
+  const expiresAtMs = now + STAGED_ATTACHMENT_TTL_MS;
+  const existing = await loadStagedAttachmentById(db, stagedAttachmentId);
+  if (existing) {
+    const samePayload =
+      existing.org_id === orgId &&
+      existing.owner_user_id === ownerUserId &&
+      existing.owner_membership_id === membership.membership_id &&
+      existing.purpose === purpose &&
+      existing.checksum === descriptor.checksum &&
+      Number(existing.size_bytes) === binaryUpload.bytes.byteLength &&
+      existing.content_type === descriptor.mimeType &&
+      existing.r2_key === descriptor.key &&
+      Number(existing.request_generation_ms || 0) === requestGenerationMs;
+    if (!samePayload) {
+      return errorResponse(
+        409,
+        allowedOrigin,
+        requestId,
+        'cf-api',
+        'staged_attachment_conflict',
+        '同じアップロードIDに異なるファイル情報が記録されています。新しい操作としてやり直してください。'
+      );
+    }
+    if (Number(existing.expires_at_ms || 0) <= now && existing.status !== 'claimed') {
+      return errorResponse(
+        410,
+        allowedOrigin,
+        requestId,
+        'cf-api',
+        'staged_attachment_expired',
+        '一時保存した添付ファイルの有効期限が切れました。もう一度選択してください。'
+      );
+    }
+    if (existing.status === 'ready' || existing.status === 'claimed') {
+      return jsonResponseFromD1(
+        200,
+        {
+          ok: true,
+          success: true,
+          result: buildStagedAttachmentClientResult(existing, { idempotentReplay: true }),
+        },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (existing.status === 'superseded') {
+      return errorResponse(
+        410,
+        allowedOrigin,
+        requestId,
+        'cf-api',
+        'staged_attachment_superseded',
+        'この一時保存ファイルは新しい選択に置き換えられました。最新のファイルを使用してください。'
+      );
+    }
+    if (existing.status === 'failed') {
+      let retryState;
+      try {
+        const retryResults = await db.batch([
+          db
+            .prepare(
+              `
+              UPDATE staged_attachments
+                 SET status = 'uploading',
+                     updated_at_ms = ?2
+               WHERE staged_attachment_id = ?1
+                 AND status = 'failed'
+                 AND expires_at_ms > ?2
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM storage_cleanup_jobs cleanup_guard
+                    WHERE cleanup_guard.r2_key = staged_attachments.r2_key
+                      AND cleanup_guard.org_id = staged_attachments.org_id
+                      AND cleanup_guard.lease_token IS NOT NULL
+                 )
+            `
+            )
+            .bind(stagedAttachmentId, now),
+          buildStorageCleanupJobStatement(db, descriptor.key, {
+            orgId,
+            targetType: 'staged_attachment',
+            targetId: stagedAttachmentId,
+            reason: 'upload_uncommitted',
+            requestId,
+            onlyIfPreviousStatementChanged: true,
+          }),
+        ]);
+        retryState = retryResults?.[0];
+      } catch (error) {
+        if (String(error?.message || '').includes('staged_attachment_quota_exceeded')) {
+          return errorResponse(
+            429,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'staged_attachment_quota_exceeded',
+            '未使用の添付が上限に達しています。先に投稿または保存してください。'
+          );
+        }
+        throw error;
+      }
+      if (Number(retryState?.meta?.changes || 0) === 0) {
+        return errorResponse(
+          409,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'staged_attachment_retry_blocked',
+          '一時保存ファイルの後処理中です。新しい操作としてもう一度選択してください。'
+        );
+      }
+    }
+  }
+  if (!existing && idempotencyContext?.replay) {
+    return errorResponse(
+      409,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      'staged_attachment_replay_missing',
+      '以前のアップロード状態を確認できません。新しい操作としてもう一度選択してください。'
+    );
+  }
+  let supersededProfileRows = [];
+  if (!existing) {
+    if (purpose === 'profile') {
+      const supersededResult = await db
+        .prepare(
+          `
+          SELECT staged_attachment_id, r2_key
+            FROM staged_attachments
+           WHERE org_id = ?1
+             AND owner_user_id = ?2
+             AND purpose = 'profile'
+             AND status IN ('ready', 'failed')
+             AND expires_at_ms > ?3
+        `
+        )
+        .bind(orgId, ownerUserId, now)
+        .all();
+      supersededProfileRows = Array.isArray(supersededResult?.results)
+        ? supersededResult.results
+        : [];
+    }
+    try {
+      await db.batch(
+        [
+          purpose === 'profile'
+            ? db
+                .prepare(
+                  `
+                  UPDATE staged_attachments
+                     SET status = 'superseded',
+                         updated_at_ms = ?3
+                   WHERE org_id = ?1
+                     AND owner_user_id = ?2
+                     AND purpose = 'profile'
+                     AND status IN ('ready', 'failed')
+                     AND expires_at_ms > ?3
+                `
+                )
+                .bind(orgId, ownerUserId, now)
+            : null,
+          db
+            .prepare(
+              `
+              INSERT OR IGNORE INTO staged_attachments (
+                staged_attachment_id,
+                org_id,
+                owner_user_id,
+                owner_membership_id,
+                purpose,
+                file_name,
+                content_type,
+                size_bytes,
+                checksum,
+                r2_key,
+                request_id,
+                request_payload_sha256,
+                request_generation_ms,
+                status,
+                created_at_ms,
+                updated_at_ms,
+                expires_at_ms
+              )
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'uploading', ?14, ?14, ?15)
+            `
+            )
+            .bind(
+              stagedAttachmentId,
+              orgId,
+              ownerUserId,
+              membership.membership_id,
+              purpose,
+              descriptor.fileName,
+              descriptor.mimeType,
+              binaryUpload.bytes.byteLength,
+              descriptor.checksum,
+              descriptor.key,
+              requestId,
+              idempotencyContext?.payloadSha256 || '',
+              requestGenerationMs,
+              now,
+              expiresAtMs
+            ),
+          buildStorageCleanupJobStatement(db, descriptor.key, {
+            orgId,
+            targetType: 'staged_attachment',
+            targetId: stagedAttachmentId,
+            reason: 'upload_uncommitted',
+            requestId,
+          }),
+        ].filter(Boolean)
+      );
+    } catch (error) {
+      const message = String(error?.message || '');
+      if (message.includes('staged_attachment_quota_exceeded')) {
+        return errorResponse(
+          429,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'staged_attachment_quota_exceeded',
+          purpose === 'profile'
+            ? '未使用のプロフィール画像があります。先に保存するか、有効期限後に再試行してください。'
+            : `未使用の添付が上限（${MESSAGE_ATTACHMENT_LIMIT} 件）に達しています。先に投稿するか、有効期限後に再試行してください。`
+        );
+      }
+      throw error;
+    }
+    if (purpose === 'profile' && supersededProfileRows.length) {
+      const supersededKeys = supersededProfileRows
+        .map((row) => String(row?.r2_key || '').trim())
+        .filter(Boolean);
+      const cleaned = await cleanupR2KeysWithOutbox(db, env, supersededKeys, {
+        orgId,
+        targetType: 'staged_attachment',
+        targetId: stagedAttachmentId,
+        reason: 'profile_stage_superseded',
+        requestId,
+        config,
+      });
+      // cleanup後も有効なidempotency世代のtombstoneを保持し、古いrequestの復活を防ぐ。
+      // TTL後の安全なmetadata回収はpruneReleasedStagedAttachmentTombstonesが担当する。
+      void cleaned;
+    }
+  }
+  let upload;
+  try {
+    upload = await storeStagedBytesInR2(env, {
+      ...binaryUpload,
+      purpose,
+      stageId: stagedAttachmentId,
+      orgId,
+      ownerUserId,
+      checksum: descriptor.checksum,
+    });
+  } catch (error) {
+    try {
+      await db
+        .prepare(
+          `
+          UPDATE staged_attachments
+             SET status = 'failed',
+                 updated_at_ms = ?2
+           WHERE staged_attachment_id = ?1
+             AND status = 'uploading'
+        `
+        )
+        .bind(stagedAttachmentId, Date.now())
+        .run();
+    } catch (_stateError) {
+      // cleanup outboxを正本として残し、元のR2障害を応答する。
+    }
+    const code = error?.code === 'r2_unavailable' ? 'r2_unavailable' : 'attachment_upload_failed';
+    return errorResponse(
+      code === 'r2_unavailable' ? 503 : 502,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      code,
+      code === 'r2_unavailable'
+        ? 'ファイルストレージが一時的に利用できません。後ほど再試行してください。'
+        : '添付ファイルを一時保存できませんでした。後ほど再試行してください。'
+    );
+  }
+  const readyAtMs = Date.now();
+  await db
+    .prepare(
+      `
+      UPDATE staged_attachments
+         SET status = 'ready',
+             updated_at_ms = ?2
+       WHERE staged_attachment_id = ?1
+         AND org_id = ?3
+         AND owner_user_id = ?4
+         AND status = 'uploading'
+         AND r2_key = ?5
+         AND checksum = ?6
+    `
+    )
+    .bind(
+      stagedAttachmentId,
+      readyAtMs,
+      orgId,
+      ownerUserId,
+      upload.key,
+      upload.checksum
+    )
+    .run();
+  const persisted = await loadStagedAttachmentById(db, stagedAttachmentId);
+  if (!persisted || (persisted.status !== 'ready' && persisted.status !== 'claimed')) {
+    return errorResponse(
+      503,
+      allowedOrigin,
+      requestId,
+      'cf-api',
+      'staged_attachment_state_unavailable',
+      '添付ファイルの一時保存状態を確認できませんでした。後ほど再試行してください。'
+    );
+  }
+  captureDiagnostics(config, 'info', 'attachment_staged', {
+    event: 'attachment_staged',
+    requestId,
+    route: options?.route || '',
+    orgId,
+    userId: ownerUserId,
+    targetId: stagedAttachmentId,
+    detail: purpose,
+  });
+  return jsonResponseFromD1(
+    existing ? 200 : 201,
+    {
+      ok: true,
+      success: true,
+      result: buildStagedAttachmentClientResult(persisted, {
+        idempotentReplay: Boolean(existing || idempotencyContext?.replay),
+      }),
+    },
+    allowedOrigin,
+    requestId
+  );
 }
 
 function isManagerRole(role) {
@@ -984,7 +2199,7 @@ async function readFlagOverridesFromKv(kv, key) {
   } catch (err) {
     console.warn('[ShiftFlow][Flags] Failed to load KV flag overrides', {
       key,
-      error: err && err.message ? err.message : String(err),
+      reasonCode: 'feature_flag_lookup_failed',
     });
     return null;
   }
@@ -1180,7 +2395,7 @@ async function fetchFolderMemberMap(db, folderIds) {
 
 async function fetchFoldersWithAccess(db, options = {}) {
   if (!db) return [];
-  const orgId = options.orgId || (await resolveDefaultOrgId(db));
+  const orgId = normalizeIdValue(options.orgId);
   if (!orgId) return [];
   if (options.ensureDefaultFolder) {
     await ensureDefaultFolderForOrg(db, orgId);
@@ -1265,7 +2480,7 @@ async function fetchFoldersWithAccess(db, options = {}) {
 
 async function fetchPinnedMessagesFromD1(db, options = {}) {
   if (!db) return {};
-  const orgId = options.orgId || (await resolveDefaultOrgId(db));
+  const orgId = normalizeIdValue(options.orgId);
   if (!orgId) return {};
   const membershipId = options.membershipId || '';
   const userId = options.userId || '';
@@ -1386,6 +2601,59 @@ async function ensureFolderAccessForUser(db, options = {}) {
     .bind(folder.id, userId)
     .first();
   return member ? folder : null;
+}
+
+async function resolveMemoReadAccess(db, options = {}) {
+  const messageId = normalizeIdValue(options.messageId || '');
+  const orgId = normalizeIdValue(options.orgId || '');
+  if (!db || !messageId || !orgId) {
+    return { status: 'not_found', messageId };
+  }
+  const message = await db
+    .prepare(
+      `
+      SELECT message_id,
+             org_id,
+             folder_id
+        FROM messages
+       WHERE message_id = ?1
+       LIMIT 1
+    `
+    )
+    .bind(messageId)
+    .first();
+  if (!message || message.org_id !== orgId) {
+    return { status: 'not_found', messageId };
+  }
+  const folder = await ensureFolderAccessForUser(db, {
+    folderId: message.folder_id,
+    orgId,
+    userId: options.userId || '',
+    isManager: Boolean(options.isManager),
+  });
+  if (!folder) {
+    return { status: 'forbidden', messageId };
+  }
+  return { status: 'allowed', messageId, message, folder };
+}
+
+async function preflightMemoReadAccess(db, messageIds, options = {}) {
+  const results = [];
+  for (const messageId of messageIds) {
+    results.push(
+      await resolveMemoReadAccess(db, {
+        ...options,
+        messageId,
+      })
+    );
+  }
+  if (results.some((entry) => entry.status === 'not_found')) {
+    return { status: 'not_found', results };
+  }
+  if (results.some((entry) => entry.status === 'forbidden')) {
+    return { status: 'forbidden', results };
+  }
+  return { status: 'allowed', results };
 }
 
 async function normalizeFolderMemberIds(db, orgId, memberUserIds) {
@@ -1605,7 +2873,7 @@ async function buildMessagesForUser(db, options = {}) {
     folderRaw && folderRaw.toLowerCase() !== 'all' ? folderRaw : '';
   const membershipId = options?.membershipId || '';
   const userId = options?.userId || '';
-  const orgId = options?.orgId || (await resolveDefaultOrgId(db));
+  const orgId = normalizeIdValue(options?.orgId);
   if (!orgId) return [];
   const isManager = !!options?.isManager;
   const includeInactiveFolders = !!options?.includeInactiveFolders;
@@ -1626,8 +2894,10 @@ async function buildMessagesForUser(db, options = {}) {
              COALESCE(author_user.display_name, author_user.email) AS author_name,
              CASE WHEN mr.message_id IS NOT NULL THEN 1 ELSE 0 END AS is_read,
              mr.read_at_ms,
-             COALESCE(comment_stats.comment_count, 0) AS comment_count,
-             comment_stats.last_comment_at_ms
+             (SELECT COUNT(*) FROM message_comments c
+               WHERE c.org_id = m.org_id AND c.message_id = m.message_id) AS comment_count,
+             (SELECT MAX(c.created_at_ms) FROM message_comments c
+               WHERE c.org_id = m.org_id AND c.message_id = m.message_id) AS last_comment_at_ms
         FROM messages m
         JOIN folders f ON f.id = m.folder_id
         LEFT JOIN message_reads mr
@@ -1637,17 +2907,6 @@ async function buildMessagesForUser(db, options = {}) {
           ON mp.message_id = m.message_id
          AND mp.membership_id = ?3
          AND mp.org_id = m.org_id
-        LEFT JOIN (
-          SELECT message_id,
-                 org_id,
-                 COUNT(*) AS comment_count,
-                 MAX(created_at_ms) AS last_comment_at_ms
-            FROM message_comments
-           WHERE org_id = ?1
-           GROUP BY message_id, org_id
-        ) comment_stats
-          ON comment_stats.message_id = m.message_id
-         AND comment_stats.org_id = m.org_id
         LEFT JOIN memberships author_ms
           ON author_ms.membership_id = m.author_membership_id
         LEFT JOIN users author_user
@@ -1665,7 +2924,7 @@ async function buildMessagesForUser(db, options = {}) {
          )
        ORDER BY CASE WHEN mp.message_id IS NOT NULL THEN 1 ELSE 0 END DESC,
                 MAX(
-                  COALESCE(comment_stats.last_comment_at_ms, 0),
+                  COALESCE(last_comment_at_ms, 0),
                   COALESCE(m.updated_at_ms, m.created_at_ms)
                 ) DESC,
                 m.created_at_ms DESC
@@ -1961,6 +3220,14 @@ function interceptRequestBodyForRoute(route, body, context) {
       imageUrl: typeof payload.imageUrl === 'string' ? payload.imageUrl : undefined,
       imageData: typeof payload.imageData === 'string' ? payload.imageData : undefined,
       hasImageData: typeof payload.imageData === 'string' && payload.imageData.length > 0,
+      stagedAttachmentId:
+        typeof payload.stagedAttachmentId === 'string'
+          ? normalizeIdValue(payload.stagedAttachmentId)
+          : undefined,
+      expectedSettingsVersion:
+        typeof payload.expectedSettingsVersion === 'string'
+          ? payload.expectedSettingsVersion
+          : undefined,
     };
     const nextLanguage = normalizeLanguageInput(payload.language);
     if (nextLanguage) {
@@ -1998,6 +3265,9 @@ async function maybeHandleRouteWithD1(options) {
     parsedBody,
     query,
     clientMeta,
+    idempotencyContext,
+    binaryUpload,
+    pushSession,
   } = options;
   if (!db) {
     logAuthError('D1 database binding is missing', { requestId, route });
@@ -2018,7 +3288,99 @@ async function maybeHandleRouteWithD1(options) {
   const secondaryRoute = routeSegments[1] || '';
   const tertiaryRoute = routeSegments[2] || '';
 
+  const isMutationRequest = isD1MutationRequest(normalizedRoute, requestMethod);
+  if (isMutationRequest && !isAllowedMutationMethod(normalizedRoute, requestMethod)) {
+    return errorResponse(
+      405,
+      allowedOrigin || '*',
+      requestId,
+      'cf-api',
+      'method_not_allowed',
+      '更新処理は指定されたHTTPメソッドでは実行できません。'
+    );
+  }
+  if (!flags?.d1Write && isMutationRequest) {
+    return errorResponse(
+      503,
+      allowedOrigin || '*',
+      requestId,
+      'cf-api',
+      'd1_write_disabled',
+      '現在は安全のため更新処理を一時停止しています。時間をおいて再度お試しください。'
+    );
+  }
+
   try {
+    if (isMutationRequest && canBindMutationForRole(normalizedRoute, accessContext?.role)) {
+      let idempotencyBinding;
+      try {
+        idempotencyBinding = await bindApiIdempotencyKey(db, {
+          orgId: accessContext?.orgId || '',
+          actorUserId: accessContext?.userId || '',
+          requestId,
+          route: normalizedRoute,
+          payload: parsedBody ?? {},
+        });
+      } catch (error) {
+        if (error?.code === 'request_structure_too_complex') {
+          return errorResponse(
+            400,
+            allowedOrigin || '*',
+            requestId,
+            'cf-api',
+            'request_structure_too_complex',
+            'リクエストの入れ子または項目数が上限を超えています。内容を分けて再実行してください。'
+          );
+        }
+        throw error;
+      }
+      if (idempotencyContext && typeof idempotencyContext === 'object') {
+        Object.assign(idempotencyContext, {
+          bound: true,
+          inserted: idempotencyBinding.inserted,
+          replay: idempotencyBinding.replay,
+          conflict: idempotencyBinding.conflict,
+          keyId: idempotencyBinding.keyId,
+          payloadSha256: idempotencyBinding.payloadSha256,
+          createdAtMs: idempotencyBinding.createdAtMs,
+          expiresAtMs: idempotencyBinding.expiresAtMs,
+        });
+      }
+      if (idempotencyBinding.conflict) {
+        return errorResponse(
+          409,
+          allowedOrigin || '*',
+          requestId,
+          'cf-api',
+          'idempotency_key_reused',
+          '同じリクエスト ID が異なる内容で使用されています。操作を確認してから再実行してください。'
+        );
+      }
+      if (idempotencyBinding.replay && !canReplayMutationRoute(normalizedRoute)) {
+        return errorResponse(
+          409,
+          allowedOrigin || '*',
+          requestId,
+          'cf-api',
+          'idempotency_replay',
+          '同じ更新リクエストは既に処理されています。現在の状態を取得してから、新しいリクエスト ID で操作してください。'
+        );
+      }
+    }
+    if (STAGED_ATTACHMENT_ROUTES.has(normalizedRoute)) {
+      return handleStageAttachmentRoute({
+        db,
+        env,
+        route: normalizedRoute,
+        requestId,
+        allowedOrigin,
+        config,
+        tokenDetails,
+        accessContext,
+        idempotencyContext,
+        binaryUpload,
+      });
+    }
     if (normalizedRoute === 'getBootstrapData') {
       const rawEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedEmail = normalizeEmailValue(rawEmail);
@@ -2029,9 +3391,12 @@ async function maybeHandleRouteWithD1(options) {
         } catch (err) {
           console.warn('[ShiftFlow][D1] Failed to resolve membership for bootstrap', {
             requestId,
-            email: normalizedEmail,
-            error: err && err.message ? err.message : String(err),
+            reasonCode: 'bootstrap_membership_lookup_failed',
           });
+          throw createServiceUnavailableError(
+            'd1_unavailable',
+            'D1 bootstrap membership lookup is temporarily unavailable.'
+          );
         }
       }
       let userRow = null;
@@ -2073,7 +3438,13 @@ async function maybeHandleRouteWithD1(options) {
         isManager: isManagerRole(resolvedRole),
         theme: userInfo.theme || 'light',
       };
-      const orgId = membership?.org_id || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
+      if (!orgId) {
+        throw createServiceUnavailableError(
+          'd1_unavailable',
+          'D1 bootstrap organization scope is unavailable.'
+        );
+      }
       try {
         const usersResult = await db
           .prepare(
@@ -2146,6 +3517,23 @@ async function maybeHandleRouteWithD1(options) {
           },
         };
       }
+      const partialFailureCodes = [
+        bootstrap.usersError,
+        bootstrap.foldersError,
+        bootstrap.pinnedMessagesError,
+        bootstrap.myTasks?.meta?.error,
+      ].filter(Boolean);
+      if (partialFailureCodes.length) {
+        captureDiagnostics(config, 'warn', 'bootstrap_partial_failure', {
+          event: 'bootstrap_partial_failure',
+          route: normalizedRoute,
+          requestId,
+          orgId: accessContext?.orgId || '',
+          userId: accessContext?.userId || '',
+          detail: 'bootstrap_partial_failure',
+          httpStatus: 200,
+        });
+      }
       captureDiagnostics(config, 'info', 'd1_route_served', {
         event: 'd1_route_served',
         route: normalizedRoute,
@@ -2163,13 +3551,16 @@ async function maybeHandleRouteWithD1(options) {
       const email = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
       );
-      let orgId = null;
+      let orgId = accessContext?.orgId || '';
       if (email) {
         const membership = await resolveMembershipForEmail(db, email, accessContext?.orgId);
-        orgId = membership?.org_id || null;
+        orgId = membership?.org_id || orgId;
       }
       if (!orgId) {
-        orgId = await resolveDefaultOrgId(db);
+        throw createServiceUnavailableError(
+          'd1_unavailable',
+          'D1 active user organization scope is unavailable.'
+        );
       }
       const result = await db
         .prepare(
@@ -2225,8 +3616,7 @@ async function maybeHandleRouteWithD1(options) {
       const membership = normalizedEmail
         ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
         : null;
-      const resolvedOrgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const resolvedOrgId = membership?.org_id || accessContext?.orgId || '';
       const folders = await fetchFoldersWithAccess(db, {
         orgId: resolvedOrgId,
         userId: membership?.user_id || accessContext?.userId || '',
@@ -2253,8 +3643,7 @@ async function maybeHandleRouteWithD1(options) {
       const membership = normalizedEmail
         ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
         : null;
-      const resolvedOrgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const resolvedOrgId = membership?.org_id || accessContext?.orgId || '';
       const includeMembersRequested =
         query?.get('includeMembers') === '1' || query?.get('include_members') === '1';
       const isManager = isManagerRole(accessContext?.role);
@@ -2291,8 +3680,7 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = actorMembership?.org_id || accessContext?.orgId || '';
       if (!orgId) {
         return errorResponse(
           400,
@@ -2313,6 +3701,40 @@ async function maybeHandleRouteWithD1(options) {
           'cf-api',
           'folder_name_required',
           'フォルダ名を入力してください。'
+        );
+      }
+      const folderId = await createRequestScopedId({
+        kind: 'folder',
+        orgId,
+        actorUserId: actorMembership?.user_id || accessContext?.userId || '',
+        requestId,
+        resourceScope: `folders:${idempotencyContext?.payloadSha256 || ''}`,
+      });
+      const existingFolder = await fetchFolderById(db, orgId, folderId);
+      if (existingFolder) {
+        const existingMembers = await fetchFolderMemberMap(db, [folderId]);
+        return jsonResponseFromD1(
+          200,
+          {
+            ok: true,
+            success: true,
+            result: {
+              id: existingFolder.id,
+              orgId: existingFolder.org_id,
+              name: existingFolder.name,
+              color: existingFolder.color || null,
+              isActive: existingFolder.is_active === 1,
+              isPublic: existingFolder.is_public === 1,
+              isSystem: existingFolder.is_system === 1,
+              sortOrder: existingFolder.sort_order || 0,
+              memberUserIds: existingMembers.get(folderId) || [],
+              createdAt: existingFolder.created_at_ms || 0,
+              updatedAt: existingFolder.updated_at_ms || 0,
+              idempotentReplay: true,
+            },
+          },
+          allowedOrigin,
+          requestId
         );
       }
       const duplicate = await folderNameExists(db, orgId, folderName, null);
@@ -2344,7 +3766,6 @@ async function maybeHandleRouteWithD1(options) {
         ? []
         : await normalizeFolderMemberIds(db, orgId, memberUserIdsInput);
       const now = Date.now();
-      const folderId = createUlid(now);
       const sortRow = await db
         .prepare('SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM folders WHERE org_id = ?1')
         .bind(orgId)
@@ -2357,7 +3778,7 @@ async function maybeHandleRouteWithD1(options) {
         db
           .prepare(
             `
-            INSERT INTO folders (
+            INSERT OR IGNORE INTO folders (
               id,
               org_id,
               name,
@@ -2374,13 +3795,33 @@ async function maybeHandleRouteWithD1(options) {
           )
           .bind(folderId, orgId, folderName, sortOrder, folderColor, isPublicFlag ? 1 : 0, now),
       ];
+      statements.push(
+        buildAuditLogStatement(db, {
+          orgId,
+          actorMembershipId: actorMembership?.membership_id || null,
+          targetType: 'folder',
+          targetId: folderId,
+          action: 'folder.create',
+          createdAtMs: now,
+          requestId,
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          onlyIfPreviousStatementChanged: true,
+          payload: {
+            name: folderName,
+            color: folderColor,
+            isPublic: isPublicFlag,
+            memberUserIds: authorizedMembers,
+          },
+        })
+      );
       if (!isPublicFlag && authorizedMembers.length) {
         authorizedMembers.forEach((userId) => {
           statements.push(
             db
               .prepare(
                 `
-                INSERT INTO folder_members (
+                INSERT OR IGNORE INTO folder_members (
                   folder_id,
                   user_id,
                   added_at_ms
@@ -2393,11 +3834,11 @@ async function maybeHandleRouteWithD1(options) {
         });
       }
       try {
-        await db.batch(statements);
+        await db.batch(statements.filter(Boolean));
       } catch (err) {
         console.error('[ShiftFlow][Folders] Failed to insert folder', {
           requestId,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'folder_create_failed',
         });
         return errorResponse(
           500,
@@ -2407,21 +3848,6 @@ async function maybeHandleRouteWithD1(options) {
           'folder_create_failed',
           'フォルダの作成に失敗しました。'
         );
-      }
-      if (orgId) {
-        await insertAuditLog(db, {
-          orgId,
-          actorMembershipId: actorMembership?.membership_id || null,
-          targetType: 'folder',
-          targetId: folderId,
-          action: 'folder.create',
-          payload: {
-            name: folderName,
-            color: folderColor,
-            isPublic: isPublicFlag,
-            memberUserIds: authorizedMembers,
-          },
-        });
       }
       return jsonResponseFromD1(
         201,
@@ -2472,8 +3898,7 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = actorMembership?.org_id || accessContext?.orgId || '';
       const folder = await fetchFolderById(db, orgId, targetFolderId);
       if (!folder) {
         return errorResponse(
@@ -2595,8 +4020,9 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const now = Date.now();
-      await db
-        .prepare(
+      const statements = [
+        db
+          .prepare(
           `
           UPDATE folders
              SET name = ?2,
@@ -2606,22 +4032,25 @@ async function maybeHandleRouteWithD1(options) {
                  updated_at_ms = ?6
            WHERE id = ?1
         `
-        )
-        .bind(
-          folder.id,
-          nextName,
-          nextColor,
-          nextIsPublic ? 1 : 0,
-          nextIsActive ? 1 : 0,
-          now
-        )
-        .run();
+          )
+          .bind(
+            folder.id,
+            nextName,
+            nextColor,
+            nextIsPublic ? 1 : 0,
+            nextIsActive ? 1 : 0,
+            now
+          ),
+      ];
       if (updatedMemberIds !== null) {
-        await db.prepare('DELETE FROM folder_members WHERE folder_id = ?1').bind(folder.id).run();
+        statements.push(
+          db.prepare('DELETE FROM folder_members WHERE folder_id = ?1').bind(folder.id)
+        );
         if (updatedMemberIds.length) {
           for (const userId of updatedMemberIds) {
-            await db
-              .prepare(
+            statements.push(
+              db
+                .prepare(
                 `
                 INSERT INTO folder_members (
                   folder_id,
@@ -2630,25 +4059,47 @@ async function maybeHandleRouteWithD1(options) {
                 )
                 VALUES (?1, ?2, ?3)
               `
-              )
-              .bind(folder.id, userId, now)
-              .run();
+                )
+                .bind(folder.id, userId, now)
+            );
           }
         }
         changedFields.push('memberUserIds');
       }
-      await insertAuditLog(db, {
-        orgId: folder.org_id,
-        actorMembershipId: actorMembership?.membership_id || null,
-        targetType: 'folder',
-        targetId: folder.id,
-        action: 'folder.update',
-        payload: {
-          changes: changedFields,
-          name: nextName,
-          isPublic: nextIsPublic,
-        },
-      });
+      statements.push(
+        buildAuditLogStatement(db, {
+          orgId: folder.org_id,
+          actorMembershipId: actorMembership?.membership_id || null,
+          targetType: 'folder',
+          targetId: folder.id,
+          action: 'folder.update',
+          createdAtMs: now,
+          requestId,
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          payload: {
+            changes: changedFields,
+            name: nextName,
+            isPublic: nextIsPublic,
+          },
+        })
+      );
+      try {
+        await db.batch(statements.filter(Boolean));
+      } catch (err) {
+        console.error('[ShiftFlow][Folders] Failed to update folder', {
+          requestId,
+          reasonCode: 'folder_update_failed',
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_update_failed',
+          'フォルダの更新に失敗しました。'
+        );
+      }
       const memberMap = await fetchFolderMemberMap(db, [folder.id]);
       return jsonResponseFromD1(
         200,
@@ -2698,8 +4149,7 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = actorMembership?.org_id || accessContext?.orgId || '';
       const folder = await fetchFolderById(db, orgId, targetFolderId);
       if (!folder) {
         return errorResponse(
@@ -2748,29 +4198,53 @@ async function maybeHandleRouteWithD1(options) {
         );
       }
       const now = Date.now();
-      await db
-        .prepare(
-          `
-          UPDATE folders
-             SET is_active = 0,
-                 archived_at_ms = ?2,
-                 archive_year = CAST(STRFTIME('%Y', 'now') AS INTEGER),
-                 updated_at_ms = ?2
-           WHERE id = ?1
-        `
-        )
-        .bind(folder.id, now)
-        .run();
-      await insertAuditLog(db, {
-        orgId: folder.org_id,
-        actorMembershipId: actorMembership?.membership_id || null,
-        targetType: 'folder',
-        targetId: folder.id,
-        action: 'folder.archive',
-        payload: {
-          name: folder.name,
-        },
-      });
+      try {
+        await db.batch(
+          [
+            db
+              .prepare(
+                `
+                UPDATE folders
+                   SET is_active = 0,
+                       archived_at_ms = ?2,
+                       archive_year = CAST(STRFTIME('%Y', 'now') AS INTEGER),
+                       updated_at_ms = ?2
+                 WHERE id = ?1
+                   AND is_active = 1
+              `
+              )
+              .bind(folder.id, now),
+            buildAuditLogStatement(db, {
+              orgId: folder.org_id,
+              actorMembershipId: actorMembership?.membership_id || null,
+              targetType: 'folder',
+              targetId: folder.id,
+              action: 'folder.archive',
+              createdAtMs: now,
+              requestId,
+              requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+              requestGenerationMs: idempotencyContext?.createdAtMs || null,
+              onlyIfPreviousStatementChanged: true,
+              payload: {
+                name: folder.name,
+              },
+            }),
+          ].filter(Boolean)
+        );
+      } catch (err) {
+        console.error('[ShiftFlow][Folders] Failed to archive folder', {
+          requestId,
+          reasonCode: 'folder_archive_failed',
+        });
+        return errorResponse(
+          500,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_archive_failed',
+          'フォルダのアーカイブに失敗しました。'
+        );
+      }
       return jsonResponseFromD1(
         200,
         {
@@ -2805,8 +4279,7 @@ async function maybeHandleRouteWithD1(options) {
       const membership = normalizedEmail
         ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
       const folder = await ensureFolderAccessForUser(db, {
         orgId,
         folderId,
@@ -2889,8 +4362,7 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = actorMembership?.org_id || accessContext?.orgId || '';
       const folder = await fetchFolderById(db, orgId, folderId);
       if (!folder) {
         return errorResponse(
@@ -2913,34 +4385,63 @@ async function maybeHandleRouteWithD1(options) {
           'テンプレート名を入力してください。'
         );
       }
-      const templateId = createUlid();
+      const templateId = await createRequestScopedId({
+        kind: 'template',
+        orgId: folder.org_id,
+        actorUserId: actorMembership?.user_id || accessContext?.userId || '',
+        requestId,
+        resourceScope: `${folder.id}:${idempotencyContext?.payloadSha256 || ''}`,
+      });
       const now = Date.now();
-      await db
-        .prepare(
-          `
-          INSERT INTO templates (
-            id,
-            org_id,
-            folder_id,
-            name,
-            title_format,
-            body_format,
-            created_at_ms,
-            updated_at_ms
-          )
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
-        `
-        )
-        .bind(
-          templateId,
-          folder.org_id,
-          folder.id,
-          templateName,
-          typeof payload.titleFormat === 'string' ? payload.titleFormat : payload.title_format || '',
-          typeof payload.bodyFormat === 'string' ? payload.bodyFormat : payload.body_format || '',
-          now
-        )
-        .run();
+      await db.batch(
+        [
+          db
+            .prepare(
+              `
+              INSERT OR IGNORE INTO templates (
+                id,
+                org_id,
+                folder_id,
+                name,
+                title_format,
+                body_format,
+                created_at_ms,
+                updated_at_ms
+              )
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+            `
+            )
+            .bind(
+              templateId,
+              folder.org_id,
+              folder.id,
+              templateName,
+              typeof payload.titleFormat === 'string'
+                ? payload.titleFormat
+                : payload.title_format || '',
+              typeof payload.bodyFormat === 'string'
+                ? payload.bodyFormat
+                : payload.body_format || '',
+              now
+            ),
+          buildAuditLogStatement(db, {
+            orgId: folder.org_id,
+            actorMembershipId: actorMembership?.membership_id || null,
+            targetType: 'template',
+            targetId: templateId,
+            action: 'template.create',
+            createdAtMs: now,
+            requestId,
+            requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+            requestGenerationMs: idempotencyContext?.createdAtMs || null,
+            onlyIfPreviousStatementChanged: true,
+            payload: {
+              name: templateName,
+              folderId: folder.id,
+            },
+          }),
+        ].filter(Boolean)
+      );
       return jsonResponseFromD1(
         201,
         {
@@ -3231,7 +4732,7 @@ async function maybeHandleRouteWithD1(options) {
       } catch (err) {
         console.warn('[ShiftFlow][Admin][Org] Failed to list organizations', {
           requestId,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'organization_list_failed',
         });
         return errorResponse(
           500,
@@ -3315,10 +4816,7 @@ async function maybeHandleRouteWithD1(options) {
           '所属組織が見つかりません。'
         );
       }
-      let orgId = requestedOrgId || accessContext?.orgId || actorMembership.org_id || '';
-      if (!orgId) {
-        orgId = await resolveDefaultOrgId(db);
-      }
+      const orgId = requestedOrgId || accessContext?.orgId || actorMembership.org_id || '';
       if (!orgId) {
         return errorResponse(
           404,
@@ -3410,6 +4908,39 @@ async function maybeHandleRouteWithD1(options) {
         requestId
       );
     }
+    if (normalizedRoute === 'getAppBadge') {
+      if (requestMethod !== 'GET') return errorResponse(405, allowedOrigin, requestId, 'cf-api', 'method_not_allowed', 'この操作は GET にのみ対応しています。');
+      try {
+        const email = tokenDetails?.email || accessContext?.email || '';
+        const membership = await resolveMembershipForEmail(db, email, accessContext.orgId);
+        const counts = await computeAppBadge(db, { orgId: accessContext.orgId, userId: accessContext.userId,
+          membershipId: membership?.membership_id, email, isManager: isManagerRole(accessContext.role) });
+        return jsonResponseFromD1(200, { ok: true, result: { ...counts,
+          owner: await sha256(accessContext.orgId + ':' + accessContext.userId), sessionExpiresAt: pushSession.expiresAt } }, allowedOrigin, requestId);
+      } catch (error) {
+        const code = error?.code === 'app_badge_access_denied' ? error.code : 'app_badge_unavailable';
+        return errorResponse(code === 'app_badge_access_denied' ? 403 : 503, allowedOrigin, requestId, 'cf-api', code, '件数を確認できませんでした。時間をおいて再試行してください。');
+      }
+    }
+    if (['getNotificationSettings','saveNotificationSettings','registerPushSubscription','removePushSubscription','testPushNotification'].includes(normalizedRoute)) {
+      try {
+        const folders = normalizedRoute === 'getNotificationSettings' && isPushConfigured(env)
+          ? await fetchFoldersWithAccess(db, { orgId: accessContext.orgId, userId: accessContext.userId, isManager: isManagerRole(accessContext.role) }) : [];
+        const result = await handleNotificationApi({ db, env, access: accessContext, route: normalizedRoute,
+          method: requestMethod, body: parsedBody, query, session: pushSession, folders,
+          ensureFolderAccess: folderId => ensureFolderAccessForUser(db, { orgId: accessContext.orgId, userId: accessContext.userId,
+            isManager: isManagerRole(accessContext.role), folderId, requireActive: true }) });
+        return jsonResponseFromD1(200, { ok: true, result }, allowedOrigin, requestId);
+      } catch (error) {
+        const code = /^[a-z_]+$/.test(error?.code || '') ? error.code : 'notification_service_unavailable';
+        const retryAfterSeconds = code === 'push_test_rate_limited' && Number.isInteger(error.retryAfterSeconds)
+          ? Math.max(1, Math.min(60, error.retryAfterSeconds)) : 0;
+        return errorResponse(error.httpStatus || 503, allowedOrigin, requestId, 'cf-api', code,
+          '通知設定を更新できませんでした。状態を確認して再試行してください。',
+          retryAfterSeconds ? { retryAfterSeconds } : undefined,
+          retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : undefined);
+      }
+    }
     if (normalizedRoute === 'getUserSettings') {
       const email = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
@@ -3423,7 +4954,8 @@ async function maybeHandleRouteWithD1(options) {
                  display_name,
                  profile_image_url,
                  theme,
-                 language
+                 language,
+                 settings_version
             FROM users
            WHERE lower(email) = ?1
         `
@@ -3443,25 +4975,16 @@ async function maybeHandleRouteWithD1(options) {
               email: tokenDetails?.email || '',
               theme: 'light',
               language: DEFAULT_LANGUAGE,
+              settingsVersion: '0',
             },
           },
           allowedOrigin,
           requestId
         );
       }
-      const membership = await db
-        .prepare(
-          `
-          SELECT role
-            FROM memberships
-           WHERE user_id = ?1
-           ORDER BY created_at_ms ASC
-           LIMIT 1
-        `
-        )
-        .bind(user.user_id)
-        .first();
-      const role = membership?.role || accessContext?.role || 'member';
+      // 画面表示用roleも、認可に使ったactive membership snapshotを正本にする。
+      // user_idだけの最古membership参照は、別tenant/停止済みroleを漏らすため禁止する。
+      const role = accessContext?.role || 'member';
       const result = {
         name: user.display_name || 'ユーザー',
         imageUrl: user.profile_image_url || PROFILE_PLACEHOLDER_URL,
@@ -3470,6 +4993,7 @@ async function maybeHandleRouteWithD1(options) {
         email: tokenDetails?.email || user.email || '',
         theme: user.theme || 'light',
         language: resolveLanguageValue(user.language),
+        settingsVersion: user.settings_version || '0',
       };
       captureDiagnostics(config, 'info', 'd1_route_served', {
         event: 'd1_route_served',
@@ -3509,12 +5033,39 @@ async function maybeHandleRouteWithD1(options) {
       const timestampMs =
         ctx?.timestampMs && Number.isFinite(ctx.timestampMs) ? ctx.timestampMs : Date.now();
       const hasImageData = typeof payload.imageData === 'string' && payload.imageData.trim();
+      if (hasImageData) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'staged_attachment_required',
+          'プロフィール画像は先に一時アップロードしてから保存してください。'
+        );
+      }
+      const stagedProfileAttachmentId = normalizeIdValue(payload.stagedAttachmentId);
       const membership = await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId);
+      if (!membership?.membership_id || !membership?.org_id || !membership?.user_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'profile_scope_unavailable',
+          'プロフィールの所属情報を確認できません。'
+        );
+      }
+      const profileOrgId = membership.org_id;
       const userRow = await db
         .prepare(
           `
           SELECT user_id,
-                 profile_image_url
+                 display_name,
+                 profile_image_url,
+                 theme,
+                 language,
+                 settings_version,
+                 updated_at_ms
             FROM users
            WHERE lower(email) = ?1
         `
@@ -3531,128 +5082,564 @@ async function maybeHandleRouteWithD1(options) {
           '対象のユーザーが見つかりません。'
         );
       }
-      const previousAttachmentId = extractAttachmentIdFromUrl(userRow.profile_image_url || '');
-      let newAttachmentId = '';
-      let newAttachmentUploaded = false;
-      let attachmentFileName = '';
-      if (hasImageData) {
-        let upload = null;
-        try {
-          upload = await storeDataUriInR2(env, {
-            dataUri: payload.imageData,
-            maxBytes: PROFILE_IMAGE_MAX_BYTES,
-            keyPrefix: membership?.org_id
-              ? `orgs/${membership.org_id}/profiles`
-              : 'profiles',
-            fileNameHint: actorEmail ? actorEmail.split('@')[0] : 'profile',
-          });
-          const orgId =
-            membership?.org_id ||
-            (await resolveDefaultOrgId(db)) ||
-            null;
-          const storagePath = buildAttachmentDownloadPath(upload.attachmentId);
-          await insertAttachmentRecord(db, {
-            attachmentId: upload.attachmentId,
-            orgId,
-            fileName: upload.fileName,
-            mimeType: upload.mimeType,
-            sizeBytes: upload.size,
-            storagePath,
-            checksum: upload.checksum,
-            createdAtMs: timestampMs,
-            createdByMembershipId: membership?.membership_id || null,
-            extra: {
-              r2Key: upload.key,
-              category: 'profile_image',
-              uploadedAtMs: timestampMs,
-              ownerEmail: actorEmail,
+      if (userRow.user_id !== membership.user_id) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'profile_scope_mismatch',
+          'プロフィールの所有者を確認できません。'
+        );
+      }
+      const currentSettingsVersion = normalizeSettingsVersion(userRow.settings_version) || '0';
+      const hasExpectedSettingsVersion = payload.expectedSettingsVersion !== undefined;
+      const expectedSettingsVersion = hasExpectedSettingsVersion
+        ? normalizeSettingsVersion(payload.expectedSettingsVersion)
+        : currentSettingsVersion;
+      if (!expectedSettingsVersion) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'settings_version_invalid',
+          '設定の更新情報が正しくありません。設定画面を開き直してください。'
+        );
+      }
+      const nextSettingsVersion = await createRequestScopedId({
+        kind: 'user-settings-version',
+        orgId: profileOrgId,
+        actorUserId: userRow.user_id,
+        requestId,
+        resourceScope: `${expectedSettingsVersion}:${idempotencyContext?.payloadSha256 || ''}`,
+      });
+      // 同時再送ではidempotency INSERTの勝者とsettings batchの勝者が逆になることがある。
+      // replay flagではなく、同一scope/hash/generationの監査正本で確定済み操作を判定する。
+      const priorSettingsAudit = await db
+            .prepare(
+              `
+              SELECT audit_id
+                FROM audit_logs
+               WHERE org_id = ?1
+                 AND actor_membership_id = ?2
+                 AND target_type = 'user'
+                 AND target_id = ?3
+                 AND action = 'user_settings.update'
+                 AND request_id = ?4
+                 AND request_payload_sha256 = ?5
+                 AND request_generation_ms = ?6
+               LIMIT 1
+            `
+            )
+            .bind(
+              profileOrgId,
+              membership.membership_id,
+              userRow.user_id,
+              requestId,
+              idempotencyContext?.payloadSha256 || '',
+              idempotencyContext?.createdAtMs || 0
+            )
+            .first();
+      const currentSettingsPayload = {
+        name: userRow.display_name || 'ユーザー',
+        imageUrl: userRow.profile_image_url || PROFILE_PLACEHOLDER_URL,
+        imageName: '',
+        theme: userRow.theme || 'light',
+        language: resolveLanguageValue(userRow.language),
+        settingsVersion: currentSettingsVersion,
+      };
+      if (priorSettingsAudit?.audit_id) {
+        let priorAttachmentInvariantSatisfied = true;
+        if (stagedProfileAttachmentId) {
+          const priorClaimedStage = await db
+            .prepare(
+              `
+              SELECT staged.staged_attachment_id,
+                     staged.claimed_target_id
+                FROM staged_attachments staged
+                JOIN attachments attachment
+                  ON attachment.attachment_id = staged.staged_attachment_id
+                 AND attachment.org_id = staged.org_id
+                 AND attachment.created_by_membership_id = staged.owner_membership_id
+               WHERE staged.staged_attachment_id = ?1
+                 AND staged.org_id = ?2
+                 AND staged.owner_user_id = ?3
+                 AND staged.owner_membership_id = ?4
+                 AND staged.purpose = 'profile'
+                 AND staged.status = 'claimed'
+                 AND staged.claimed_target_type = 'user_settings'
+               LIMIT 1
+            `
+            )
+            .bind(
+              stagedProfileAttachmentId,
+              profileOrgId,
+              userRow.user_id,
+              membership.membership_id
+            )
+            .first();
+          const expectedClaimTarget = hasExpectedSettingsVersion
+            ? nextSettingsVersion
+            : currentSettingsVersion;
+          priorAttachmentInvariantSatisfied = Boolean(
+            priorClaimedStage?.staged_attachment_id &&
+              priorClaimedStage.claimed_target_id === expectedClaimTarget &&
+              userRow.profile_image_url === buildAttachmentDownloadPath(stagedProfileAttachmentId)
+          );
+        }
+        if (
+          priorAttachmentInvariantSatisfied &&
+          (!hasExpectedSettingsVersion || currentSettingsVersion === nextSettingsVersion)
+        ) {
+          return jsonResponseFromD1(
+            200,
+            {
+              ok: true,
+              success: true,
+              result: {
+                success: true,
+                message: '設定は既に保存されています。',
+                ...currentSettingsPayload,
+                idempotentReplay: true,
+              },
             },
-          });
-          payload.imageUrl = storagePath;
-          attachmentFileName = upload.fileName;
-          payload.imageName = upload.fileName;
-          newAttachmentId = upload.attachmentId;
-          newAttachmentUploaded = true;
-        } catch (err) {
-          if (upload && upload.key && env && env.R2) {
-            try {
-              await env.R2.delete(upload.key);
-            } catch (cleanupErr) {
-              console.warn('[ShiftFlow][R2] Failed to roll back profile image upload', {
-                requestId,
-                message:
-                  cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
-              });
-            }
-          }
-          console.warn('[ShiftFlow][Profile] Image upload failed', {
-            requestId,
-            email: actorEmail,
-            message: err && err.message ? err.message : String(err),
-            code: err && err.code ? err.code : '',
-          });
-          const code = err && err.code ? err.code : 'image_upload_failed';
-          let status = code === 'r2_unavailable' ? 500 : 400;
-          let reason = '画像のアップロードに失敗しました。';
-          if (code === 'invalid_data_uri') {
-            reason = '画像データの形式が正しくありません。';
-          } else if (code === 'unsupported_mime_type') {
-            reason = '未対応の画像形式です。PNG/JPEG 等の画像を使用してください。';
-          } else if (code === 'file_too_large') {
-            reason = '画像が大きすぎます。2MB 以下の画像を選択してください。';
-          } else if (code === 'r2_unavailable') {
-            reason = 'ファイルストレージが一時的に利用できません。後ほど再試行してください。';
-          }
+            allowedOrigin,
+            requestId
+          );
+        }
+        // 監査INSERTが先に見えてもuser UPDATEはまだ未確定の並行実行がある。
+        // 現在versionが依頼のexpectedと同じなら、DBの更新条件まで進めて勝者へ収束させる。
+        if (currentSettingsVersion !== expectedSettingsVersion) {
           return errorResponse(
-            status,
+            409,
             allowedOrigin,
             requestId,
             'cf-api',
-            code,
-            reason
+            'settings_version_conflict',
+            'この保存より後に設定が更新されています。入力内容を確認してもう一度保存してください。',
+            { current: currentSettingsPayload }
           );
         }
       }
+      if (expectedSettingsVersion !== currentSettingsVersion) {
+        return errorResponse(
+          409,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'settings_version_conflict',
+          '別の画面または端末で設定が更新されました。入力内容を確認してもう一度保存してください。',
+          { current: currentSettingsPayload }
+        );
+      }
+      const previousAttachmentId = extractAttachmentIdFromUrl(userRow.profile_image_url || '');
+      const previousAttachment = previousAttachmentId
+        ? await resolveOwnedProfileAttachment(db, {
+            attachmentId: previousAttachmentId,
+            orgId: profileOrgId,
+            ownerUserId: userRow.user_id,
+          })
+        : null;
+      let newAttachmentId = '';
+      let newAttachmentUploaded = false;
+      let newAttachmentFromStage = false;
+      let newAttachment = null;
+      let uploadedR2Key = '';
+      let attachmentFileName = '';
+      if (!stagedProfileAttachmentId && typeof payload.imageUrl === 'string' && payload.imageUrl.trim()) {
+        const requestedAttachmentId = extractCanonicalProfileAttachmentId(payload.imageUrl);
+        const requestedAttachment = requestedAttachmentId
+          ? await resolveOwnedProfileAttachment(db, {
+              attachmentId: requestedAttachmentId,
+              orgId: profileOrgId,
+              ownerUserId: userRow.user_id,
+            })
+          : null;
+        if (!requestedAttachment) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'invalid_profile_image',
+            'プロフィール画像は本人所有の保存済み画像だけを指定できます。'
+          );
+        }
+        newAttachmentId = requestedAttachment.attachment_id;
+        payload.imageUrl = buildAttachmentDownloadPath(newAttachmentId);
+        attachmentFileName = requestedAttachment.file_name || '';
+      }
+      if (stagedProfileAttachmentId) {
+        const stagedRows = await resolveStagedAttachmentsForClaim(db, {
+          stagedAttachmentIds: [stagedProfileAttachmentId],
+          orgId: profileOrgId,
+          ownerUserId: userRow.user_id,
+          ownerMembershipId: membership.membership_id,
+          purpose: 'profile',
+          targetType: 'user_settings',
+          targetId: nextSettingsVersion,
+        });
+        const staged = stagedRows?.[0] || null;
+        if (!staged) {
+          return errorResponse(
+            409,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'staged_attachment_unavailable',
+            'プロフィール画像が期限切れ、使用済み、または現在のユーザーに属していません。もう一度選択してください。'
+          );
+        }
+        uploadedR2Key = staged.r2_key;
+        const storagePath = buildAttachmentDownloadPath(staged.staged_attachment_id);
+        newAttachment = {
+          attachmentId: staged.staged_attachment_id,
+          orgId: profileOrgId,
+          fileName: staged.file_name,
+          mimeType: staged.content_type,
+          sizeBytes: Number(staged.size_bytes),
+          storagePath,
+          checksum: staged.checksum,
+          createdAtMs: timestampMs,
+          createdByMembershipId: membership.membership_id,
+          extra: {
+            r2Key: staged.r2_key,
+            category: 'profile_image',
+            uploadedAtMs: Number(staged.created_at_ms || timestampMs),
+            ownerUserId: userRow.user_id,
+          },
+          stagedClaim: {
+            stagedAttachmentId: staged.staged_attachment_id,
+            targetType: 'user_settings',
+            targetId: nextSettingsVersion,
+          },
+        };
+        payload.imageUrl = storagePath;
+        attachmentFileName = staged.file_name;
+        payload.imageName = staged.file_name;
+        newAttachmentId = staged.staged_attachment_id;
+        newAttachmentFromStage = true;
+      }
       delete payload.imageData;
+      delete payload.stagedAttachmentId;
+      const changedFields = [];
+      if (payload.name !== undefined) changedFields.push('name');
+      if (payload.theme !== undefined) changedFields.push('theme');
+      if (payload.language !== undefined) changedFields.push('language');
+      if (payload.imageUrl !== undefined) changedFields.push('profileImage');
+      let settingsWrite = null;
       try {
-        await updateUserSettingsInD1(db, {
+        settingsWrite = await updateUserSettingsInD1(db, {
           email: actorEmail,
+          user: userRow,
+          orgId: profileOrgId,
+          ownerMembershipId: membership.membership_id,
           name: payload.name,
           theme: payload.theme,
           language: payload.language,
           imageUrl: payload.imageUrl,
           timestampMs,
+          requestId,
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          expectedSettingsVersion,
+          nextSettingsVersion,
+          changedFields,
+          newAttachment,
+          stagedAttachment:
+            newAttachmentFromStage && newAttachment
+              ? {
+                  stagedAttachmentId: newAttachment.attachmentId,
+                  claimedAtMs: timestampMs,
+                }
+              : null,
+          previousAttachment,
+          nextAttachmentId: newAttachmentId,
         });
       } catch (err) {
-        if (newAttachmentUploaded && newAttachmentId) {
-          await deleteAttachmentRecords(db, env, [newAttachmentId]);
+        if (newAttachmentUploaded && uploadedR2Key) {
+          await queueR2CleanupCandidates(db, [uploadedR2Key], {
+            orgId: profileOrgId,
+            targetType: 'user',
+            targetId: userRow.user_id,
+            reason: 'profile_update_commit_unknown',
+            requestId,
+            config,
+          });
         }
-        console.error('[ShiftFlow][Profile] Failed to save settings', {
-          requestId,
-          email: actorEmail,
-          message: err && err.message ? err.message : String(err),
-        });
+        let commitRecovered = false;
+        let recoveredOwnKeyAdopted = false;
+        try {
+          const primaryDb = resolvePrimaryD1(db);
+          const recoveredUser = await loadUserSettingsState(primaryDb, userRow.user_id);
+          const recoveredAudit = await primaryDb
+            .prepare(
+              `
+              SELECT audit_id
+                FROM audit_logs
+               WHERE org_id = ?1
+                 AND actor_membership_id = ?2
+                 AND target_type = 'user'
+                 AND target_id = ?3
+                 AND action = 'user_settings.update'
+                 AND request_id = ?4
+                 AND request_payload_sha256 = ?5
+                 AND request_generation_ms = ?6
+               LIMIT 1
+            `
+            )
+            .bind(
+              profileOrgId,
+              membership.membership_id,
+              userRow.user_id,
+              requestId,
+              idempotencyContext?.payloadSha256 || '',
+              idempotencyContext?.createdAtMs || 0
+            )
+            .first();
+          const recoveredVersion = normalizeSettingsVersion(recoveredUser?.settings_version);
+          let attachmentInvariantSatisfied = true;
+          if (newAttachment) {
+            const recoveredAttachment = await resolveOwnedProfileAttachment(primaryDb, {
+              attachmentId: newAttachmentId,
+              orgId: profileOrgId,
+              ownerUserId: userRow.user_id,
+            });
+            attachmentInvariantSatisfied = Boolean(
+              recoveredAttachment?.attachment_id &&
+                recoveredUser?.profile_image_url === buildAttachmentDownloadPath(newAttachmentId)
+            );
+            recoveredOwnKeyAdopted = recoveredAttachment?.r2Key === uploadedR2Key;
+          }
+          commitRecovered = Boolean(
+            recoveredAudit?.audit_id &&
+              recoveredVersion === nextSettingsVersion &&
+              attachmentInvariantSatisfied
+          );
+          if (commitRecovered && recoveredOwnKeyAdopted) {
+            await clearStorageCleanupJobs(primaryDb, [uploadedR2Key]);
+          }
+        } catch (_reconcileError) {
+          commitRecovered = false;
+        }
+        if (commitRecovered) {
+          const previousKey =
+            payload.imageUrl !== undefined &&
+            previousAttachmentId &&
+            previousAttachmentId !== newAttachmentId &&
+            typeof previousAttachment?.r2Key === 'string'
+              ? previousAttachment.r2Key.trim()
+              : '';
+          settingsWrite = {
+            cleanupKeys: previousKey ? [previousKey] : [],
+            userId: userRow.user_id,
+            orgId: profileOrgId,
+            conflict: false,
+            settingsVersion: nextSettingsVersion,
+            recovered: true,
+          };
+          captureDiagnostics(config, 'warn', 'profile_update_commit_recovered', {
+            event: 'profile_update_commit_recovered',
+            route: normalizedRoute,
+            requestId,
+            orgId: profileOrgId,
+            userId: userRow.user_id,
+            detail: 'profile_update_commit_recovered',
+          });
+        } else {
+          console.error('[ShiftFlow][Profile] Failed to save settings', {
+            requestId,
+            reasonCode: 'profile_settings_save_failed',
+          });
+          return errorResponse(
+            500,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'save_failed',
+            '設定の保存結果を確認できませんでした。再読み込み後に状態を確認してください。'
+          );
+        }
+      }
+      if (settingsWrite?.conflict) {
+        if (newAttachmentUploaded && uploadedR2Key) {
+          await cleanupR2KeysWithOutbox(db, env, [uploadedR2Key], {
+            orgId: profileOrgId,
+            targetType: 'user',
+            targetId: userRow.user_id,
+            reason: 'profile_update_conflict',
+            requestId,
+            config,
+          });
+        }
+        const primaryDb = resolvePrimaryD1(db);
+        const currentUser = await loadUserSettingsState(primaryDb, userRow.user_id);
+        const currentVersion = normalizeSettingsVersion(currentUser?.settings_version) || '0';
+        const current = {
+          name: currentUser?.display_name || 'ユーザー',
+          imageUrl: currentUser?.profile_image_url || PROFILE_PLACEHOLDER_URL,
+          imageName: '',
+          theme: currentUser?.theme || 'light',
+          language: resolveLanguageValue(currentUser?.language),
+          settingsVersion: currentVersion,
+        };
+        let ownMutationCommitted = false;
+        if (currentVersion === nextSettingsVersion) {
+          try {
+            const ownAudit = await primaryDb
+              .prepare(
+                `
+                SELECT audit_id
+                  FROM audit_logs
+                 WHERE org_id = ?1
+                   AND actor_membership_id = ?2
+                   AND target_type = 'user'
+                   AND target_id = ?3
+                   AND action = 'user_settings.update'
+                   AND request_id = ?4
+                   AND request_payload_sha256 = ?5
+                   AND request_generation_ms = ?6
+                 LIMIT 1
+              `
+              )
+              .bind(
+                profileOrgId,
+                membership.membership_id,
+                userRow.user_id,
+                requestId,
+                idempotencyContext?.payloadSha256 || '',
+                idempotencyContext?.createdAtMs || 0
+              )
+              .first();
+            let attachmentInvariantSatisfied = true;
+            if (newAttachmentFromStage && newAttachmentId) {
+              const [ownedAttachment, claimedStage] = await Promise.all([
+                resolveOwnedProfileAttachment(primaryDb, {
+                  attachmentId: newAttachmentId,
+                  orgId: profileOrgId,
+                  ownerUserId: userRow.user_id,
+                }),
+                primaryDb
+                  .prepare(
+                    `
+                    SELECT staged_attachment_id
+                      FROM staged_attachments
+                     WHERE staged_attachment_id = ?1
+                       AND org_id = ?2
+                       AND owner_user_id = ?3
+                       AND owner_membership_id = ?4
+                       AND purpose = 'profile'
+                       AND status = 'claimed'
+                       AND claimed_target_type = 'user_settings'
+                       AND claimed_target_id = ?5
+                     LIMIT 1
+                  `
+                  )
+                  .bind(
+                    newAttachmentId,
+                    profileOrgId,
+                    userRow.user_id,
+                    membership.membership_id,
+                    nextSettingsVersion
+                  )
+                  .first(),
+              ]);
+              attachmentInvariantSatisfied = Boolean(
+                ownedAttachment?.attachment_id &&
+                  ownedAttachment.r2Key === uploadedR2Key &&
+                  claimedStage?.staged_attachment_id &&
+                  currentUser?.profile_image_url === buildAttachmentDownloadPath(newAttachmentId)
+              );
+            }
+            ownMutationCommitted = Boolean(ownAudit?.audit_id && attachmentInvariantSatisfied);
+            if (ownMutationCommitted && uploadedR2Key) {
+              await clearStorageCleanupJobs(primaryDb, [uploadedR2Key]);
+            }
+          } catch (_reconcileError) {
+            ownMutationCommitted = false;
+          }
+        }
+        if (ownMutationCommitted) {
+          return jsonResponseFromD1(
+            200,
+            {
+              ok: true,
+              success: true,
+              result: {
+                success: true,
+                message: '設定は既に保存されています。',
+                ...current,
+                idempotentReplay: true,
+                recovered: true,
+              },
+            },
+            allowedOrigin,
+            requestId
+          );
+        }
         return errorResponse(
-          500,
+          409,
           allowedOrigin,
           requestId,
           'cf-api',
-          'save_failed',
-          '設定の保存に失敗しました。'
+          'settings_version_conflict',
+          '別の画面または端末で設定が更新されました。入力内容は保持したまま、もう一度保存してください。',
+          { current }
         );
       }
-      if (
-        newAttachmentUploaded &&
-        previousAttachmentId &&
-        newAttachmentId &&
-        previousAttachmentId !== newAttachmentId
-      ) {
-        await deleteAttachmentRecords(db, env, [previousAttachmentId]);
+      if (newAttachmentUploaded && newAttachmentId && uploadedR2Key) {
+        try {
+          const unselectedUploadKeys = await findUnselectedR2UploadKeys(
+            db,
+            [
+              {
+                attachmentId: newAttachmentId,
+                r2Key: uploadedR2Key,
+              },
+            ],
+            profileOrgId
+          );
+          if (unselectedUploadKeys.length) {
+            await cleanupR2KeysWithOutbox(db, env, unselectedUploadKeys, {
+              orgId: profileOrgId,
+              targetType: 'user',
+              targetId: userRow.user_id,
+              reason: 'profile_upload_superseded',
+              requestId,
+              config,
+            });
+          }
+        } catch (_error) {
+          // DB確定後の照合に失敗した場合は、live objectを誤削除しないことを優先する。
+          captureDiagnostics(config, 'error', 'profile_upload_reconcile_failed', {
+            event: 'profile_upload_reconcile_failed',
+            route: normalizedRoute,
+            requestId,
+            orgId: profileOrgId,
+            userId: userRow.user_id,
+            detail: 'profile_upload_reconcile_failed',
+          });
+        }
+      }
+      if (Array.isArray(settingsWrite?.cleanupKeys) && settingsWrite.cleanupKeys.length) {
+        await cleanupR2KeysWithOutbox(db, env, settingsWrite.cleanupKeys, {
+          orgId: profileOrgId,
+          targetType: 'user',
+          targetId: userRow.user_id,
+          reason: 'profile_image_replaced',
+          requestId,
+          config,
+        });
       }
       const updatedUser = await db
         .prepare(
           `
-          SELECT profile_image_url, theme, language
+          SELECT display_name,
+                 profile_image_url,
+                 theme,
+                 language,
+                 settings_version
             FROM users
            WHERE lower(email) = ?1
         `
@@ -3663,9 +5650,14 @@ async function maybeHandleRouteWithD1(options) {
         success: true,
         message: '設定を保存しました。',
         imageUrl: updatedUser?.profile_image_url || payload.imageUrl || PROFILE_PLACEHOLDER_URL,
-        imageName: newAttachmentUploaded ? attachmentFileName : payload.imageName || '',
+        imageName:
+          newAttachmentUploaded || newAttachmentFromStage
+            ? attachmentFileName
+            : payload.imageName || '',
         theme: updatedUser?.theme || payload.theme || 'light',
         language: resolveLanguageValue(updatedUser?.language || payload.language),
+        settingsVersion:
+          normalizeSettingsVersion(updatedUser?.settings_version) || nextSettingsVersion,
       };
       captureDiagnostics(config, 'info', 'd1_user_settings_saved', {
         event: 'd1_user_settings_saved',
@@ -3755,13 +5747,10 @@ async function maybeHandleRouteWithD1(options) {
           '所属組織が見つかりません。'
         );
       }
-      let orgId =
+      const orgId =
         typeof payload.orgId === 'string'
           ? payload.orgId.trim()
           : accessContext?.orgId || actorMembership.org_id || '';
-      if (!orgId) {
-        orgId = await resolveDefaultOrgId(db);
-      }
       if (!orgId) {
         return errorResponse(
           404,
@@ -3797,34 +5786,55 @@ async function maybeHandleRouteWithD1(options) {
       }
       const now = Date.now();
       try {
-        await db
-          .prepare(
-            `
-            UPDATE organizations
-               SET name = ?1,
-                   short_name = ?2,
-                   display_color = ?3,
-                   timezone = ?4,
-                   notification_email = ?5,
-                   updated_at_ms = ?6
-             WHERE org_id = ?7
-          `
-          )
-          .bind(
-            nextName,
-            shortName || null,
-            normalizedColor,
-            resolvedTimezone,
-            normalizedNotifyEmail || null,
-            now,
-            orgId
-          )
-          .run();
+        await db.batch(
+          [
+            db
+              .prepare(
+                `
+                UPDATE organizations
+                   SET name = ?1,
+                       short_name = ?2,
+                       display_color = ?3,
+                       timezone = ?4,
+                       notification_email = ?5,
+                       updated_at_ms = ?6
+                 WHERE org_id = ?7
+              `
+              )
+              .bind(
+                nextName,
+                shortName || null,
+                normalizedColor,
+                resolvedTimezone,
+                normalizedNotifyEmail || null,
+                now,
+                orgId
+              ),
+            buildAuditLogStatement(db, {
+              orgId,
+              actorMembershipId: membership.membership_id,
+              targetType: 'organization',
+              targetId: orgId,
+              action: 'admin_org_update',
+              payload: {
+                name: nextName,
+                shortName,
+                displayColor: normalizedColor,
+                timezone: resolvedTimezone,
+                notificationEmail: normalizedNotifyEmail,
+              },
+              createdAtMs: now,
+              requestId,
+              requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+              requestGenerationMs: idempotencyContext?.createdAtMs || null,
+            }),
+          ].filter(Boolean)
+        );
       } catch (err) {
         console.error('[ShiftFlow][Admin][Org] Failed to update organization', {
           requestId,
           orgId,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'organization_update_failed',
         });
         return errorResponse(
           500,
@@ -3835,21 +5845,6 @@ async function maybeHandleRouteWithD1(options) {
           '組織情報の更新に失敗しました。'
         );
       }
-      await insertAuditLog(db, {
-        orgId,
-        actorMembershipId: membership.membership_id,
-        targetType: 'organization',
-        targetId: orgId,
-        action: 'admin_org_update',
-        payload: {
-          name: nextName,
-          shortName,
-          displayColor: normalizedColor,
-          timezone: resolvedTimezone,
-          notificationEmail: normalizedNotifyEmail,
-        },
-        createdAtMs: now,
-      });
       captureDiagnostics(config, 'info', 'd1_admin_org_update', {
         event: 'd1_admin_org_update',
         requestId,
@@ -4149,13 +6144,52 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
+      if (changes.includes('status')) {
+        statements.push(
+          buildAuditLogStatement(db, {
+            orgId: actorMembership.org_id,
+            actorMembershipId: actorMembership.membership_id || null,
+            targetType: 'user',
+            targetId: targetLookup.user_id,
+            action: 'user_status_update',
+            payload: {
+              to: requestedStatus,
+              from: currentStatus,
+              email: targetLookup.email || targetEmail,
+            },
+            createdAtMs: now,
+            requestId,
+            requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+            requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          })
+        );
+      }
+      if (changes.includes('role')) {
+        statements.push(
+          buildAuditLogStatement(db, {
+            orgId: actorMembership.org_id,
+            actorMembershipId: actorMembership.membership_id || null,
+            targetType: 'user',
+            targetId: targetLookup.user_id,
+            action: 'user_role_update',
+            payload: {
+              to: requestedRole,
+              from: currentRole,
+              email: targetLookup.email || targetEmail,
+            },
+            createdAtMs: now,
+            requestId,
+            requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+            requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          })
+        );
+      }
       try {
-        await db.batch(statements);
+        await db.batch(statements.filter(Boolean));
       } catch (err) {
         console.error('[ShiftFlow][Admin] Failed to update user', {
           requestId,
-          email: targetLookup.email || targetEmail,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'admin_user_update_failed',
         });
         return errorResponse(
           500,
@@ -4165,34 +6199,6 @@ async function maybeHandleRouteWithD1(options) {
           'update_failed',
           'ユーザーの更新に失敗しました。'
         );
-      }
-      if (changes.includes('status')) {
-        await insertAuditLog(db, {
-          orgId: actorMembership.org_id,
-          actorMembershipId: actorMembership.membership_id || null,
-          targetType: 'user',
-          targetId: targetLookup.user_id,
-          action: 'user_status_update',
-          payload: {
-            to: requestedStatus,
-            from: currentStatus,
-            email: targetLookup.email || targetEmail,
-          },
-        });
-      }
-      if (changes.includes('role')) {
-        await insertAuditLog(db, {
-          orgId: actorMembership.org_id,
-          actorMembershipId: actorMembership.membership_id || null,
-          targetType: 'user',
-          targetId: targetLookup.user_id,
-          action: 'user_role_update',
-          payload: {
-            to: requestedRole,
-            from: currentRole,
-            email: targetLookup.email || targetEmail,
-          },
-        });
       }
       captureDiagnostics(config, 'info', 'd1_admin_user_updated', {
         event: 'd1_admin_user_updated',
@@ -4209,6 +6215,180 @@ async function maybeHandleRouteWithD1(options) {
       return jsonResponseFromD1(
         200,
         { ok: true, success: true, result: responsePayload },
+        allowedOrigin,
+        requestId
+      );
+    }
+    if (normalizedRoute === 'adminRetryStorageCleanup') {
+      if (normalizeRoleValue(accessContext?.role) !== 'admin') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'admin_only',
+          'この操作は管理者のみ実行できます。'
+        );
+      }
+      if (requestMethod && requestMethod.toUpperCase() !== 'POST') {
+        return errorResponse(
+          405,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'method_not_allowed',
+          'この操作は POST にのみ対応しています。'
+        );
+      }
+
+      const args = Array.isArray(parsedBody?.args) ? parsedBody.args : [];
+      const options =
+        args[0] && typeof args[0] === 'object' && !Array.isArray(args[0]) ? args[0] : {};
+      const rawLimit = options.limit;
+      const limit = rawLimit === undefined ? 10 : rawLimit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 25) {
+        return errorResponse(
+          400,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'invalid_cleanup_limit',
+          '一度に再試行できる件数は 1 件から 25 件です。'
+        );
+      }
+
+      const actorEmail = normalizeEmailValue(
+        (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
+      );
+      const actorMembership = actorEmail
+        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
+        : null;
+      const orgId = normalizeIdValue(accessContext?.orgId || '');
+      if (
+        !orgId ||
+        !actorMembership?.membership_id ||
+        actorMembership.org_id !== orgId
+      ) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'cleanup_scope_unavailable',
+          '再試行対象の組織を確認できません。'
+        );
+      }
+
+      const writeRetryAudit = async (payload) => {
+        const statement = buildAuditLogStatement(db, {
+          orgId,
+          actorMembershipId: actorMembership.membership_id,
+          targetType: 'storage_cleanup',
+          targetId: null,
+          action: 'storage_cleanup.retry',
+          payload,
+          createdAtMs: Date.now(),
+          requestId,
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+        });
+        if (statement) {
+          await statement.run();
+        }
+      };
+
+      if (!env?.R2 || typeof env.R2.delete !== 'function') {
+        await writeRetryAudit({
+          status: 'unavailable',
+          count: { selected: 0, deleted: 0, resolved: 0, pending: 0, blocked: 0 },
+          errorCode: 'r2_unavailable',
+        });
+        return errorResponse(
+          503,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'r2_unavailable',
+          'ファイルストレージが利用できないため、再試行を開始できません。'
+        );
+      }
+
+      const selectedResult = await db
+        .prepare(
+          `
+          SELECT job_id,
+                 r2_key,
+                 org_id,
+                 updated_at_ms
+            FROM storage_cleanup_jobs
+           WHERE org_id = ?1
+             AND org_id IS NOT NULL
+             AND COALESCE(last_error, '') <> 'cleanup_scope_mismatch'
+             AND (lease_token IS NULL OR lease_expires_at_ms <= ?2)
+             AND (
+               (reason <> 'upload_uncommitted' AND reason NOT LIKE '%commit_unknown')
+               OR created_at_ms <= ?3
+             )
+           ORDER BY attempts ASC,
+                    updated_at_ms ASC,
+                    created_at_ms ASC,
+                    job_id ASC
+           LIMIT ?4
+        `
+        )
+        .bind(
+          orgId,
+          Date.now(),
+          Date.now() - STORAGE_UPLOAD_CLEANUP_GRACE_MS,
+          limit
+        )
+        .all();
+      const selectedJobs = Array.isArray(selectedResult?.results) ? selectedResult.results : [];
+      const retryResults = [];
+      for (const job of selectedJobs) {
+        const retryResult = await cleanupR2KeysWithOutbox(db, env, [job.r2_key], {
+          retryJob: job,
+        });
+        retryResults.push(retryResult);
+      }
+
+      const count = {
+        selected: retryResults.length,
+        deleted: retryResults.filter((entry) => entry?.outcome === 'deleted').length,
+        resolved: retryResults.filter((entry) => entry?.outcome === 'resolved').length,
+        pending: retryResults.filter((entry) => entry?.outcome === 'pending').length,
+        blocked: retryResults.filter((entry) => entry?.outcome === 'blocked').length,
+      };
+      const status =
+        count.selected === 0
+          ? 'empty'
+          : count.pending === 0 && count.blocked === 0
+          ? 'completed'
+          : count.deleted + count.resolved > 0
+          ? 'partial'
+          : 'pending';
+      const jobs = retryResults.map((entry) => {
+        const result = {
+          jobId: entry?.jobId || '',
+          status: entry?.status || 'retry_pending',
+        };
+        if (entry?.errorCode) {
+          result.errorCode = entry.errorCode;
+        }
+        return result;
+      });
+      const resultPayload = { status, count, jobs };
+      await writeRetryAudit(resultPayload);
+      captureDiagnostics(config, 'info', 'storage_cleanup_retry', {
+        event: 'storage_cleanup_retry',
+        requestId,
+        orgId,
+        status,
+        count,
+      });
+      return jsonResponseFromD1(
+        200,
+        { ok: true, success: true, result: resultPayload },
         allowedOrigin,
         requestId
       );
@@ -4245,10 +6425,14 @@ async function maybeHandleRouteWithD1(options) {
       const rangeKey = filters.range || filters.period || '24h';
       const resolvedRange = resolveAuditRange(rangeKey);
       const candidateType = String(filters.eventType || filters.type || 'all').toLowerCase();
-      const recognizedTypes = new Set(['admin', 'login', 'api']);
-      const eventType = candidateType === 'all' || !recognizedTypes.has(candidateType) ? 'all' : candidateType;
+      const normalizedCandidateType = candidateType === 'login' ? 'auth' : candidateType;
+      const recognizedTypes = new Set(['admin', 'auth', 'api']);
+      const eventType =
+        normalizedCandidateType === 'all' || !recognizedTypes.has(normalizedCandidateType)
+          ? 'all'
+          : normalizedCandidateType;
       const includeAdmin = eventType === 'all' || eventType === 'admin';
-      const includeLogin = eventType === 'all' || eventType === 'login';
+      const includeAuth = eventType === 'all' || eventType === 'auth';
       const includeApi = eventType === 'all' || eventType === 'api';
       const actorEmail = normalizeEmailValue(
         (tokenDetails && tokenDetails.email) || (accessContext && accessContext.email) || ''
@@ -4312,9 +6496,22 @@ async function maybeHandleRouteWithD1(options) {
       const now = Date.now();
       const sinceMs = Math.max(0, now - resolvedRange.windowMs);
       const adminEntries = [];
-      const loginEntries = [];
+      const authEntries = [];
       const apiEntries = [];
+      const stats = { admin: 0, auth: 0, api: 0 };
       if (includeAdmin) {
+        const adminCount = await db
+          .prepare(
+            `
+            SELECT COUNT(*) AS row_count
+              FROM audit_logs
+             WHERE org_id = ?1
+               AND created_at_ms >= ?2
+          `
+          )
+          .bind(orgId, sinceMs)
+          .first();
+        stats.admin = Number(adminCount?.row_count || 0);
         const adminResult = await db
           .prepare(
             `
@@ -4325,6 +6522,7 @@ async function maybeHandleRouteWithD1(options) {
               al.action,
               al.created_at_ms,
               al.payload_json,
+              al.request_id,
               al.actor_membership_id,
               u.email AS actor_email,
               COALESCE(u.display_name, u.email) AS actor_name,
@@ -4348,74 +6546,96 @@ async function maybeHandleRouteWithD1(options) {
           }
         });
       }
-      if (includeLogin) {
-        const loginResult = await db
+      if (includeAuth) {
+        const authCount = await db
           .prepare(
             `
-            SELECT *
-              FROM (
-                SELECT
-                  la.login_id,
-                  la.user_email,
-                  la.status,
-                  la.reason,
-                  la.request_id,
-                  la.token_iat_ms,
-                  la.attempted_at_ms,
-                  la.client_ip,
-                  la.user_agent,
-                  la.role,
-                  la.org_id,
-                  u.display_name,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY
-                      LOWER(COALESCE(la.user_email, '')),
-                      COALESCE(la.token_iat_ms, la.attempted_at_ms)
-                    ORDER BY la.attempted_at_ms DESC, la.login_id DESC
-                  ) AS rn
-                FROM login_audits la
-                LEFT JOIN users u ON LOWER(u.email) = LOWER(la.user_email)
-                WHERE la.attempted_at_ms >= ?2
-                  AND (
-                    la.org_id = ?1
+            SELECT COUNT(*) AS row_count
+              FROM auth_events ae
+             WHERE (
+                     ae.org_id = ?1
+                     OR (
+                       ae.org_id IS NULL
+                       AND ae.user_id IS NOT NULL
+                       AND EXISTS (
+                         SELECT 1
+                           FROM memberships auth_membership
+                          WHERE auth_membership.org_id = ?1
+                            AND auth_membership.user_id = ae.user_id
+                            AND LOWER(COALESCE(auth_membership.status, '')) = 'active'
+                       )
+                     )
+                   )
+               AND ae.occurred_at_ms >= ?2
+          `
+          )
+          .bind(orgId, sinceMs)
+          .first();
+        stats.auth = Number(authCount?.row_count || 0);
+        const authResult = await db
+          .prepare(
+            `
+            SELECT
+              ae.event_id,
+              ae.event_type,
+              ae.outcome,
+              ae.reason_code,
+              ae.org_id,
+              ae.user_id,
+              u.email AS user_email,
+              ae.user_sub,
+              ae.status,
+              ae.role,
+              ae.request_id,
+              ae.route,
+              ae.source,
+              ae.occurred_at_ms,
+              COALESCE(u.display_name, u.email) AS display_name
+            FROM auth_events ae
+            LEFT JOIN users u ON u.user_id = ae.user_id
+            WHERE (
+                    ae.org_id = ?1
                     OR (
-                      la.org_id IS NULL
+                      ae.org_id IS NULL
+                      AND ae.user_id IS NOT NULL
                       AND EXISTS (
                         SELECT 1
-                          FROM memberships m
-                          JOIN users u2 ON u2.user_id = m.user_id
-                         WHERE LOWER(u2.email) = LOWER(la.user_email)
-                           AND m.org_id = ?1
-                           AND LOWER(COALESCE(m.status, 'active')) = 'active'
-                         LIMIT 1
-                      )
-                      AND NOT EXISTS (
-                        SELECT 1
-                          FROM memberships m_other
-                          JOIN users u3 ON u3.user_id = m_other.user_id
-                         WHERE LOWER(u3.email) = LOWER(la.user_email)
-                           AND m_other.org_id <> ?1
-                           AND LOWER(COALESCE(m_other.status, 'active')) = 'active'
+                          FROM memberships auth_membership
+                         WHERE auth_membership.org_id = ?1
+                           AND auth_membership.user_id = ae.user_id
+                           AND LOWER(COALESCE(auth_membership.status, '')) = 'active'
                       )
                     )
                   )
-              )
-             WHERE rn = 1
-             ORDER BY attempted_at_ms DESC
-             LIMIT ?3
+              AND ae.occurred_at_ms >= ?2
+            ORDER BY ae.occurred_at_ms DESC
+            LIMIT ?3
           `
           )
           .bind(orgId, sinceMs, limit)
           .all();
-        const rows = Array.isArray(loginResult?.results) ? loginResult.results : [];
+        const rows = Array.isArray(authResult?.results) ? authResult.results : [];
         rows.forEach((row) => {
-          const entry = buildLoginAuditEntry(row);
+          const entry = buildAuthEventEntry(row);
           if (entry) {
-            loginEntries.push(entry);
+            authEntries.push(entry);
           }
         });
       }
       if (includeApi) {
+        const apiCount = await db
+          .prepare(
+            `
+            SELECT COUNT(*) AS row_count
+              FROM auth_proxy_logs
+             WHERE created_at_ms >= ?2
+               AND org_id = ?1
+               AND LOWER(COALESCE(level, '')) IN ('warn', 'error')
+          `
+          )
+          .bind(orgId, sinceMs)
+          .first();
+        stats.api = Number(apiCount?.row_count || 0);
         const proxyResult = await db
           .prepare(
             `
@@ -4430,30 +6650,16 @@ async function maybeHandleRouteWithD1(options) {
               apl.status,
               apl.meta_json,
               apl.source,
-              apl.client_ip,
-              apl.user_agent,
               apl.cf_ray,
               apl.created_at_ms,
+              apl.org_id,
+              apl.user_id,
               u.display_name
             FROM auth_proxy_logs apl
-            LEFT JOIN users u ON LOWER(u.email) = LOWER(apl.email)
+            LEFT JOIN users u ON u.user_id = apl.user_id
             WHERE apl.created_at_ms >= ?2
-              AND apl.email IS NOT NULL
-              AND EXISTS (
-                SELECT 1
-                  FROM memberships ms
-                 WHERE ms.user_id = u.user_id
-                   AND ms.org_id = ?1
-                   AND LOWER(COALESCE(ms.status, 'active')) = 'active'
-              )
-              AND NOT EXISTS (
-                SELECT 1
-                  FROM memberships ms_other
-                 WHERE ms_other.user_id = u.user_id
-                   AND ms_other.org_id <> ?1
-                   AND LOWER(COALESCE(ms_other.status, 'active')) = 'active'
-              )
-              AND (apl.event IS NULL OR apl.event != 'login_attempt')
+              AND apl.org_id = ?1
+              AND LOWER(COALESCE(apl.level, '')) IN ('warn', 'error')
             ORDER BY apl.created_at_ms DESC
             LIMIT ?3
           `
@@ -4468,24 +6674,20 @@ async function maybeHandleRouteWithD1(options) {
           }
         });
       }
-      const combined = adminEntries.concat(loginEntries, apiEntries);
+      const combined = adminEntries.concat(authEntries, apiEntries);
       combined.sort((a, b) => {
         const aTime = typeof a.occurredAt === 'number' ? a.occurredAt : 0;
         const bTime = typeof b.occurredAt === 'number' ? b.occurredAt : 0;
         return bTime - aTime;
       });
       const limitedRows = combined.slice(0, limit);
-      const stats = {
-        admin: adminEntries.length,
-        login: loginEntries.length,
-        api: apiEntries.length,
-      };
+      const availableRows = stats.admin + stats.auth + stats.api;
       const resultPayload = {
         rows: limitedRows,
         meta: {
           totalRows: limitedRows.length,
-          availableRows: combined.length,
-          truncated: combined.length > limit,
+          availableRows,
+          truncated: availableRows > limit,
           stats,
           filters: {
             range: resolvedRange.key,
@@ -4543,38 +6745,117 @@ async function maybeHandleRouteWithD1(options) {
       const argsArray = Array.isArray(effectiveBody?.args) ? effectiveBody.args : [];
       const taskPayload =
         argsArray.length && typeof argsArray[0] === 'object' ? argsArray[0] : {};
+      const requestedTaskFolderId = normalizeIdValue(
+        taskPayload.folderId || taskPayload.folder_id || ''
+      );
+      if (requestedTaskFolderId) {
+        const taskFolderAccess = await ensureFolderAccessForUser(db, {
+          orgId: accessContext?.orgId || '',
+          folderId: requestedTaskFolderId,
+          userId: accessContext?.userId || '',
+          isManager: isManagerRole(accessContext?.role),
+          requireActive: true,
+        });
+        if (!taskFolderAccess) {
+          return errorResponse(
+            403,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'task_folder_access_denied',
+            '指定されたフォルダへタスクを保存する権限がありません。'
+          );
+        }
+        taskPayload.folderId = taskFolderAccess.id;
+        delete taskPayload.folder_id;
+      }
       const timestampMs =
         interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
           ? interception.dualWriteContext.timestampMs
           : Date.now();
-      const taskId = generateTaskId();
+      const taskId = await createRequestScopedId({
+        kind: 'task',
+        orgId: accessContext?.orgId || '',
+        actorUserId: accessContext?.userId || '',
+        requestId,
+        resourceScope:
+          `${normalizeIdValue(taskPayload.folderId || taskPayload.folder_id || '') || 'tasks'}:${
+            idempotencyContext?.payloadSha256 || ''
+          }`,
+      });
+      // auditは期限なしのtombstoneとして扱う。7日TTLの台帳が更新されても、
+      // 同じ作成requestで削除済みresourceを復活させない。
+      const priorCreate = await db
+        .prepare(
+          `
+          SELECT al.audit_id
+            FROM audit_logs al
+            JOIN memberships actor ON actor.membership_id = al.actor_membership_id
+           WHERE al.org_id = ?1
+             AND actor.user_id = ?2
+             AND al.target_type = 'task'
+             AND al.target_id = ?3
+             AND al.action = 'task.create'
+             AND al.request_id = ?4
+           LIMIT 1
+        `
+        )
+        .bind(
+          accessContext?.orgId || '',
+          accessContext?.userId || '',
+          taskId,
+          requestId
+        )
+        .first();
+      if (priorCreate?.audit_id) {
+        const existingTask = await db
+          .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
+          .bind(taskId, accessContext?.orgId || '')
+          .first();
+        if (!existingTask?.task_id) {
+          return errorResponse(
+            409,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'idempotency_replay',
+            'このタスク作成リクエストは既に完了しており、対象は現在存在しません。新しい操作としてやり直してください。'
+          );
+        }
+        return jsonResponseFromD1(
+          200,
+          {
+            ok: true,
+            success: true,
+            message: 'タスクを追加しました。',
+            taskId,
+            idempotentReplay: true,
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
       await insertTaskIntoD1(db, {
-        taskId,
+        notification: { enabled: isPushConfigured(env), orgId: accessContext.orgId, actorUserId: accessContext.userId,
+          requestId, payloadSha256: idempotencyContext.payloadSha256, generationMs: idempotencyContext.createdAtMs },
+                taskId,
         payload: taskPayload,
         timestampMs,
         authorEmail: tokenDetails?.email || accessContext?.email || '',
         orgId: accessContext?.orgId || '',
         role: accessContext?.role,
-      });
-      const actorEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const actorMembership = actorEmail
-        ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
-        : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
-      if (orgId) {
-        await insertAuditLog(db, {
-          orgId,
-          actorMembershipId: actorMembership?.membership_id || null,
+        requestId,
+        audit: {
           targetType: 'task',
-          targetId: taskId,
           action: 'task.create',
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
           payload: {
             title: typeof taskPayload.title === 'string' ? taskPayload.title.trim() : '',
             assigneeCount: Array.isArray(taskPayload.assignees) ? taskPayload.assignees.length : 0,
           },
-        });
-      }
+        },
+      });
       captureDiagnostics(config, 'info', 'd1_task_created', {
         event: 'd1_task_created',
         route: normalizedRoute,
@@ -4613,11 +6894,13 @@ async function maybeHandleRouteWithD1(options) {
           'タスク ID を指定してください。'
         );
       }
-      const taskRow = await db
-        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
-        .bind(taskId, accessContext?.orgId || '')
-        .first();
-      if (!taskRow) {
+      const taskAccess = await resolveTaskAccess(db, {
+        taskId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      if (!taskAccess) {
         return jsonResponseFromD1(
           404,
           {
@@ -4629,11 +6912,65 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
+      if (!taskAccess.canUpdate) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_access_denied',
+          'このタスクを更新する権限がありません。'
+        );
+      }
+      const updatePayload = ctx?.payload || {};
+      if (updatePayload.folderId !== undefined || updatePayload.folder_id !== undefined) {
+        const requestedTaskFolderId = normalizeIdValue(
+          updatePayload.folderId || updatePayload.folder_id || ''
+        );
+        if (requestedTaskFolderId) {
+          const taskFolderAccess = await ensureFolderAccessForUser(db, {
+            orgId: accessContext?.orgId || '',
+            folderId: requestedTaskFolderId,
+            userId: accessContext?.userId || '',
+            isManager: isManagerRole(accessContext?.role),
+            requireActive: true,
+          });
+          if (!taskFolderAccess) {
+            return errorResponse(
+              403,
+              allowedOrigin,
+              requestId,
+              'cf-api',
+              'task_folder_access_denied',
+              '指定されたフォルダへタスクを移動する権限がありません。'
+            );
+          }
+          updatePayload.folderId = taskFolderAccess.id;
+        } else {
+          updatePayload.folderId = null;
+        }
+        delete updatePayload.folder_id;
+      }
       await updateTaskInD1(db, {
-        taskId,
-        payload: ctx?.payload || {},
+        notification: { enabled: isPushConfigured(env), orgId: accessContext.orgId, actorUserId: accessContext.userId,
+          requestId, payloadSha256: idempotencyContext.payloadSha256, generationMs: idempotencyContext.createdAtMs },
+                taskId,
+        payload: updatePayload,
         timestampMs: ctx?.timestampMs || Date.now(),
         orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        requestId,
+        audit: {
+          targetType: 'task',
+          action: 'task.update',
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+          payload: {
+            fields: Object.keys(updatePayload).filter((key) =>
+              ['title', 'description', 'status', 'priority', 'dueDate', 'folderId', 'assignees'].includes(key)
+            ),
+          },
+        },
       });
       captureDiagnostics(config, 'info', 'd1_task_updated', {
         event: 'd1_task_updated',
@@ -4667,11 +7004,13 @@ async function maybeHandleRouteWithD1(options) {
           'タスク ID を指定してください。'
         );
       }
-      const taskRow = await db
-        .prepare('SELECT task_id FROM tasks WHERE task_id = ?1 AND org_id = ?2')
-        .bind(taskId, accessContext?.orgId || '')
-        .first();
-      if (!taskRow) {
+      const taskAccess = await resolveTaskAccess(db, {
+        taskId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      if (!taskAccess) {
         return jsonResponseFromD1(
           404,
           {
@@ -4683,10 +7022,30 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
+      if (!taskAccess.canComplete) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_access_denied',
+          'このタスクを完了する権限がありません。'
+        );
+      }
       await completeTaskInD1(db, {
-        taskId,
+        notification: { ...{ enabled: isPushConfigured(env), orgId: accessContext.orgId, actorUserId: accessContext.userId,
+          requestId, payloadSha256: idempotencyContext.payloadSha256, generationMs: idempotencyContext.createdAtMs }, folderId: taskAccess.row.folder_id },
+                taskId,
         timestampMs: Date.now(),
         orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        requestId,
+        audit: {
+          targetType: 'task',
+          action: 'task.complete',
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+        },
       });
       captureDiagnostics(config, 'info', 'd1_task_completed', {
         event: 'd1_task_completed',
@@ -4720,20 +7079,13 @@ async function maybeHandleRouteWithD1(options) {
           'タスク ID を指定してください。'
         );
       }
-      const taskRow = await db
-        .prepare(
-          `
-          SELECT task_id,
-                 org_id,
-                 created_by_email
-            FROM tasks
-           WHERE task_id = ?1
-             AND org_id = ?2
-        `
-        )
-        .bind(taskId, accessContext?.orgId || '')
-        .first();
-      if (!taskRow) {
+      const taskAccess = await resolveTaskAccess(db, {
+        taskId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      if (!taskAccess) {
         return jsonResponseFromD1(
           404,
           {
@@ -4745,14 +7097,8 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
-      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const creatorEmail = normalizeEmailValue(taskRow.created_by_email || '');
-      const canDelete =
-        !creatorEmail ||
-        !currentEmail ||
-        creatorEmail === currentEmail ||
-        isManagerRole(accessContext?.role);
-      if (!canDelete) {
+      const currentEmail = taskAccess.actorEmail;
+      if (!taskAccess.canDelete) {
         return errorResponse(
           403,
           allowedOrigin,
@@ -4762,7 +7108,19 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteTaskFromD1(db, env, { taskId, orgId: accessContext?.orgId || '' });
+      await deleteTaskFromD1(db, env, {
+        taskId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: currentEmail,
+        requestId,
+        config,
+        audit: {
+          targetType: 'task',
+          action: 'task.delete',
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+        },
+      });
       captureDiagnostics(config, 'info', 'd1_task_deleted', {
         event: 'd1_task_deleted',
         route: normalizedRoute,
@@ -4962,18 +7320,13 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
-      const row = await db
-        .prepare(
-          `
-          SELECT *
-            FROM tasks
-           WHERE task_id = ?1
-             AND org_id = ?2
-        `
-        )
-        .bind(taskId, accessContext?.orgId || '')
-        .first();
-      if (!row) {
+      const taskAccess = await resolveTaskAccess(db, {
+        taskId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: tokenDetails?.email || accessContext?.email || '',
+        role: accessContext?.role,
+      });
+      if (!taskAccess) {
         return jsonResponseFromD1(
           200,
           { ok: true, success: true, result: null },
@@ -4981,13 +7334,19 @@ async function maybeHandleRouteWithD1(options) {
           requestId
         );
       }
+      if (!taskAccess.canRead) {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'task_access_denied',
+          'このタスクを表示する権限がありません。'
+        );
+      }
+      const row = taskAccess.row;
       const assigneeMap = await fetchAssigneesForTasks(db, [taskId]);
       const summary = buildTaskRecordFromD1(row, assigneeMap.get(taskId) || []);
-      const currentEmail = normalizeEmailValue(tokenDetails?.email || accessContext?.email || '');
-      const creatorEmail = normalizeEmailValue(row.created_by_email);
-      const canDelete =
-        (currentEmail && creatorEmail && currentEmail === creatorEmail) ||
-        isManagerRole(accessContext?.role);
       const detail = {
         id: summary?.id || row.task_id,
         title: summary?.title || row.title || 'Untitled Task',
@@ -4996,7 +7355,7 @@ async function maybeHandleRouteWithD1(options) {
         status: summary?.status || mapD1StatusToLegacy(row.status),
         priority: summary?.priority || mapD1PriorityToLegacy(row.priority),
         createdBy: row.created_by_email || '',
-        canDelete,
+        canDelete: taskAccess.canDelete,
         assignees: summary?.assignees || [],
         attachments: [],
         repeatRule: summary?.repeatRule || '',
@@ -5034,14 +7393,19 @@ async function maybeHandleRouteWithD1(options) {
         interception?.dualWriteContext?.timestampMs && Number.isFinite(interception.dualWriteContext.timestampMs)
           ? interception.dualWriteContext.timestampMs
           : Date.now();
-      const messageId = generateMessageId();
+      const messageId = await createRequestScopedId({
+        kind: 'message',
+        orgId: accessContext?.orgId || '',
+        actorUserId: accessContext?.userId || '',
+        requestId,
+        resourceScope: `messages:${idempotencyContext?.payloadSha256 || ''}`,
+      });
       const actorEmail = tokenDetails?.email || accessContext?.email || '';
       const normalizedActorEmail = normalizeEmailValue(actorEmail);
       const membership = normalizedActorEmail
         ? await resolveMembershipForEmail(db, normalizedActorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
       let folderId =
         typeof messagePayload.folderId === 'string'
           ? messagePayload.folderId
@@ -5068,6 +7432,52 @@ async function maybeHandleRouteWithD1(options) {
           'このフォルダには投稿できません。'
         );
       }
+      const existingMessage = await db
+        .prepare('SELECT message_id FROM messages WHERE message_id = ?1 AND org_id = ?2')
+        .bind(messageId, orgId || '')
+        .first();
+      if (existingMessage) {
+        return jsonResponseFromD1(
+          200,
+          {
+            ok: true,
+            success: true,
+            message: 'メッセージを投稿しました。',
+            memoId: messageId,
+            idempotentReplay: true,
+          },
+          allowedOrigin,
+          requestId
+        );
+      }
+      if (membership?.membership_id) {
+        const priorCreate = await db
+          .prepare(
+            `
+            SELECT audit_id
+              FROM audit_logs
+             WHERE org_id = ?1
+               AND actor_membership_id = ?2
+               AND target_type = 'message'
+               AND target_id = ?3
+               AND action = 'message.create'
+               AND request_id = ?4
+             LIMIT 1
+          `
+          )
+          .bind(orgId || '', membership.membership_id, messageId, requestId)
+          .first();
+        if (priorCreate?.audit_id) {
+          return errorResponse(
+            409,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'idempotency_replay',
+            'この投稿リクエストは既に完了しており、対象は現在存在しません。新しい操作としてやり直してください。'
+          );
+        }
+      }
       messagePayload.folderId = folderAccess.id;
       const rawAttachments = Array.isArray(messagePayload.attachments) ? messagePayload.attachments : [];
       const preparedAttachments = [];
@@ -5084,101 +7494,85 @@ async function maybeHandleRouteWithD1(options) {
           );
         }
         const resolvedOrgId = membership?.org_id || accessContext?.orgId || null;
-        for (let index = 0; index < rawAttachments.length; index += 1) {
-          const rawAttachment = rawAttachments[index] || {};
-          const dataUri = typeof rawAttachment.dataUri === 'string' ? rawAttachment.dataUri : '';
-          if (!dataUri) {
-            if (uploadKeysForRollback.length && env && env.R2) {
-              try {
-                await env.R2.delete(uploadKeysForRollback);
-              } catch (cleanupErr) {
-                console.warn('[ShiftFlow][R2] Failed to roll back attachment uploads', {
-                  requestId,
-                  message:
-                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
-                });
-              }
-            }
-            return errorResponse(
-              400,
-              allowedOrigin,
-              requestId,
-              'cf-api',
-              'attachment_data_missing',
-              `添付ファイル ${index + 1} のデータが取得できません。`
-            );
-          }
-          let upload = null;
-          try {
-            upload = await storeDataUriInR2(env, {
-              dataUri,
-              maxBytes: MESSAGE_ATTACHMENT_MAX_BYTES,
-              keyPrefix: membership?.org_id
-                ? `orgs/${membership.org_id}/messages`
-                : 'messages',
-              fileNameHint:
-                typeof rawAttachment.name === 'string' && rawAttachment.name
-                  ? rawAttachment.name
-                  : `attachment_${index + 1}`,
-            });
-            uploadKeysForRollback.push(upload.key);
-            preparedAttachments.push({
-              attachmentId: upload.attachmentId,
-              fileName: upload.fileName,
-              mimeType: upload.mimeType,
-              sizeBytes: upload.size,
-              checksum: upload.checksum,
-              storagePath: buildAttachmentDownloadPath(upload.attachmentId),
-              createdAtMs: timestampMs,
-              createdByMembershipId: membership?.membership_id || null,
-              orgId: resolvedOrgId || null,
-              extra: {
-                r2Key: upload.key,
-                category: 'message_attachment',
-                messageId,
-                uploadedAtMs: timestampMs,
-                ownerEmail: normalizedActorEmail,
-                originalName:
-                  typeof rawAttachment.name === 'string' ? rawAttachment.name : '',
-              },
-            });
-          } catch (err) {
-            if (upload && upload.key && env && env.R2) {
-              try {
-                await env.R2.delete(upload.key);
-              } catch (cleanupErr) {
-                console.warn('[ShiftFlow][R2] Failed to roll back attachment upload', {
-                  requestId,
-                  message:
-                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
-                });
-              }
-            }
-            if (uploadKeysForRollback.length && env && env.R2) {
-              try {
-                await env.R2.delete(uploadKeysForRollback);
-              } catch (cleanupErr) {
-                console.warn('[ShiftFlow][R2] Failed to roll back attachment uploads', {
-                  requestId,
-                  message:
-                    cleanupErr && cleanupErr.message ? cleanupErr.message : String(cleanupErr),
-                });
-              }
-            }
-            const code = err && err.code ? err.code : 'attachment_upload_failed';
-            let status = code === 'r2_unavailable' ? 500 : 400;
-            let reason = '添付ファイルのアップロードに失敗しました。';
-            if (code === 'invalid_data_uri') {
-              reason = `添付ファイル ${index + 1} のデータ形式が不正です。`;
-            } else if (code === 'unsupported_mime_type') {
-              reason = `添付ファイル ${index + 1} は未対応の形式です。`;
-            } else if (code === 'file_too_large') {
-              reason = `添付ファイル ${index + 1} が大きすぎます。4MB 以下にしてください。`;
-            } else if (code === 'r2_unavailable') {
-              reason = 'ファイルストレージが一時的に利用できません。後ほど再試行してください。';
-            }
-            return errorResponse(status, allowedOrigin, requestId, 'cf-api', code, reason);
-          }
+        if (!resolvedOrgId) {
+          return errorResponse(
+            403,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'attachment_scope_unavailable',
+            '添付ファイルの保存先組織を確認できません。'
+          );
+        }
+        const hasLegacyInlineData = rawAttachments.some(
+          (attachment) =>
+            typeof attachment?.dataUri === 'string' || typeof attachment?.imageData === 'string'
+        );
+        if (hasLegacyInlineData) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'staged_attachment_required',
+            '添付ファイルは先に一時アップロードしてから投稿してください。'
+          );
+        }
+        const stagedAttachmentIds = rawAttachments.map((attachment) =>
+          normalizeIdValue(attachment?.stagedAttachmentId)
+        );
+        if (stagedAttachmentIds.some((id) => !id) || new Set(stagedAttachmentIds).size !== stagedAttachmentIds.length) {
+          return errorResponse(
+            400,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'staged_attachment_invalid',
+            '添付ファイルの一時保存IDが正しくありません。もう一度選択してください。'
+          );
+        }
+        const stagedRows = await resolveStagedAttachmentsForClaim(db, {
+          stagedAttachmentIds,
+          orgId: resolvedOrgId,
+          ownerUserId: membership?.user_id || accessContext?.userId || '',
+          ownerMembershipId: membership?.membership_id || '',
+          purpose: 'message',
+          targetType: 'message',
+          targetId: messageId,
+        });
+        if (!stagedRows || stagedRows.length !== stagedAttachmentIds.length) {
+          return errorResponse(
+            409,
+            allowedOrigin,
+            requestId,
+            'cf-api',
+            'staged_attachment_unavailable',
+            '添付ファイルが期限切れ、使用済み、または現在のユーザーに属していません。もう一度選択してください。'
+          );
+        }
+        for (const staged of stagedRows) {
+          const attachmentId = staged.staged_attachment_id;
+          uploadKeysForRollback.push(staged.r2_key);
+          preparedAttachments.push({
+            attachmentId,
+            stagedAttachmentId: staged.staged_attachment_id,
+            fileName: staged.file_name,
+            mimeType: staged.content_type,
+            sizeBytes: Number(staged.size_bytes),
+            checksum: staged.checksum,
+            storagePath: buildAttachmentDownloadPath(attachmentId),
+            createdAtMs: timestampMs,
+            createdByMembershipId: membership?.membership_id || null,
+            orgId: resolvedOrgId,
+            extra: {
+              r2Key: staged.r2_key,
+              category: 'message_attachment',
+              messageId,
+              uploadedAtMs: Number(staged.created_at_ms || timestampMs),
+              ownerUserId: membership?.user_id || accessContext?.userId || '',
+              originalName: staged.file_name,
+            },
+          });
         }
         messagePayload.attachments = preparedAttachments.map((attachment) => ({
           name: attachment.fileName,
@@ -5189,73 +7583,251 @@ async function maybeHandleRouteWithD1(options) {
       } else {
         delete messagePayload.attachments;
       }
-      await insertMessageIntoD1(db, {
-        messageId,
-        payload: messagePayload,
-        timestampMs,
-        authorEmail: tokenDetails?.email || accessContext?.email || '',
-        orgId: accessContext?.orgId || '',
-        role: accessContext?.role,
-      });
-      if (preparedAttachments.length) {
+      const messageStatements = [
+        buildMessageInsertStatement(db, {
+          messageId,
+          payload: messagePayload,
+          timestampMs,
+          orgId,
+          membershipId: membership?.membership_id || null,
+          ownerUserId: membership?.user_id || accessContext?.userId || '',
+          requiredStagedAttachments: preparedAttachments.map((attachment) => ({
+            staged_attachment_id: attachment.stagedAttachmentId,
+          })),
+        }),
+      ];
+      if (orgId) {
+        const auditFolderId = folderAccess?.id || folderId;
+        messageStatements.push(
+          buildAuditLogStatement(db, {
+            orgId,
+            actorMembershipId: membership?.membership_id || null,
+            targetType: 'message',
+            targetId: messageId,
+            action: 'message.create',
+            createdAtMs: timestampMs,
+            requestId,
+            requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+            requestGenerationMs: idempotencyContext?.createdAtMs || null,
+            onlyIfPreviousStatementChanged: true,
+            payload: {
+              title: typeof messagePayload.title === 'string' ? messagePayload.title.trim() : '',
+              folderId: auditFolderId || '',
+              attachmentCount: preparedAttachments.length,
+            },
+          })
+        );
+      }
+      for (const attachment of preparedAttachments) {
+        messageStatements.push(
+          buildStagedAttachmentClaimStatement(
+            db,
+            { staged_attachment_id: attachment.stagedAttachmentId },
+            {
+              orgId: attachment.orgId || orgId || '',
+              ownerUserId: membership?.user_id || accessContext?.userId || '',
+              ownerMembershipId: membership?.membership_id || '',
+              purpose: 'message',
+              targetType: 'message',
+              targetId: messageId,
+              claimedAtMs: timestampMs,
+            }
+          ),
+          buildAttachmentRecordStatement(db, {
+            ...attachment,
+            preserveExisting: true,
+            stagedClaim: {
+              stagedAttachmentId: attachment.stagedAttachmentId,
+              targetType: 'message',
+              targetId: messageId,
+            },
+          }),
+          buildStagedMessageAttachmentLinkStatement(
+            db,
+            attachment.stagedAttachmentId,
+            messageId,
+            attachment.orgId || orgId || ''
+          ),
+          buildClearStorageCleanupJobForAdoptedAttachmentStatement(db, {
+            r2Key: attachment.extra?.r2Key || '',
+            attachmentId: attachment.attachmentId,
+            orgId: attachment.orgId || orgId || '',
+          })
+        );
+      }
+      if (membership?.membership_id) {
+        messageStatements.push(
+          db
+            .prepare(
+              `
+              INSERT OR IGNORE INTO message_reads (
+                message_read_id,
+                message_id,
+                membership_id,
+                read_at_ms
+              )
+              VALUES (?1, ?2, ?3, ?4)
+            `
+            )
+            .bind(generateMessageId(), messageId, membership.membership_id, timestampMs)
+        );
+      }
+      messageStatements.push(await buildPushEventStatement(db, { ...{ enabled: isPushConfigured(env), orgId: accessContext.orgId, actorUserId: accessContext.userId,
+          requestId, payloadSha256: idempotencyContext.payloadSha256, generationMs: idempotencyContext.createdAtMs }, kind: 'message_created',
+        resourceId: messageId, folderId: folderAccess?.id || folderId, auditAction: 'message.create' }));
+      let messageWriteRecovered = false;
+      try {
+        await db.batch(messageStatements.filter(Boolean));
+        if (preparedAttachments.length) {
+          const stagedIds = preparedAttachments.map(
+            (attachment) => attachment.stagedAttachmentId
+          );
+          const placeholders = stagedIds.map((_, index) => `?${index + 3}`).join(', ');
+          const verification = await db
+            .prepare(
+              `
+              SELECT COUNT(*) AS count
+                FROM message_attachments ma
+                JOIN attachments a ON a.attachment_id = ma.attachment_id
+                JOIN staged_attachments staged
+                  ON staged.staged_attachment_id = a.attachment_id
+               WHERE ma.message_id = ?1
+                 AND a.org_id = ?2
+                 AND staged.status = 'claimed'
+                 AND staged.claimed_target_type = 'message'
+                 AND staged.claimed_target_id = ?1
+                 AND staged.staged_attachment_id IN (${placeholders})
+            `
+            )
+            .bind(messageId, orgId || '', ...stagedIds)
+            .first();
+          if (Number(verification?.count || 0) !== stagedIds.length) {
+            const claimError = new Error('Staged attachment claim could not be verified.');
+            claimError.code = 'staged_attachment_claim_failed';
+            throw claimError;
+          }
+        }
+      } catch (err) {
+        await queueR2CleanupCandidates(db, uploadKeysForRollback, {
+          orgId: orgId || '',
+          targetType: 'message',
+          targetId: messageId,
+          reason: 'message_create_commit_unknown',
+          requestId,
+          config,
+        });
         try {
-          for (const attachment of preparedAttachments) {
-            await insertAttachmentRecord(db, attachment);
-            await db
+          const primaryDb = resolvePrimaryD1(db);
+          const recoveredMessage = await primaryDb
+            .prepare('SELECT message_id FROM messages WHERE message_id = ?1 AND org_id = ?2')
+            .bind(messageId, orgId || '')
+            .first();
+          let recoveredAttachments = true;
+          const adoptedOwnKeys = [];
+          if (preparedAttachments.length) {
+            const attachmentIds = preparedAttachments.map((attachment) => attachment.attachmentId);
+            const placeholders = attachmentIds.map((_, index) => `?${index + 3}`).join(', ');
+            const result = await primaryDb
               .prepare(
                 `
-                INSERT OR REPLACE INTO message_attachments (message_id, attachment_id)
-                VALUES (?1, ?2)
+                SELECT a.attachment_id,
+                       a.extra_json
+                  FROM message_attachments ma
+                  JOIN attachments a ON a.attachment_id = ma.attachment_id
+                 WHERE ma.message_id = ?1
+                   AND a.org_id = ?2
+                   AND a.attachment_id IN (${placeholders})
               `
               )
-              .bind(messageId, attachment.attachmentId)
-              .run();
+              .bind(messageId, orgId || '', ...attachmentIds)
+              .all();
+            const rows = Array.isArray(result?.results) ? result.results : [];
+            const selectedKeys = new Map(
+              rows.map((row) => [
+                normalizeIdValue(row?.attachment_id),
+                String(safeParseJson(row?.extra_json || null, {})?.r2Key || '').trim(),
+              ])
+            );
+            recoveredAttachments = preparedAttachments.every((attachment) =>
+              Boolean(selectedKeys.get(attachment.attachmentId))
+            );
+            preparedAttachments.forEach((attachment) => {
+              if (selectedKeys.get(attachment.attachmentId) === attachment.extra?.r2Key) {
+                adoptedOwnKeys.push(attachment.extra.r2Key);
+              }
+            });
           }
-        } catch (err) {
-          console.error('[ShiftFlow][Message] Failed to persist attachments', {
+          messageWriteRecovered = Boolean(recoveredMessage?.message_id && recoveredAttachments);
+          if (messageWriteRecovered && adoptedOwnKeys.length) {
+            await clearStorageCleanupJobs(primaryDb, adoptedOwnKeys);
+          }
+        } catch (_reconcileError) {
+          messageWriteRecovered = false;
+        }
+        if (!messageWriteRecovered) {
+          console.error('[ShiftFlow][Message] Atomic create result is unknown', {
             requestId,
             messageId,
-            email: normalizedActorEmail || '',
-            message: err && err.message ? err.message : String(err),
+            reasonCode: 'message_atomic_write_unknown',
           });
-          await deleteMessageFromD1(db, env, { messageId, orgId });
-          await deleteAttachmentRecords(
-            db,
-            env,
-            preparedAttachments.map((attachment) => attachment.attachmentId)
-          );
+          captureDiagnostics(config, 'error', 'message_create_failed', {
+            event: 'message_create_failed',
+            route: normalizedRoute,
+            requestId,
+            email: normalizedActorEmail || '',
+            orgId: orgId || '',
+            userId: accessContext?.userId || '',
+            detail: 'message_atomic_write_unknown',
+          });
           return errorResponse(
             500,
             allowedOrigin,
             requestId,
             'cf-api',
-            'attachment_persist_failed',
-            'メッセージの添付ファイル保存に失敗しました。'
+            'message_create_failed',
+            'メッセージの保存結果を確認できませんでした。再読み込み後に状態を確認してください。'
           );
         }
-      }
-      if (orgId) {
-        const auditFolderId = folderAccess?.id || folderId;
-        await insertAuditLog(db, {
-          orgId,
-          actorMembershipId: membership?.membership_id || null,
-          targetType: 'message',
-          targetId: messageId,
-          action: 'message.create',
-          payload: {
-            title: typeof messagePayload.title === 'string' ? messagePayload.title.trim() : '',
-            folderId: auditFolderId || '',
-            attachmentCount: preparedAttachments.length,
-          },
+        captureDiagnostics(config, 'warn', 'message_create_commit_recovered', {
+          event: 'message_create_commit_recovered',
+          route: normalizedRoute,
+          requestId,
+          orgId: orgId || '',
+          userId: accessContext?.userId || '',
+          detail: 'message_create_commit_recovered',
         });
       }
-      if (actorEmail) {
-        await ensureMemoReadInD1(db, {
-          messageId,
-          timestampMs,
-          email: actorEmail,
-          orgId,
-        });
+      if (preparedAttachments.length) {
+        try {
+          const unselectedUploadKeys = await findUnselectedR2UploadKeys(
+            db,
+            preparedAttachments.map((attachment) => ({
+              attachmentId: attachment.attachmentId,
+              r2Key: attachment.extra?.r2Key || '',
+            })),
+            orgId
+          );
+          if (unselectedUploadKeys.length) {
+            await cleanupR2KeysWithOutbox(db, env, unselectedUploadKeys, {
+              orgId: orgId || '',
+              targetType: 'message',
+              targetId: messageId,
+              reason: 'message_upload_superseded',
+              requestId,
+              config,
+            });
+          }
+        } catch (_error) {
+          // DB正本を確認できない場合は、採用済みobjectの誤削除を避けて後続監視へ残す。
+          captureDiagnostics(config, 'error', 'message_upload_reconcile_failed', {
+            event: 'message_upload_reconcile_failed',
+            route: normalizedRoute,
+            requestId,
+            orgId: orgId || '',
+            userId: accessContext?.userId || '',
+            detail: 'message_upload_reconcile_failed',
+          });
+        }
       }
       captureDiagnostics(config, 'info', 'd1_message_created', {
         event: 'd1_message_created',
@@ -5335,7 +7907,19 @@ async function maybeHandleRouteWithD1(options) {
           '削除権限がありません。'
         );
       }
-      await deleteMessageFromD1(db, env, { messageId, orgId: accessContext?.orgId || '' });
+      await deleteMessageFromD1(db, env, {
+        messageId,
+        orgId: accessContext?.orgId || '',
+        actorEmail: currentEmail,
+        requestId,
+        config,
+        audit: {
+          targetType: 'message',
+          action: 'message.delete',
+          requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+          requestGenerationMs: idempotencyContext?.createdAtMs || null,
+        },
+      });
       captureDiagnostics(config, 'info', 'd1_message_deleted', {
         event: 'd1_message_deleted',
         route: normalizedRoute,
@@ -5368,6 +7952,32 @@ async function maybeHandleRouteWithD1(options) {
           'cf-api',
           'message_id_required',
           'メッセージ ID を指定してください。'
+        );
+      }
+      const readAccess = await resolveMemoReadAccess(db, {
+        messageId,
+        orgId: accessContext?.orgId || '',
+        userId: accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+      });
+      if (readAccess.status === 'not_found') {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          '対象のメッセージが見つかりません。'
+        );
+      }
+      if (readAccess.status === 'forbidden') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_access_denied',
+          'このメッセージを既読にする権限がありません。'
         );
       }
       await ensureMemoReadInD1(db, {
@@ -5404,6 +8014,32 @@ async function maybeHandleRouteWithD1(options) {
           'メッセージ ID を指定してください。'
         );
       }
+      const readAccess = await resolveMemoReadAccess(db, {
+        messageId,
+        orgId: accessContext?.orgId || '',
+        userId: accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+      });
+      if (readAccess.status === 'not_found') {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          '対象のメッセージが見つかりません。'
+        );
+      }
+      if (readAccess.status === 'forbidden') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_access_denied',
+          'このメッセージの既読状態を変更する権限がありません。'
+        );
+      }
       const shouldRead =
         argsArray.length > 1 ? Boolean(argsArray[1]) : true;
       await toggleMemoReadInD1(db, {
@@ -5430,8 +8066,33 @@ async function maybeHandleRouteWithD1(options) {
         parsedBody && Array.isArray(parsedBody.args) ? parsedBody.args : [];
       const rawList = argsArray.length > 0 ? argsArray[0] : [];
       const memoIds = Array.isArray(rawList)
-        ? rawList.map((id) => normalizeIdValue(id)).filter(Boolean)
+        ? Array.from(new Set(rawList.map((id) => normalizeIdValue(id)).filter(Boolean)))
         : [];
+      const readAccess = await preflightMemoReadAccess(db, memoIds, {
+        orgId: accessContext?.orgId || '',
+        userId: accessContext?.userId || '',
+        isManager: isManagerRole(accessContext?.role),
+      });
+      if (readAccess.status === 'not_found') {
+        return errorResponse(
+          404,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'message_not_found',
+          '既読対象に参照できないメッセージが含まれています。'
+        );
+      }
+      if (readAccess.status === 'forbidden') {
+        return errorResponse(
+          403,
+          allowedOrigin,
+          requestId,
+          'cf-api',
+          'folder_access_denied',
+          '既読対象に権限のないメッセージが含まれています。'
+        );
+      }
       await bulkEnsureMemoReadInD1(db, {
         messageIds: memoIds,
         timestampMs: Date.now(),
@@ -5460,8 +8121,7 @@ async function maybeHandleRouteWithD1(options) {
         ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
         : null;
       const membershipId = membership?.membership_id || null;
-      const orgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
       const userId = membership?.user_id || accessContext?.userId || '';
       const isManager = isManagerRole(accessContext?.role);
       const messages = await buildMessagesForUser(db, {
@@ -5494,8 +8154,7 @@ async function maybeHandleRouteWithD1(options) {
         ? await resolveMembershipForEmail(db, normalizedEmail, accessContext?.orgId)
         : null;
       const membershipId = membership?.membership_id || null;
-      const orgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
       const userId = membership?.user_id || accessContext?.userId || '';
       const isManager = isManagerRole(accessContext?.role);
       const messages = await buildMessagesForUser(db, {
@@ -5610,14 +8269,14 @@ async function maybeHandleRouteWithD1(options) {
       }
       const bodyObject = parsedBody && typeof parsedBody === 'object' ? parsedBody : {};
       const hasDesiredPin = Object.prototype.hasOwnProperty.call(bodyObject, 'pin');
-      if (hasDesiredPin && typeof bodyObject.pin !== 'boolean') {
+      if (!hasDesiredPin || typeof bodyObject.pin !== 'boolean') {
         return errorResponse(
           400,
           allowedOrigin,
           requestId,
           'cf-api',
           'invalid_pin_state',
-          'ピン状態は true または false で指定してください。'
+          'ピン状態は true または false で必ず指定してください。'
         );
       }
       const currentPin = await db
@@ -5633,11 +8292,12 @@ async function maybeHandleRouteWithD1(options) {
         .bind(messageRow.message_id, actorMembership.membership_id, orgId)
         .first();
       const currentlyPinned = !!currentPin;
-      const nextPinned = hasDesiredPin ? bodyObject.pin : !currentlyPinned;
+      const nextPinned = bodyObject.pin;
       let changed = false;
       const now = Date.now();
+      let pinMutationStatement = null;
       if (nextPinned !== currentlyPinned && nextPinned) {
-        const insertResult = await db
+        pinMutationStatement = db
           .prepare(
             `
             INSERT OR IGNORE INTO message_pins (
@@ -5649,11 +8309,9 @@ async function maybeHandleRouteWithD1(options) {
             VALUES (?1, ?2, ?3, ?4)
           `
           )
-          .bind(messageRow.message_id, actorMembership.membership_id, orgId, now)
-          .run();
-        changed = Number(insertResult?.meta?.changes || 0) > 0;
+          .bind(messageRow.message_id, actorMembership.membership_id, orgId, now);
       } else if (nextPinned !== currentlyPinned) {
-        const deleteResult = await db
+        pinMutationStatement = db
           .prepare(
             `
             DELETE FROM message_pins
@@ -5662,22 +8320,31 @@ async function maybeHandleRouteWithD1(options) {
                AND org_id = ?3
           `
           )
-          .bind(messageRow.message_id, actorMembership.membership_id, orgId)
-          .run();
-        changed = Number(deleteResult?.meta?.changes || 0) > 0;
+          .bind(messageRow.message_id, actorMembership.membership_id, orgId);
       }
-      if (changed) {
-        await insertAuditLog(db, {
-          orgId: messageRow.org_id || orgId,
-          actorMembershipId: actorMembership.membership_id,
-          targetType: 'message',
-          targetId: messageRow.message_id,
-          action: nextPinned ? 'message.pin' : 'message.unpin',
-          payload: {
-            folderId: messageRow.folder_id,
-            personalized: true,
-          },
-        });
+      if (pinMutationStatement) {
+        const results = await db.batch(
+          [
+            pinMutationStatement,
+            buildAuditLogStatement(db, {
+              orgId: messageRow.org_id || orgId,
+              actorMembershipId: actorMembership.membership_id,
+              targetType: 'message',
+              targetId: messageRow.message_id,
+              action: nextPinned ? 'message.pin' : 'message.unpin',
+              createdAtMs: now,
+              requestId,
+              requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+              requestGenerationMs: idempotencyContext?.createdAtMs || null,
+              onlyIfPreviousStatementChanged: true,
+              payload: {
+                folderId: messageRow.folder_id,
+                personalized: true,
+              },
+            }),
+          ].filter(Boolean)
+        );
+        changed = Number(results?.[0]?.meta?.changes || 0) > 0;
       }
       return jsonResponseFromD1(
         200,
@@ -5984,52 +8651,69 @@ async function maybeHandleRouteWithD1(options) {
         userRow?.display_name || accessContext?.displayName || tokenDetails?.name || ''
       );
       const now = Date.now();
-      const commentId = generateCommentId();
+      const commentId = await createRequestScopedId({
+        kind: 'message-comment',
+        orgId,
+        actorUserId: membership.user_id || accessContext?.userId || '',
+        requestId,
+        resourceScope: `${messageRow.message_id}:${idempotencyContext?.payloadSha256 || ''}`,
+      });
       const mentionsValue = Array.isArray(payload.mentions)
         ? payload.mentions
             .map((m) => normalizeEmailValue(m))
             .filter(Boolean)
             .join(',')
         : null;
-      await db
-        .prepare(
-          `
-          INSERT INTO message_comments (
-            comment_id,
-            message_id,
-            org_id,
-            membership_id,
-            author_email,
-            author_display_name,
-            body,
-            mentions,
-            created_at_ms,
-            updated_at_ms
-          )
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-        `
-        )
-        .bind(
-          commentId,
-          messageRow.message_id,
-          orgId,
-          membership.membership_id || null,
-          authorEmail || actorEmail || null,
-          authorDisplayName || null,
-          commentBody,
-          mentionsValue,
-          now,
-          now
-        )
-        .run();
-      await insertAuditLog(db, {
-        orgId,
-        actorMembershipId: membership.membership_id || null,
-        targetType: 'message',
-        targetId: messageRow.message_id,
-        action: 'message.comment',
-        payload: { commentId },
-      });
+      await db.batch(
+        [
+          db
+            .prepare(
+              `
+              INSERT OR IGNORE INTO message_comments (
+                comment_id,
+                message_id,
+                org_id,
+                membership_id,
+                author_email,
+                author_display_name,
+                body,
+                mentions,
+                created_at_ms,
+                updated_at_ms
+              )
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            `
+            )
+            .bind(
+              commentId,
+              messageRow.message_id,
+              orgId,
+              membership.membership_id || null,
+              authorEmail || actorEmail || null,
+              authorDisplayName || null,
+              commentBody,
+              mentionsValue,
+              now,
+              now
+            ),
+          buildAuditLogStatement(db, {
+            orgId,
+            actorMembershipId: membership.membership_id || null,
+            targetType: 'message',
+            targetId: messageRow.message_id,
+            action: 'message.comment',
+            createdAtMs: now,
+            requestId,
+            requestPayloadSha256: idempotencyContext?.payloadSha256 || null,
+            requestGenerationMs: idempotencyContext?.createdAtMs || null,
+            onlyIfPreviousStatementChanged: true,
+            payload: { commentId },
+          }),
+          await buildPushEventStatement(db, { ...{ enabled: isPushConfigured(env), orgId: accessContext.orgId, actorUserId: accessContext.userId,
+          requestId, payloadSha256: idempotencyContext.payloadSha256, generationMs: idempotencyContext.createdAtMs }, kind: 'comment_created',
+            resourceId: messageRow.message_id, folderId: messageRow.folder_id, auditAction: 'message.comment' }),
+        ].filter(Boolean)
+      );
       const comments = await fetchMessageComments(db, messageId);
       return jsonResponseFromD1(
         200,
@@ -6078,8 +8762,7 @@ async function maybeHandleRouteWithD1(options) {
       const actorMembership = actorEmail
         ? await resolveMembershipForEmail(db, actorEmail, accessContext?.orgId)
         : null;
-      const orgId =
-        actorMembership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = actorMembership?.org_id || accessContext?.orgId || '';
       const messageRow = await db
         .prepare(
           `
@@ -6238,8 +8921,7 @@ async function maybeHandleRouteWithD1(options) {
           status: task.status,
           isCompleted: task.isCompleted,
         }));
-      const orgId =
-        membership?.org_id || accessContext?.orgId || (await resolveDefaultOrgId(db));
+      const orgId = membership?.org_id || accessContext?.orgId || '';
       const messages = await buildMessagesForUser(db, {
         folderId: '',
         membershipId,
@@ -6440,6 +9122,25 @@ async function maybeHandleRouteWithD1(options) {
           'ファイルが削除されている可能性があります。'
         );
       }
+      if (!isR2KeyWithinOrg(r2Key, attachmentOrgId)) {
+        captureDiagnostics(config, 'error', 'attachment_storage_scope_mismatch', {
+          event: 'attachment_storage_scope_mismatch',
+          requestId,
+          route: normalizedRoute,
+          orgId: attachmentOrgId,
+          userId: membership.user_id || '',
+          targetId: attachmentId,
+          detail: 'attachment_storage_scope_mismatch',
+        });
+        return errorResponse(
+          409,
+          originForResponses,
+          requestId,
+          'cf-api',
+          'attachment_storage_scope_mismatch',
+          '添付ファイルの保存先情報が一致しません。管理者にお問い合わせください。'
+        );
+      }
       let object = null;
       try {
         object =
@@ -6448,7 +9149,7 @@ async function maybeHandleRouteWithD1(options) {
         console.error('[ShiftFlow][R2] Failed to read attachment', {
           requestId,
           attachmentId,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'attachment_r2_read_failed',
         });
         return errorResponse(
           502,
@@ -6463,7 +9164,7 @@ async function maybeHandleRouteWithD1(options) {
         console.warn('[ShiftFlow][R2] Attachment object missing', {
           requestId,
           attachmentId,
-          r2Key,
+          reasonCode: 'attachment_r2_object_missing',
         });
         return errorResponse(
           410,
@@ -6529,43 +9230,107 @@ async function maybeHandleRouteWithD1(options) {
       });
     }
   } catch (err) {
+    const failureCode =
+      err?.isShiftFlowServiceError === true &&
+      typeof err.code === 'string' &&
+      /^[A-Za-z0-9._:-]{1,128}$/.test(err.code)
+        ? err.code
+        : 'd1_route_failed';
+    const failureStatus =
+      err?.isShiftFlowServiceError === true && Number(err?.httpStatus) >= 500
+        ? Number(err.httpStatus)
+        : 500;
     console.error('[ShiftFlow][D1] Route handling failed', {
       route: normalizedRoute,
       requestId,
-      error: err && err.message ? err.message : String(err),
+      reasonCode: failureCode,
     });
-    captureDiagnostics(config, 'error', 'd1_route_failed', {
-      event: 'd1_route_failed',
+    captureDiagnostics(config, 'error', failureCode, {
+      event: failureCode,
       route: normalizedRoute,
       requestId,
-      detail: err && err.message ? err.message : String(err),
+      detail: failureCode,
+      httpStatus: failureStatus,
+      email: tokenDetails?.email || accessContext?.email || '',
+      orgId: accessContext?.orgId || '',
+      userId: accessContext?.userId || '',
     });
+    return errorResponse(
+      failureStatus,
+      allowedOrigin || config?.allowedOrigins?.[0] || '*',
+      requestId,
+      'cf-api',
+      failureCode,
+      '処理を完了できませんでした。画面を更新して状態を確認してから再試行してください。'
+    );
   }
   return null;
 }
 
 
-async function insertMessageIntoD1(db, context) {
-  if (!context?.messageId) return;
-  const lowerEmail = normalizeEmailValue(context.authorEmail);
-  const membership = await resolveMembershipForEmail(db, lowerEmail, context.orgId || '');
-  const orgId =
-    context.orgId ||
-    membership?.org_id ||
-    (await resolveDefaultOrgId(db)) ||
-    '01H00000000000000000000000';
-  if (!membership) {
-    console.warn('[ShiftFlow][DualWrite] Membership not found for author email', {
-      email: lowerEmail,
-      messageId: context.messageId,
-    });
-  }
+function buildMessageInsertStatement(db, context) {
+  if (!db || !context?.messageId || !context?.orgId) return null;
   const payload = context.payload || {};
   const timestampMs = context.timestampMs || Date.now();
-  await db
+  const requiredStages = Array.isArray(context.requiredStagedAttachments)
+    ? context.requiredStagedAttachments
+        .map((row) => normalizeIdValue(row?.staged_attachment_id))
+        .filter(Boolean)
+    : [];
+  const bindValues = [
+    context.messageId,
+    context.orgId,
+    typeof payload.folderId === 'string' ? payload.folderId : null,
+    context.membershipId || null,
+    typeof payload.title === 'string' ? payload.title : '',
+    typeof payload.body === 'string' ? payload.body : '',
+    timestampMs,
+    timestampMs,
+  ];
+  let valueClause = 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)';
+  if (requiredStages.length) {
+    const stagePlaceholders = requiredStages
+      .map((_, index) => `?${index + 9}`)
+      .join(', ');
+    const ownerUserIndex = requiredStages.length + 9;
+    const ownerMembershipIndex = ownerUserIndex + 1;
+    const requiredCountIndex = ownerMembershipIndex + 1;
+    valueClause = `
+      SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+       WHERE (
+         SELECT COUNT(*)
+           FROM staged_attachments staged
+          WHERE staged.staged_attachment_id IN (${stagePlaceholders})
+            AND staged.org_id = ?2
+            AND staged.owner_user_id = ?${ownerUserIndex}
+            AND staged.owner_membership_id = ?${ownerMembershipIndex}
+            AND staged.purpose = 'message'
+            AND (
+              (staged.status = 'ready' AND staged.expires_at_ms > ?7)
+              OR
+              (staged.status = 'claimed'
+                AND staged.claimed_target_type = 'message'
+                AND staged.claimed_target_id = ?1)
+            )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM storage_cleanup_jobs cleanup_guard
+               WHERE cleanup_guard.r2_key = staged.r2_key
+                 AND cleanup_guard.org_id = staged.org_id
+                 AND cleanup_guard.lease_token IS NOT NULL
+            )
+       ) = ?${requiredCountIndex}`;
+    bindValues.push(
+      ...requiredStages,
+      normalizeIdValue(context.ownerUserId),
+      normalizeIdValue(context.membershipId),
+      requiredStages.length
+    );
+  }
+  return db
     .prepare(
       `
-      INSERT INTO messages (
+      INSERT OR IGNORE INTO messages (
         message_id,
         org_id,
         folder_id,
@@ -6575,20 +9340,62 @@ async function insertMessageIntoD1(db, context) {
         created_at_ms,
         updated_at_ms
       )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ${valueClause}
     `
     )
-    .bind(
-      context.messageId,
-      orgId,
-      typeof payload.folderId === 'string' ? payload.folderId : null,
-      membership?.membership_id || null,
-      typeof payload.title === 'string' ? payload.title : '',
-      typeof payload.body === 'string' ? payload.body : '',
-      timestampMs,
-      timestampMs
+    .bind(...bindValues);
+}
+
+async function resolveTaskAccess(db, context = {}) {
+  const taskId = normalizeIdValue(context.taskId);
+  const orgId = normalizeIdValue(context.orgId);
+  if (!db || !taskId || !orgId) return null;
+  const actorEmail = normalizeEmailValue(context.actorEmail || '');
+  const actorMembership = actorEmail
+    ? await resolveMembershipForEmail(db, actorEmail, orgId)
+    : null;
+  const row = await db
+    .prepare(
+      `
+      SELECT t.*,
+             CASE
+               WHEN ?3 <> '' AND LOWER(COALESCE(t.created_by_email, '')) = ?3 THEN 1
+               WHEN ?4 <> '' AND t.created_by_membership_id = ?4 THEN 1
+               ELSE 0
+             END AS is_creator,
+             CASE WHEN EXISTS (
+               SELECT 1
+                 FROM task_assignees ta
+                WHERE ta.task_id = t.task_id
+                  AND (
+                    (?4 <> '' AND ta.membership_id = ?4)
+                    OR (?3 <> '' AND LOWER(COALESCE(ta.email, '')) = ?3)
+                  )
+             ) THEN 1 ELSE 0 END AS is_assignee
+        FROM tasks t
+       WHERE t.task_id = ?1
+         AND t.org_id = ?2
+       LIMIT 1
+    `
     )
-    .run();
+    .bind(taskId, orgId, actorEmail, actorMembership?.membership_id || '')
+    .first();
+  if (!row) return null;
+  const isManager = isManagerRole(context.role);
+  const isCreator = row.is_creator === 1;
+  const isAssignee = row.is_assignee === 1;
+  return {
+    row,
+    actorEmail,
+    actorMembership,
+    isManager,
+    isCreator,
+    isAssignee,
+    canRead: isManager || isCreator || isAssignee,
+    canUpdate: isManager || isCreator || isAssignee,
+    canComplete: isManager || isCreator || isAssignee,
+    canDelete: isManager || isCreator,
+  };
 }
 
 async function insertTaskIntoD1(db, context) {
@@ -6605,11 +9412,13 @@ async function insertTaskIntoD1(db, context) {
   const membership = creatorEmail
     ? await resolveMembershipForEmail(db, creatorEmail, context.orgId || '')
     : null;
-  const orgId =
-    context.orgId ||
-    membership?.org_id ||
-    (await resolveDefaultOrgId(db)) ||
-    '01H00000000000000000000000';
+  const orgId = normalizeIdValue(context.orgId || membership?.org_id || '');
+  if (!orgId) {
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'Task organization scope is unavailable.'
+    );
+  }
   const createdAtCandidate =
     typeof payload.createdAtMs === 'number'
       ? payload.createdAtMs
@@ -6661,10 +9470,11 @@ async function insertTaskIntoD1(db, context) {
       ? payload.meta_json
       : buildTaskMetaJson(payload);
 
-  await db
+  const statements = [
+    db
     .prepare(
       `
-      INSERT INTO tasks (
+      INSERT OR IGNORE INTO tasks (
         task_id,
         org_id,
         folder_id,
@@ -6698,24 +9508,32 @@ async function insertTaskIntoD1(db, context) {
       dueAtMs,
       legacyTaskId,
       metaJson
-    )
-    .run();
+    ),
+  ];
+
+  if (context.audit) {
+    statements.push(
+      buildAuditLogStatement(db, {
+        ...context.audit,
+        orgId,
+        actorMembershipId: membership?.membership_id || null,
+        targetId: context.taskId,
+        createdAtMs: timestampMs,
+        requestId: context.requestId || null,
+        onlyIfPreviousStatementChanged: true,
+      })
+    );
+  }
 
   const assigneeEmails = deriveTaskAssigneeEmails(payload, creatorEmail);
-  await insertTaskAssigneesIntoD1(db, context.taskId, assigneeEmails, createdAtMs, orgId);
-}
-
-async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs, orgId = '') {
-  if (!Array.isArray(emails) || !emails.length) return;
-  await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
-  for (const email of emails) {
+  for (const email of assigneeEmails) {
     const normalized = normalizeEmailValue(email);
     if (!normalized) continue;
     const membership = await resolveMembershipForEmail(db, normalized, orgId);
-    await db
-      .prepare(
+    statements.push(
+      db.prepare(
         `
-        INSERT OR REPLACE INTO task_assignees (
+        INSERT OR IGNORE INTO task_assignees (
           task_id,
           email,
           membership_id,
@@ -6724,9 +9542,13 @@ async function insertTaskAssigneesIntoD1(db, taskId, emails, assignedAtMs, orgId
         VALUES (?1, ?2, ?3, ?4)
       `
       )
-      .bind(taskId, normalized, membership?.membership_id || null, assignedAtMs)
-      .run();
+      .bind(context.taskId, normalized, membership?.membership_id || null, createdAtMs)
+    );
   }
+  statements.push(await buildPushEventStatement(db, { ...context.notification, kind: 'task_assigned',
+    resourceId: context.taskId, folderId: folderId, auditAction: context.audit?.action }));
+  await db.batch(statements.filter(Boolean));
+  return { orgId, actorMembershipId: membership?.membership_id || null };
 }
 
 async function updateTaskInD1(db, context) {
@@ -6785,8 +9607,8 @@ async function updateTaskInD1(db, context) {
 
   const mergedMetaJson = mergeMetaJson(existing.meta_json, buildTaskMetaJson(payload));
 
-  await db
-    .prepare(
+  const statements = [
+    db.prepare(
       `
       UPDATE tasks
          SET title = ?2,
@@ -6812,42 +9634,137 @@ async function updateTaskInD1(db, context) {
       nextFolderId,
       mergedMetaJson,
       context.orgId || ''
-    )
-    .run();
+    ),
+  ];
 
   const assigneeChanged =
     Array.isArray(payload.assignees) ||
     typeof payload.assignee === 'string' ||
     typeof payload.assigneeEmail === 'string' ||
     typeof payload.assigneeEmails === 'string';
+  const newlyAssignedUserIds = [];
   if (assigneeChanged) {
+    const previousAssignees = context.notification?.enabled
+      ? await db.prepare('SELECT email FROM task_assignees WHERE task_id=?1').bind(context.taskId).all() : { results: [] };
+    const previousEmails = new Set((previousAssignees.results || []).map(row => normalizeEmailValue(row.email)));
     const assigneeEmails = deriveTaskAssigneeEmails(payload, null);
-    await insertTaskAssigneesIntoD1(
-      db,
-      context.taskId,
-      assigneeEmails,
-      timestampMs,
-      context.orgId || existing.org_id || ''
+    statements.push(
+      db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(context.taskId)
+    );
+    for (const email of assigneeEmails) {
+      const normalized = normalizeEmailValue(email);
+      if (!normalized) continue;
+      const assigneeMembership = await resolveMembershipForEmail(
+        db,
+        normalized,
+        context.orgId || existing.org_id || ''
+      );
+      if (assigneeMembership?.user_id && !previousEmails.has(normalized)) newlyAssignedUserIds.push(assigneeMembership.user_id);
+      statements.push(
+        db
+          .prepare(
+            `
+            INSERT OR REPLACE INTO task_assignees (
+              task_id,
+              email,
+              membership_id,
+              assigned_at_ms
+            )
+            VALUES (?1, ?2, ?3, ?4)
+          `
+          )
+          .bind(
+            context.taskId,
+            normalized,
+            assigneeMembership?.membership_id || null,
+            timestampMs
+          )
+      );
+    }
+  }
+  if (context.audit) {
+    const actorMembership = context.actorEmail
+      ? await resolveMembershipForEmail(db, normalizeEmailValue(context.actorEmail), context.orgId || '')
+      : null;
+    statements.push(
+      buildAuditLogStatement(db, {
+        ...context.audit,
+        orgId: context.orgId || existing.org_id || '',
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetId: context.taskId,
+        createdAtMs: timestampMs,
+        requestId: context.requestId || null,
+      })
     );
   }
+  statements.push(await buildPushEventStatement(db, { ...context.notification, kind: 'task_updated',
+    resourceId: context.taskId, folderId: nextFolderId, auditAction: context.audit?.action, excludedUserIds: newlyAssignedUserIds }));
+  if (newlyAssignedUserIds.length) statements.push(await buildPushEventStatement(db, { ...context.notification, kind: 'task_assigned',
+    resourceId: context.taskId, folderId: nextFolderId, auditAction: context.audit?.action, recipientUserIds: newlyAssignedUserIds }));
+  await db.batch(statements.filter(Boolean));
 }
 
 async function completeTaskInD1(db, context) {
   if (!context?.taskId) return;
   const timestampMs = context.timestampMs || Date.now();
   const completedStatus = mapTaskStatus('完了');
-  await db
-    .prepare(
+  const statements = [
+    db.prepare(
       `
       UPDATE tasks
          SET status = ?2,
              updated_at_ms = ?3
        WHERE task_id = ?1
          AND org_id = ?4
+         AND COALESCE(status, '') <> ?2
     `
     )
-    .bind(context.taskId, completedStatus, timestampMs, context.orgId || '')
-    .run();
+    .bind(context.taskId, completedStatus, timestampMs, context.orgId || ''),
+  ];
+  if (context.audit) {
+    const actorMembership = context.actorEmail
+      ? await resolveMembershipForEmail(db, normalizeEmailValue(context.actorEmail), context.orgId || '')
+      : null;
+    statements.push(
+      buildAuditLogStatement(db, {
+        ...context.audit,
+        orgId: context.orgId || '',
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetId: context.taskId,
+        createdAtMs: timestampMs,
+        requestId: context.requestId || null,
+        onlyIfPreviousStatementChanged: true,
+      })
+    );
+  }
+  statements.push(await buildPushEventStatement(db, { ...context.notification, kind: 'task_updated',
+    resourceId: context.taskId, folderId: context.notification?.folderId, auditAction: context.audit?.action }));
+  await db.batch(statements.filter(Boolean));
+}
+
+function buildMemoReadUpsertStatement(db, context) {
+  if (!db || !context?.messageId || !context?.membershipId) return null;
+  return db
+    .prepare(
+      `
+      INSERT INTO message_reads (
+        message_read_id,
+        message_id,
+        membership_id,
+        read_at_ms
+      )
+      VALUES (?1, ?2, ?3, ?4)
+      ON CONFLICT(message_id, membership_id)
+      DO UPDATE SET read_at_ms = excluded.read_at_ms
+      WHERE message_reads.read_at_ms < excluded.read_at_ms
+    `
+    )
+    .bind(
+      generateMessageId(),
+      context.messageId,
+      context.membershipId,
+      context.timestampMs || Date.now()
+    );
 }
 
 async function toggleMemoReadInD1(db, context) {
@@ -6874,27 +9791,14 @@ async function toggleMemoReadInD1(db, context) {
   if (!messageRow) return;
   const membershipId = membership.membership_id;
   if (context.shouldRead) {
-    await db
-      .prepare(
-        `
-        INSERT INTO message_reads (
-          message_read_id,
-          message_id,
-          membership_id,
-          read_at_ms
-        )
-        VALUES (?1, ?2, ?3, ?4)
-        ON CONFLICT(message_id, membership_id)
-        DO UPDATE SET read_at_ms = MAX(message_reads.read_at_ms, excluded.read_at_ms)
-      `
-      )
-      .bind(
-        generateMessageId(),
-        context.messageId,
-        membershipId,
-        context.timestampMs || Date.now()
-      )
-      .run();
+    const statement = buildMemoReadUpsertStatement(db, {
+      messageId: context.messageId,
+      membershipId,
+      timestampMs: context.timestampMs,
+    });
+    if (statement) {
+      await statement.run();
+    }
   } else {
     await db
       .prepare(
@@ -6921,15 +9825,632 @@ async function ensureMemoReadInD1(db, context) {
 
 async function bulkEnsureMemoReadInD1(db, context) {
   if (!context || !Array.isArray(context.messageIds) || !context.messageIds.length) return;
-  for (const memoId of context.messageIds) {
-    await toggleMemoReadInD1(db, {
-      messageId: memoId,
-      shouldRead: true,
-      timestampMs: context.timestampMs,
-      email: context.email,
-      orgId: context.orgId,
+  const email = normalizeEmailValue(context.email);
+  const membership = email
+    ? await resolveMembershipForEmail(db, email, context.orgId || '')
+    : null;
+  if (!membership?.membership_id) {
+    return;
+  }
+  const statements = context.messageIds
+    .map((messageId) =>
+      buildMemoReadUpsertStatement(db, {
+        messageId,
+        membershipId: membership.membership_id,
+        timestampMs: context.timestampMs,
+      })
+    )
+    .filter(Boolean);
+  if (statements.length) {
+    await db.batch(statements);
+  }
+}
+
+function normalizeR2CleanupKeys(keys) {
+  if (!Array.isArray(keys)) return [];
+  return Array.from(
+    new Set(
+      keys
+        .filter((key) => typeof key === 'string' && key.trim())
+        .map((key) => key.trim())
+    )
+  );
+}
+
+function isR2KeyWithinOrg(r2Key, orgId) {
+  const normalizedKey = typeof r2Key === 'string' ? r2Key.trim() : '';
+  const normalizedOrgId = normalizeIdValue(orgId);
+  if (
+    !normalizedKey ||
+    !normalizedOrgId ||
+    !/^[A-Za-z0-9_-]+$/.test(normalizedOrgId)
+  ) {
+    return false;
+  }
+  return normalizedKey.startsWith(`orgs/${normalizedOrgId}/`);
+}
+
+function buildStorageCleanupJobStatement(db, r2Key, context = {}) {
+  if (!db || !r2Key) return null;
+  const now = Date.now();
+  const cleanupErrorCode = context.failed
+    ? context.errorCode === 'r2_unavailable'
+      ? 'r2_unavailable'
+      : 'r2_delete_failed'
+    : null;
+  const attempts = context.failed ? 1 : 0;
+  const profileState =
+    context.requiredProfileState && typeof context.requiredProfileState === 'object'
+      ? context.requiredProfileState
+      : null;
+  const requiredUserId = normalizeIdValue(profileState?.userId);
+  const requiredSettingsVersion = normalizeSettingsVersion(profileState?.settingsVersion);
+  const requiredImageUrl =
+    typeof profileState?.imageUrl === 'string' ? profileState.imageUrl : '';
+  let valueClause = 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)';
+  if (requiredUserId && requiredSettingsVersion) {
+    valueClause = `
+      SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10
+       WHERE EXISTS (
+         SELECT 1
+           FROM users
+          WHERE user_id = ?11
+            AND settings_version = ?12
+            AND COALESCE(profile_image_url, '') = ?13
+       )`;
+  } else if (context.onlyIfPreviousStatementChanged) {
+    valueClause =
+      'SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10 WHERE changes() > 0';
+  }
+  const bindValues = [
+    createUlid(now),
+    r2Key,
+    context.orgId || null,
+    context.targetType || null,
+    context.targetId || null,
+    context.reason || 'orphaned_r2_object',
+    context.requestId || null,
+    attempts,
+    cleanupErrorCode,
+    now,
+  ];
+  if (requiredUserId && requiredSettingsVersion) {
+    bindValues.push(requiredUserId, requiredSettingsVersion, requiredImageUrl);
+  }
+  return db
+    .prepare(
+      `
+      INSERT INTO storage_cleanup_jobs (
+        job_id,
+        r2_key,
+        org_id,
+        target_type,
+        target_id,
+        reason,
+        request_id,
+        attempts,
+        last_error,
+        created_at_ms,
+        updated_at_ms
+      )
+      ${valueClause}
+      ON CONFLICT(r2_key) DO UPDATE SET
+        org_id = COALESCE(excluded.org_id, storage_cleanup_jobs.org_id),
+        target_type = COALESCE(excluded.target_type, storage_cleanup_jobs.target_type),
+        target_id = COALESCE(excluded.target_id, storage_cleanup_jobs.target_id),
+        reason = excluded.reason,
+        request_id = COALESCE(excluded.request_id, storage_cleanup_jobs.request_id),
+        attempts = storage_cleanup_jobs.attempts + excluded.attempts,
+        last_error = COALESCE(excluded.last_error, storage_cleanup_jobs.last_error),
+        updated_at_ms = excluded.updated_at_ms
+    `
+    )
+    .bind(...bindValues);
+}
+
+async function clearStorageCleanupJobs(db, keys) {
+  const normalizedKeys = normalizeR2CleanupKeys(keys);
+  if (!db || !normalizedKeys.length) return;
+  const placeholders = normalizedKeys.map((_, index) => `?${index + 1}`).join(', ');
+  await db
+    .prepare(`DELETE FROM storage_cleanup_jobs WHERE r2_key IN (${placeholders})`)
+    .bind(...normalizedKeys)
+    .run();
+}
+
+async function queueR2CleanupCandidates(db, keys, context = {}) {
+  const normalizedKeys = normalizeR2CleanupKeys(keys);
+  if (!db || !normalizedKeys.length) return true;
+  try {
+    await db.batch(
+      normalizedKeys
+        .map((key) =>
+          buildStorageCleanupJobStatement(db, key, {
+            orgId: context.orgId || '',
+            targetType: context.targetType || null,
+            targetId: context.targetId || null,
+            reason: context.reason || 'upload_commit_unknown',
+            requestId: context.requestId || '',
+          })
+        )
+        .filter(Boolean)
+    );
+    return true;
+  } catch (_error) {
+    captureDiagnostics(context.config || {}, 'error', 'r2_cleanup_candidate_queue_failed', {
+      event: 'r2_cleanup_candidate_queue_failed',
+      requestId: context.requestId || '',
+      orgId: context.orgId || '',
+      targetType: context.targetType || '',
+      targetId: context.targetId || '',
+      count: normalizedKeys.length,
+      detail: 'r2_cleanup_candidate_queue_failed',
+    });
+    return false;
+  }
+}
+
+async function cleanupR2KeysWithOutbox(db, env, keys, context = {}) {
+  const normalizedKeys = normalizeR2CleanupKeys(keys);
+  if (!normalizedKeys.length) return true;
+  if (
+    context?.retryJob &&
+    normalizedKeys.length === 1 &&
+    normalizedKeys[0] === context.retryJob.r2_key
+  ) {
+    return retryStorageCleanupJob(db, env, context.retryJob);
+  }
+  const cleanupOrgId = normalizeIdValue(context.orgId || context.retryJob?.org_id || '');
+  const blockedKeys = normalizedKeys.filter(
+    (key) => !isR2KeyWithinOrg(key, cleanupOrgId)
+  );
+  let deleteKeys = normalizedKeys.filter((key) => isR2KeyWithinOrg(key, cleanupOrgId));
+  if (blockedKeys.length) {
+    try {
+      const placeholders = blockedKeys.map((_, index) => `?${index + 2}`).join(', ');
+      if (db && placeholders) {
+        await db
+          .prepare(
+            `
+            UPDATE storage_cleanup_jobs
+               SET last_error = 'cleanup_scope_mismatch'
+             WHERE org_id = ?1
+               AND r2_key IN (${placeholders})
+          `
+          )
+          .bind(cleanupOrgId || '', ...blockedKeys)
+          .run();
+      }
+    } catch (_error) {
+      // 不正scopeのobjectを削除しないことを優先し、診断は下で必ず残す。
+    }
+    captureDiagnostics(context.config || {}, 'error', 'r2_cleanup_scope_mismatch', {
+      event: 'r2_cleanup_scope_mismatch',
+      requestId: context.requestId || '',
+      orgId: cleanupOrgId,
+      targetType: context.targetType || '',
+      targetId: context.targetId || '',
+      count: blockedKeys.length,
+      detail: 'cleanup_scope_mismatch',
     });
   }
+  if (!deleteKeys.length) return false;
+  try {
+    const liveKeys = [];
+    const activeStageKeys = [];
+    const orphanKeys = [];
+    for (const key of deleteKeys) {
+      if (await hasLiveAttachmentForR2Key(db, key)) {
+        liveKeys.push(key);
+      } else if (await hasActiveStagedAttachmentForR2Key(db, key, Date.now())) {
+        activeStageKeys.push(key);
+      } else {
+        orphanKeys.push(key);
+      }
+    }
+    deleteKeys = orphanKeys;
+    if (liveKeys.length) {
+      try {
+        await clearStorageCleanupJobs(db, liveKeys);
+      } catch (_error) {
+        // jobが残ってもretry側がlive参照を再確認するため、R2 objectは削除されない。
+        console.warn('[ShiftFlow][R2] Live cleanup candidates could not be resolved', {
+          requestId: context.requestId || '',
+          count: liveKeys.length,
+          reasonCode: 'live_cleanup_outbox_clear_failed',
+        });
+      }
+    }
+    if (!deleteKeys.length) {
+      return blockedKeys.length === 0 && activeStageKeys.length === 0;
+    }
+    if (!env?.R2) {
+      const unavailable = new Error('R2 bucket is not configured.');
+      unavailable.code = 'r2_unavailable';
+      throw unavailable;
+    }
+    // D1確認とR2削除は同一transactionにできないため、物理削除の直前にも再確認する。
+    const stillOrphanKeys = [];
+    for (const key of deleteKeys) {
+      if (await hasLiveAttachmentForR2Key(db, key)) {
+        await clearStorageCleanupJobs(db, [key]);
+      } else if (await hasActiveStagedAttachmentForR2Key(db, key, Date.now())) {
+        if (!activeStageKeys.includes(key)) activeStageKeys.push(key);
+      } else {
+        stillOrphanKeys.push(key);
+      }
+    }
+    deleteKeys = stillOrphanKeys;
+    if (!deleteKeys.length) {
+      return blockedKeys.length === 0 && activeStageKeys.length === 0;
+    }
+    await env.R2.delete(deleteKeys);
+    // stage metadataは有効なidempotency世代のtombstoneとして残す。
+    try {
+      await clearStorageCleanupJobs(db, deleteKeys);
+    } catch (clearError) {
+      console.warn('[ShiftFlow][R2] Object cleanup succeeded but outbox cleanup failed', {
+        requestId: context.requestId || '',
+        count: deleteKeys.length,
+        reasonCode: 'cleanup_outbox_clear_failed',
+      });
+    }
+    return blockedKeys.length === 0 && activeStageKeys.length === 0;
+  } catch (error) {
+    const errorCode = error?.code === 'r2_unavailable' ? 'r2_unavailable' : 'r2_delete_failed';
+    const statements = deleteKeys.map((key) =>
+      buildStorageCleanupJobStatement(db, key, {
+        ...context,
+        failed: true,
+        errorCode,
+      })
+    );
+    try {
+      await db.batch(statements.filter(Boolean));
+    } catch (outboxError) {
+      console.error('[ShiftFlow][R2] Failed to persist cleanup outbox', {
+        requestId: context.requestId || '',
+        count: deleteKeys.length,
+        reasonCode: 'cleanup_outbox_persist_failed',
+      });
+    }
+    captureDiagnostics(context.config || {}, 'error', 'r2_cleanup_pending', {
+      event: 'r2_cleanup_pending',
+      requestId: context.requestId || '',
+      orgId: context.orgId || '',
+      targetType: context.targetType || '',
+      targetId: context.targetId || '',
+      count: deleteKeys.length,
+      detail: errorCode,
+    });
+    return false;
+  }
+}
+
+async function hasLiveAttachmentForR2Key(db, r2Key) {
+  if (!db || !r2Key) return false;
+  const row = await db
+    .prepare(
+      `
+      SELECT attachment_id
+        FROM attachments
+       WHERE CASE
+               WHEN JSON_VALID(COALESCE(extra_json, '')) = 1
+               THEN JSON_EXTRACT(extra_json, '$.r2Key')
+               ELSE NULL
+             END = ?1
+       LIMIT 1
+    `
+    )
+    .bind(r2Key)
+    .first();
+  return Boolean(row?.attachment_id);
+}
+
+async function hasActiveStagedAttachmentForR2Key(db, r2Key, now = Date.now()) {
+  if (!db || !r2Key) return false;
+  const row = await db
+    .prepare(
+      `
+      SELECT staged_attachment_id
+        FROM staged_attachments
+       WHERE r2_key = ?1
+         AND status IN ('uploading', 'ready')
+         AND expires_at_ms > ?2
+       LIMIT 1
+    `
+    )
+    .bind(r2Key, now)
+    .first();
+  return Boolean(row?.staged_attachment_id);
+}
+
+async function findUnselectedR2UploadKeys(db, uploads, orgId) {
+  const normalizedOrgId = normalizeIdValue(orgId);
+  const candidates = Array.isArray(uploads)
+    ? uploads
+        .map((upload) => ({
+          attachmentId: normalizeIdValue(upload?.attachmentId),
+          r2Key: typeof upload?.r2Key === 'string' ? upload.r2Key.trim() : '',
+        }))
+        .filter((upload) => upload.attachmentId && upload.r2Key)
+    : [];
+  if (!db || !normalizedOrgId || !candidates.length) return [];
+  const attachmentIds = Array.from(new Set(candidates.map((upload) => upload.attachmentId)));
+  const placeholders = attachmentIds.map((_, index) => `?${index + 2}`).join(', ');
+  const result = await db
+    .prepare(
+      `
+      SELECT attachment_id,
+             extra_json
+        FROM attachments
+       WHERE org_id = ?1
+         AND attachment_id IN (${placeholders})
+    `
+    )
+    .bind(normalizedOrgId, ...attachmentIds)
+    .all();
+  const selectedKeys = new Map();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  for (const row of rows) {
+    const attachmentId = normalizeIdValue(row?.attachment_id);
+    const extra = safeParseJson(row?.extra_json || null, {});
+    const selectedKey = typeof extra?.r2Key === 'string' ? extra.r2Key.trim() : '';
+    if (attachmentId && selectedKey) {
+      selectedKeys.set(attachmentId, selectedKey);
+    }
+  }
+  // レコード欠落や不正extra_json時は削除候補にしない。DB上で別keyの採用を
+  // 明確に確認できたputだけをloserとして回収する。
+  return normalizeR2CleanupKeys(
+    candidates
+      .filter((upload) => {
+        const selectedKey = selectedKeys.get(upload.attachmentId);
+        return selectedKey && selectedKey !== upload.r2Key;
+      })
+      .map((upload) => upload.r2Key)
+  );
+}
+
+async function retryStorageCleanupJob(db, env, job) {
+  const jobId = normalizeIdValue(job?.job_id || '');
+  const orgId = normalizeIdValue(job?.org_id || '');
+  const r2Key = typeof job?.r2_key === 'string' ? job.r2_key.trim() : '';
+  if (!db || !jobId || !orgId || !r2Key) {
+    return {
+      jobId,
+      status: 'retry_pending',
+      errorCode: 'cleanup_job_invalid',
+      outcome: 'pending',
+    };
+  }
+  if (!isR2KeyWithinOrg(r2Key, orgId)) {
+    await db
+      .prepare(
+        `
+        UPDATE storage_cleanup_jobs
+           SET last_error = 'cleanup_scope_mismatch'
+         WHERE job_id = ?1
+           AND org_id = ?2
+           AND r2_key = ?3
+      `
+      )
+      .bind(jobId, orgId, r2Key)
+      .run();
+    return {
+      jobId,
+      status: 'blocked_scope_mismatch',
+      errorCode: 'cleanup_scope_mismatch',
+      outcome: 'blocked',
+    };
+  }
+
+  const leaseToken = crypto.randomUUID();
+  const claimedAtMs = Date.now();
+  const claimResult = await db
+    .prepare(
+      `
+      UPDATE storage_cleanup_jobs
+         SET lease_token = ?5,
+             lease_expires_at_ms = ?6,
+             updated_at_ms = ?7
+       WHERE job_id = ?1
+         AND org_id = ?2
+         AND r2_key = ?3
+         AND updated_at_ms = ?4
+         AND (lease_token IS NULL OR lease_expires_at_ms <= ?7)
+    `
+    )
+    .bind(
+      jobId,
+      orgId,
+      r2Key,
+      Number(job.updated_at_ms || 0),
+      leaseToken,
+      claimedAtMs + STORAGE_CLEANUP_LEASE_MS,
+      claimedAtMs
+    )
+    .run();
+  if (Number(claimResult?.meta?.changes || 0) === 0) {
+    return {
+      jobId,
+      status: 'retry_pending',
+      errorCode: 'retry_already_claimed',
+      outcome: 'pending',
+    };
+  }
+
+  const resolveLiveReference = async () => {
+    const resolved = await db
+      .prepare(
+        `
+        DELETE FROM storage_cleanup_jobs
+         WHERE job_id = ?1
+           AND org_id = ?2
+           AND r2_key = ?3
+           AND lease_token = ?4
+           AND updated_at_ms = ?5
+      `
+      )
+      .bind(jobId, orgId, r2Key, leaseToken, claimedAtMs)
+      .run();
+    return Number(resolved?.meta?.changes || 0) > 0;
+  };
+
+  const deferActiveStage = async () => {
+    const released = await db
+      .prepare(
+        `
+        UPDATE storage_cleanup_jobs
+           SET lease_token = NULL,
+               lease_expires_at_ms = NULL,
+               last_error = 'staged_attachment_unexpired'
+         WHERE job_id = ?1
+           AND org_id = ?2
+           AND r2_key = ?3
+           AND lease_token = ?4
+           AND updated_at_ms = ?5
+      `
+      )
+      .bind(jobId, orgId, r2Key, leaseToken, claimedAtMs)
+      .run();
+    return Number(released?.meta?.changes || 0) > 0;
+  };
+
+  if (await hasActiveStagedAttachmentForR2Key(db, r2Key, Date.now())) {
+    const deferred = await deferActiveStage();
+    return deferred
+      ? {
+          jobId,
+          status: 'deferred_active_stage',
+          errorCode: 'staged_attachment_unexpired',
+          outcome: 'pending',
+        }
+      : {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'retry_state_changed',
+          outcome: 'pending',
+        };
+  }
+
+  if (await hasLiveAttachmentForR2Key(db, r2Key)) {
+    const resolved = await resolveLiveReference();
+    return resolved
+      ? {
+          jobId,
+          status: 'resolved_live_reference',
+          errorCode: 'live_attachment_reference',
+          outcome: 'resolved',
+        }
+      : {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'retry_state_changed',
+          outcome: 'pending',
+        };
+  }
+
+  // D1とR2は同一transactionにできないため、物理削除直前にもadoptionを再確認する。
+  if (await hasActiveStagedAttachmentForR2Key(db, r2Key, Date.now())) {
+    const deferred = await deferActiveStage();
+    return deferred
+      ? {
+          jobId,
+          status: 'deferred_active_stage',
+          errorCode: 'staged_attachment_unexpired',
+          outcome: 'pending',
+        }
+      : {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'retry_state_changed',
+          outcome: 'pending',
+        };
+  }
+  if (await hasLiveAttachmentForR2Key(db, r2Key)) {
+    const resolved = await resolveLiveReference();
+    return resolved
+      ? {
+          jobId,
+          status: 'resolved_live_reference',
+          errorCode: 'live_attachment_reference',
+          outcome: 'resolved',
+        }
+      : {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'retry_state_changed',
+          outcome: 'pending',
+        };
+  }
+
+  try {
+    await env.R2.delete([r2Key]);
+  } catch (_error) {
+    const updateResult = await db
+      .prepare(
+        `
+        UPDATE storage_cleanup_jobs
+           SET attempts = attempts + 1,
+               last_error = 'r2_delete_failed',
+               lease_token = NULL,
+               lease_expires_at_ms = NULL,
+               updated_at_ms = ?6
+         WHERE job_id = ?1
+           AND org_id = ?2
+           AND r2_key = ?3
+           AND lease_token = ?4
+           AND updated_at_ms = ?5
+      `
+      )
+      .bind(jobId, orgId, r2Key, leaseToken, claimedAtMs, Date.now())
+      .run();
+    return Number(updateResult?.meta?.changes || 0) > 0
+      ? {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'r2_delete_failed',
+          outcome: 'pending',
+        }
+      : {
+          jobId,
+          status: 'retry_pending',
+          errorCode: 'retry_state_changed',
+          outcome: 'pending',
+        };
+  }
+
+  const cleanupResults = await db.batch([
+    db
+      .prepare(
+        `
+        DELETE FROM storage_cleanup_jobs
+         WHERE job_id = ?1
+           AND org_id = ?2
+           AND r2_key = ?3
+           AND lease_token = ?4
+           AND updated_at_ms = ?5
+      `
+      )
+      .bind(jobId, orgId, r2Key, leaseToken, claimedAtMs),
+  ]);
+  const deleted = cleanupResults[0];
+  if (Number(deleted?.meta?.changes || 0) > 0) {
+    return { jobId, status: 'deleted', outcome: 'deleted' };
+  }
+  const current = await db
+    .prepare('SELECT job_id FROM storage_cleanup_jobs WHERE job_id = ?1 LIMIT 1')
+    .bind(jobId)
+    .first();
+  return current?.job_id
+    ? {
+        jobId,
+        status: 'retry_pending',
+        errorCode: 'retry_state_changed_after_delete',
+        outcome: 'pending',
+      }
+    : { jobId, status: 'deleted', outcome: 'deleted' };
 }
 
 async function deleteTaskFromD1(db, env, context) {
@@ -6944,28 +10465,102 @@ async function deleteTaskFromD1(db, env, context) {
   const attachmentResult = await db
     .prepare(
       `
-      SELECT a.attachment_id
+      SELECT a.attachment_id,
+             a.extra_json
         FROM task_attachments ta
         JOIN attachments a ON a.attachment_id = ta.attachment_id
        WHERE ta.task_id = ?1
+         AND a.org_id = ?2
+         AND NOT EXISTS (
+           SELECT 1
+             FROM task_attachments other_task_attachment
+            WHERE other_task_attachment.attachment_id = a.attachment_id
+              AND other_task_attachment.task_id <> ?1
+         )
+         AND NOT EXISTS (
+           SELECT 1
+             FROM message_attachments other_message_attachment
+            WHERE other_message_attachment.attachment_id = a.attachment_id
+         )
     `
     )
-    .bind(taskId)
-    .all();
-  const attachmentIds = Array.isArray(attachmentResult?.results)
-    ? attachmentResult.results
-        .map((row) => normalizeIdValue(row?.attachment_id))
-        .filter(Boolean)
-    : [];
-  await db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId).run();
-  await db.prepare('DELETE FROM task_attachments WHERE task_id = ?1').bind(taskId).run();
-  if (attachmentIds.length) {
-    await deleteAttachmentRecords(db, env, attachmentIds);
-  }
-  await db
-    .prepare('DELETE FROM tasks WHERE task_id = ?1 AND org_id = ?2')
     .bind(taskId, context.orgId || '')
-    .run();
+    .all();
+  const attachmentRows = Array.isArray(attachmentResult?.results) ? attachmentResult.results : [];
+  const attachmentIds = attachmentRows
+    .map((row) => normalizeIdValue(row?.attachment_id))
+    .filter(Boolean);
+  const r2Keys = attachmentRows
+    .map((row) => safeParseJson(row?.extra_json || null, {})?.r2Key)
+    .filter((key) => typeof key === 'string' && key.trim())
+    .map((key) => key.trim());
+  const statements = [
+    db.prepare('DELETE FROM task_assignees WHERE task_id = ?1').bind(taskId),
+    db.prepare('DELETE FROM task_attachments WHERE task_id = ?1').bind(taskId),
+  ];
+  if (attachmentIds.length) {
+    const placeholders = attachmentIds.map((_, index) => `?${index + 2}`).join(', ');
+    statements.push(
+      db
+        .prepare(
+          `
+          DELETE FROM attachments
+           WHERE org_id = ?1
+             AND attachment_id IN (${placeholders})
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM task_attachments remaining_task_attachment
+                WHERE remaining_task_attachment.attachment_id = attachments.attachment_id
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM message_attachments remaining_message_attachment
+                WHERE remaining_message_attachment.attachment_id = attachments.attachment_id
+             )
+        `
+        )
+        .bind(context.orgId || '', ...attachmentIds)
+    );
+  }
+  const cleanupKeys = normalizeR2CleanupKeys(r2Keys);
+  cleanupKeys.forEach((key) => {
+    statements.push(
+      buildStorageCleanupJobStatement(db, key, {
+        orgId: context.orgId || '',
+        targetType: 'task',
+        targetId: taskId,
+        reason: 'task_deleted',
+        requestId: context.requestId || '',
+      })
+    );
+  });
+  statements.push(
+    db.prepare('DELETE FROM tasks WHERE task_id = ?1 AND org_id = ?2').bind(taskId, context.orgId || '')
+  );
+  if (context.audit) {
+    const actorMembership = context.actorEmail
+      ? await resolveMembershipForEmail(db, normalizeEmailValue(context.actorEmail), context.orgId || '')
+      : null;
+    statements.push(
+      buildAuditLogStatement(db, {
+        ...context.audit,
+        orgId: context.orgId || '',
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetId: taskId,
+        requestId: context.requestId || null,
+        onlyIfPreviousStatementChanged: true,
+      })
+    );
+  }
+  await db.batch(statements.filter(Boolean));
+  await cleanupR2KeysWithOutbox(db, env, cleanupKeys, {
+    orgId: context.orgId || '',
+    targetType: 'task',
+    targetId: taskId,
+    reason: 'task_deleted',
+    requestId: context.requestId || '',
+    config: context.config,
+  });
 }
 
 async function deleteMessageFromD1(db, env, context) {
@@ -6980,90 +10575,527 @@ async function deleteMessageFromD1(db, env, context) {
   const attachmentResult = await db
     .prepare(
       `
-      SELECT a.attachment_id
+      SELECT a.attachment_id,
+             a.extra_json
         FROM message_attachments ma
         JOIN attachments a ON a.attachment_id = ma.attachment_id
        WHERE ma.message_id = ?1
+         AND a.org_id = ?2
+         AND NOT EXISTS (
+           SELECT 1
+             FROM message_attachments other_message_attachment
+            WHERE other_message_attachment.attachment_id = a.attachment_id
+              AND other_message_attachment.message_id <> ?1
+         )
+         AND NOT EXISTS (
+           SELECT 1
+             FROM task_attachments other_task_attachment
+            WHERE other_task_attachment.attachment_id = a.attachment_id
+         )
     `
     )
-    .bind(messageId)
-    .all();
-  const attachmentIds = Array.isArray(attachmentResult?.results)
-    ? attachmentResult.results
-        .map((row) => normalizeIdValue(row?.attachment_id))
-        .filter(Boolean)
-    : [];
-  await db.prepare('DELETE FROM message_reads WHERE message_id = ?1').bind(messageId).run();
-  await db.prepare('DELETE FROM message_attachments WHERE message_id = ?1')
-    .bind(messageId)
-    .run();
-  if (attachmentIds.length) {
-    await deleteAttachmentRecords(db, env, attachmentIds);
-  }
-  await db
-    .prepare('DELETE FROM messages WHERE message_id = ?1 AND org_id = ?2')
     .bind(messageId, context.orgId || '')
-    .run();
+    .all();
+  const attachmentRows = Array.isArray(attachmentResult?.results) ? attachmentResult.results : [];
+  const attachmentIds = attachmentRows
+    .map((row) => normalizeIdValue(row?.attachment_id))
+    .filter(Boolean);
+  const r2Keys = attachmentRows
+    .map((row) => safeParseJson(row?.extra_json || null, {})?.r2Key)
+    .filter((key) => typeof key === 'string' && key.trim())
+    .map((key) => key.trim());
+  const statements = [
+    db.prepare('DELETE FROM message_reads WHERE message_id = ?1').bind(messageId),
+    db.prepare('DELETE FROM message_attachments WHERE message_id = ?1').bind(messageId),
+  ];
+  if (attachmentIds.length) {
+    const placeholders = attachmentIds.map((_, index) => `?${index + 2}`).join(', ');
+    statements.push(
+      db
+        .prepare(
+          `
+          DELETE FROM attachments
+           WHERE org_id = ?1
+             AND attachment_id IN (${placeholders})
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM task_attachments remaining_task_attachment
+                WHERE remaining_task_attachment.attachment_id = attachments.attachment_id
+             )
+             AND NOT EXISTS (
+               SELECT 1
+                 FROM message_attachments remaining_message_attachment
+                WHERE remaining_message_attachment.attachment_id = attachments.attachment_id
+             )
+        `
+        )
+        .bind(context.orgId || '', ...attachmentIds)
+    );
+  }
+  const cleanupKeys = normalizeR2CleanupKeys(r2Keys);
+  cleanupKeys.forEach((key) => {
+    statements.push(
+      buildStorageCleanupJobStatement(db, key, {
+        orgId: context.orgId || '',
+        targetType: 'message',
+        targetId: messageId,
+        reason: 'message_deleted',
+        requestId: context.requestId || '',
+      })
+    );
+  });
+  statements.push(
+    db
+      .prepare('DELETE FROM messages WHERE message_id = ?1 AND org_id = ?2')
+      .bind(messageId, context.orgId || '')
+  );
+  if (context.audit) {
+    const actorMembership = context.actorEmail
+      ? await resolveMembershipForEmail(db, normalizeEmailValue(context.actorEmail), context.orgId || '')
+      : null;
+    statements.push(
+      buildAuditLogStatement(db, {
+        ...context.audit,
+        orgId: context.orgId || '',
+        actorMembershipId: actorMembership?.membership_id || null,
+        targetId: messageId,
+        requestId: context.requestId || null,
+        onlyIfPreviousStatementChanged: true,
+      })
+    );
+  }
+  await db.batch(statements.filter(Boolean));
+  await cleanupR2KeysWithOutbox(db, env, cleanupKeys, {
+    orgId: context.orgId || '',
+    targetType: 'message',
+    targetId: messageId,
+    reason: 'message_deleted',
+    requestId: context.requestId || '',
+    config: context.config,
+  });
+}
+
+function resolvePrimaryD1(db) {
+  if (db && typeof db.withSession === 'function') {
+    try {
+      return db.withSession('first-primary');
+    } catch (_error) {
+      return db;
+    }
+  }
+  return db;
+}
+
+async function loadUserSettingsState(db, userId) {
+  const normalizedUserId = normalizeIdValue(userId);
+  if (!db || !normalizedUserId) return null;
+  return db
+    .prepare(
+      `
+      SELECT user_id,
+             display_name,
+             profile_image_url,
+             theme,
+             language,
+             settings_version,
+             updated_at_ms
+        FROM users
+       WHERE user_id = ?1
+       LIMIT 1
+    `
+    )
+    .bind(normalizedUserId)
+    .first();
 }
 
 async function updateUserSettingsInD1(db, context) {
   if (!context) return;
   const email = normalizeEmailValue(context.email);
   if (!email) return;
-  const user = await db
-    .prepare(
-      `
-      SELECT user_id, theme, display_name, profile_image_url
-        FROM users
-       WHERE lower(email) = ?1
-    `
-    )
-    .bind(email)
-    .first();
+  const user = context.user || null;
   if (!user) {
-    console.warn('[ShiftFlow][DualWrite] User not found in D1 when saving settings', { email });
-    return;
+    throw new Error('User context is required when saving settings.');
+  }
+  const orgId = normalizeIdValue(context.orgId);
+  const ownerUserId = normalizeIdValue(user.user_id || context.ownerUserId);
+  const ownerMembershipId = normalizeIdValue(context.ownerMembershipId);
+  if (!orgId || !ownerUserId || !ownerMembershipId) {
+    const error = new Error('Profile ownership scope is unavailable.');
+    error.code = 'profile_scope_unavailable';
+    throw error;
+  }
+  const expectedSettingsVersion = normalizeSettingsVersion(context.expectedSettingsVersion);
+  const nextSettingsVersion = normalizeSettingsVersion(context.nextSettingsVersion);
+  if (!expectedSettingsVersion || !nextSettingsVersion) {
+    const error = new Error('Settings version is unavailable.');
+    error.code = 'settings_version_invalid';
+    throw error;
   }
   const updates = [];
   const values = [];
-  let bindIndex = 2;
-  if (context.theme) {
+  let bindIndex = 1;
+  if (context.theme !== undefined) {
     updates.push(`theme = ?${bindIndex++}`);
     values.push(context.theme);
   }
-  if (context.name) {
+  if (context.name !== undefined) {
     updates.push(`display_name = ?${bindIndex++}`);
     values.push(context.name);
   }
-  if (context.imageUrl) {
+  if (context.imageUrl !== undefined) {
     updates.push(`profile_image_url = ?${bindIndex++}`);
-    values.push(context.imageUrl);
+    values.push(context.imageUrl || null);
   }
   const nextLanguage = normalizeLanguageInput(context.language);
   if (nextLanguage) {
     updates.push(`language = ?${bindIndex++}`);
     values.push(nextLanguage);
   }
-  const timestamp = context.timestampMs || Date.now();
-  updates.push(`updated_at_ms = ?${bindIndex++}`);
-  values.push(timestamp);
-  if (!updates.length) return;
-  await db
-    .prepare(`UPDATE users SET ${updates.join(', ')} WHERE lower(email) = ?1`)
-    .bind(email, ...values)
-    .run();
+  const requestedTimestamp = context.timestampMs || Date.now();
+  const timestamp = requestedTimestamp;
+  // 認証成功もusers.updated_at_msを更新する。R2 upload中にその更新が入っても、
+  // 設定保存が古い読取値でlast-modifiedを巻き戻さないようSQL側で単調増加させる。
+  updates.push(`updated_at_ms = MAX(COALESCE(updated_at_ms, 0) + 1, ?${bindIndex++})`);
+  values.push(requestedTimestamp);
+  updates.push(`settings_version = ?${bindIndex++}`);
+  values.push(nextSettingsVersion);
+
+  const userIdIndex = bindIndex++;
+  const expectedVersionIndex = bindIndex++;
+  const updateBindValues = [
+    ...values,
+    ownerUserId,
+    expectedSettingsVersion,
+  ];
+  let attachmentInvariantSql = '';
+  if (context.newAttachment) {
+    const attachmentIdIndex = bindIndex++;
+    const attachmentOrgIndex = bindIndex++;
+    const attachmentChecksumIndex = bindIndex++;
+    const attachmentMembershipIndex = bindIndex++;
+    const attachmentOwnerIndex = bindIndex++;
+    attachmentInvariantSql = `
+           AND EXISTS (
+             SELECT 1
+               FROM attachments a
+              WHERE a.attachment_id = ?${attachmentIdIndex}
+                AND a.org_id = ?${attachmentOrgIndex}
+                AND a.checksum = ?${attachmentChecksumIndex}
+                AND a.created_by_membership_id = ?${attachmentMembershipIndex}
+                AND LOWER(COALESCE(JSON_EXTRACT(a.extra_json, '$.category'), '')) = 'profile_image'
+                AND COALESCE(JSON_EXTRACT(a.extra_json, '$.ownerUserId'), '') = ?${attachmentOwnerIndex}
+           )`;
+    updateBindValues.push(
+      context.newAttachment.attachmentId,
+      orgId,
+      context.newAttachment.checksum || '',
+      ownerMembershipId,
+      ownerUserId
+    );
+  }
+  const statements = [];
+  const uploadedR2Key =
+    typeof context.newAttachment?.extra?.r2Key === 'string'
+      ? context.newAttachment.extra.r2Key.trim()
+      : '';
+  if (context.newAttachment && uploadedR2Key && !context.stagedAttachment) {
+    statements.push(
+      buildStorageCleanupJobStatement(db, uploadedR2Key, {
+        orgId,
+        targetType: 'user',
+        targetId: ownerUserId,
+        reason: 'upload_uncommitted',
+        requestId: context.requestId || '',
+      })
+    );
+  }
+  if (context.newAttachment && context.stagedAttachment) {
+    statements.push(
+      buildStagedAttachmentClaimStatement(
+        db,
+        { staged_attachment_id: context.stagedAttachment.stagedAttachmentId },
+        {
+          orgId,
+          ownerUserId,
+          ownerMembershipId,
+          purpose: 'profile',
+          targetType: 'user_settings',
+          targetId: nextSettingsVersion,
+          claimedAtMs: context.stagedAttachment.claimedAtMs || timestamp,
+          expectedSettingsVersion,
+        }
+      )
+    );
+  }
+  if (context.newAttachment) {
+    // logical IDは冪等、物理R2世代はwrite-once。競合時は先着metadataを正本とする。
+    statements.push(
+      buildAttachmentRecordStatement(db, {
+        ...context.newAttachment,
+        preserveExisting: true,
+      })
+    );
+  }
+  const updateStatementIndex = statements.length;
+  statements.push(
+    db
+      .prepare(
+        `
+        UPDATE users
+           SET ${updates.join(', ')}
+         WHERE user_id = ?${userIdIndex}
+           AND settings_version = ?${expectedVersionIndex}
+           ${attachmentInvariantSql}
+      `
+      )
+      .bind(...updateBindValues)
+  );
+  const changedFields = Array.from(
+    new Set(
+      (Array.isArray(context.changedFields) ? context.changedFields : [])
+        .map((field) => String(field || '').trim())
+        .filter(Boolean)
+    )
+  );
+  statements.push(
+    buildAuditLogStatement(db, {
+      orgId,
+      actorMembershipId: ownerMembershipId,
+      targetType: 'user',
+      targetId: ownerUserId,
+      action: 'user_settings.update',
+      createdAtMs: timestamp,
+      requestId: context.requestId || null,
+      requestPayloadSha256: context.requestPayloadSha256 || null,
+      requestGenerationMs: context.requestGenerationMs || null,
+      onlyIfPreviousStatementChanged: true,
+      payload: { fields: changedFields },
+    })
+  );
+
+  const previousAttachment = context.previousAttachment || null;
+  const nextAttachmentId = normalizeIdValue(context.nextAttachmentId);
+  const previousAttachmentId = normalizeIdValue(previousAttachment?.attachment_id);
+  const cleanupKeys = [];
+  const profileImageChanged = context.imageUrl !== undefined;
+  if (profileImageChanged && previousAttachmentId && previousAttachmentId !== nextAttachmentId) {
+    const previousKey =
+      typeof previousAttachment.r2Key === 'string' ? previousAttachment.r2Key.trim() : '';
+    if (previousKey) {
+      cleanupKeys.push(previousKey);
+      statements.push(
+        buildStorageCleanupJobStatement(db, previousKey, {
+          orgId,
+          targetType: 'user',
+          targetId: ownerUserId,
+          reason: 'profile_image_replaced',
+          requestId: context.requestId || '',
+          requiredProfileState: {
+            userId: ownerUserId,
+            settingsVersion: nextSettingsVersion,
+            imageUrl: context.imageUrl || '',
+          },
+        })
+      );
+    }
+    statements.push(
+      db
+        .prepare(
+          `
+          DELETE FROM attachments
+           WHERE attachment_id = ?1
+             AND org_id = ?2
+             AND LOWER(COALESCE(JSON_EXTRACT(extra_json, '$.category'), '')) = 'profile_image'
+             AND created_by_membership_id IN (
+               SELECT membership_id
+                 FROM memberships
+                WHERE org_id = ?2
+                  AND user_id = ?3
+             )
+             AND EXISTS (
+               SELECT 1
+                 FROM users
+                WHERE user_id = ?3
+                  AND settings_version = ?4
+                  AND COALESCE(profile_image_url, '') = ?5
+             )
+        `
+        )
+        .bind(
+          previousAttachmentId,
+          orgId,
+          ownerUserId,
+          nextSettingsVersion,
+          context.imageUrl || ''
+        )
+    );
+  }
+  if (context.newAttachment && uploadedR2Key) {
+    statements.push(
+      buildClearStorageCleanupJobForAdoptedAttachmentStatement(db, {
+        r2Key: uploadedR2Key,
+        attachmentId: context.newAttachment.attachmentId,
+        orgId,
+        ownerUserId,
+        settingsVersion: nextSettingsVersion,
+        storagePath: context.imageUrl || '',
+      }),
+      !context.stagedAttachment
+        ? db
+            .prepare(
+              `
+              DELETE FROM attachments
+               WHERE attachment_id = ?1
+                 AND org_id = ?2
+                 AND CASE
+                       WHEN JSON_VALID(COALESCE(extra_json, '')) = 1
+                       THEN JSON_EXTRACT(extra_json, '$.r2Key')
+                       ELSE NULL
+                     END = ?3
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM users
+                    WHERE user_id = ?4
+                      AND settings_version = ?5
+                      AND COALESCE(profile_image_url, '') = ?6
+                 )
+            `
+            )
+            .bind(
+              context.newAttachment.attachmentId,
+              orgId,
+              uploadedR2Key,
+              ownerUserId,
+              nextSettingsVersion,
+              context.imageUrl || ''
+            )
+        : null
+    );
+  }
+  const batchResults = await db.batch(statements.filter(Boolean));
+  const updateResult = batchResults[updateStatementIndex];
+  const conflict = Number(updateResult?.meta?.changes || 0) === 0;
+  return {
+    cleanupKeys: conflict ? [] : cleanupKeys,
+    userId: ownerUserId,
+    orgId,
+    conflict,
+    settingsVersion: conflict ? expectedSettingsVersion : nextSettingsVersion,
+  };
 }
 
-async function insertAttachmentRecord(db, details) {
-  if (!db || !details || !details.attachmentId) return;
+async function resolveOwnedProfileAttachment(db, context = {}) {
+  const attachmentId = normalizeIdValue(context.attachmentId);
+  const orgId = normalizeIdValue(context.orgId);
+  const ownerUserId = normalizeIdValue(context.ownerUserId);
+  if (!db || !attachmentId || !orgId || !ownerUserId) return null;
+  const row = await db
+    .prepare(
+      `
+      SELECT a.attachment_id,
+             a.org_id,
+             a.file_name,
+             a.content_type,
+             a.size_bytes,
+             a.storage_path,
+             a.checksum,
+             a.created_at_ms,
+             a.created_by_membership_id,
+             a.extra_json
+        FROM attachments a
+        JOIN memberships owner_membership
+          ON owner_membership.membership_id = a.created_by_membership_id
+         AND owner_membership.org_id = a.org_id
+       WHERE a.attachment_id = ?1
+         AND a.org_id = ?2
+         AND owner_membership.user_id = ?3
+         AND LOWER(COALESCE(JSON_EXTRACT(a.extra_json, '$.category'), '')) = 'profile_image'
+       LIMIT 1
+    `
+    )
+    .bind(attachmentId, orgId, ownerUserId)
+    .first();
+  if (!row) return null;
+  const extra = safeParseJson(row.extra_json || null, {});
+  return {
+    ...row,
+    r2Key: typeof extra?.r2Key === 'string' ? extra.r2Key.trim() : '',
+  };
+}
+
+function buildAttachmentRecordStatement(db, details) {
+  if (!db || !details || !details.attachmentId) return null;
   const extraPayload =
     details.extra && typeof details.extra === 'object' && Object.keys(details.extra).length
       ? JSON.stringify(details.extra)
       : null;
-  await db
+  const insertMode = details.preserveExisting ? 'INSERT OR IGNORE' : 'INSERT OR REPLACE';
+  const guardedR2Key =
+    details.extra && typeof details.extra.r2Key === 'string'
+      ? details.extra.r2Key.trim()
+      : '';
+  const guardAdoption = Boolean(guardedR2Key && normalizeIdValue(details.orgId));
+  const predicates = [];
+  if (details.onlyIfPreviousStatementChanged) {
+    predicates.push('changes() > 0');
+  }
+  if (guardAdoption) {
+    predicates.push(`
+      NOT EXISTS (
+        SELECT 1
+          FROM storage_cleanup_jobs cleanup_guard
+         WHERE cleanup_guard.r2_key = ?11
+           AND cleanup_guard.org_id = ?2
+           AND cleanup_guard.lease_token IS NOT NULL
+      )`);
+  }
+  const stagedClaim = details.stagedClaim && typeof details.stagedClaim === 'object'
+    ? details.stagedClaim
+    : null;
+  const stagedAttachmentId = normalizeIdValue(stagedClaim?.stagedAttachmentId);
+  const stagedTargetType =
+    stagedClaim?.targetType === 'user_settings' ? 'user_settings' : 'message';
+  const stagedTargetId = normalizeIdValue(stagedClaim?.targetId);
+  const stagedGuard = Boolean(stagedAttachmentId && stagedTargetId && normalizeIdValue(details.orgId));
+  if (stagedGuard) {
+    const startIndex = guardAdoption ? 12 : 11;
+    predicates.push(`
+      EXISTS (
+        SELECT 1
+          FROM staged_attachments staged_claim
+         WHERE staged_claim.staged_attachment_id = ?${startIndex}
+           AND staged_claim.org_id = ?2
+           AND staged_claim.status = 'claimed'
+           AND staged_claim.claimed_target_type = ?${startIndex + 1}
+           AND staged_claim.claimed_target_id = ?${startIndex + 2}
+           AND staged_claim.r2_key = ${guardAdoption ? '?11' : "JSON_EXTRACT(?10, '$.r2Key')"}
+      )`);
+  }
+  const valueClause = predicates.length
+    ? `SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE ${predicates.join(' AND ')}`
+    : 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)';
+  const bindValues = [
+    details.attachmentId,
+    details.orgId || null,
+    details.fileName || null,
+    details.mimeType || null,
+    typeof details.sizeBytes === 'number' ? details.sizeBytes : null,
+    details.storagePath || null,
+    details.checksum || null,
+    typeof details.createdAtMs === 'number' ? details.createdAtMs : Date.now(),
+    details.createdByMembershipId || null,
+    extraPayload,
+  ];
+  if (guardAdoption) {
+    bindValues.push(guardedR2Key);
+  }
+  if (stagedGuard) {
+    bindValues.push(stagedAttachmentId, stagedTargetType, stagedTargetId);
+  }
+  return db
     .prepare(
       `
-      INSERT OR REPLACE INTO attachments (
+      ${insertMode} INTO attachments (
         attachment_id,
         org_id,
         file_name,
@@ -7075,36 +11107,90 @@ async function insertAttachmentRecord(db, details) {
         created_by_membership_id,
         extra_json
       )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+      ${valueClause}
     `
     )
-    .bind(
-      details.attachmentId,
-      details.orgId || null,
-      details.fileName || null,
-      details.mimeType || null,
-      typeof details.sizeBytes === 'number' ? details.sizeBytes : null,
-      details.storagePath || null,
-      details.checksum || null,
-      typeof details.createdAtMs === 'number' ? details.createdAtMs : Date.now(),
-      details.createdByMembershipId || null,
-      extraPayload
-    )
-    .run();
+    .bind(...bindValues);
 }
 
-async function deleteAttachmentRecords(db, env, attachmentIds) {
+function buildClearStorageCleanupJobForAdoptedAttachmentStatement(db, details = {}) {
+  const r2Key = typeof details.r2Key === 'string' ? details.r2Key.trim() : '';
+  const attachmentId = normalizeIdValue(details.attachmentId);
+  const orgId = normalizeIdValue(details.orgId);
+  if (!db || !r2Key || !attachmentId || !orgId) return null;
+  const ownerUserId = normalizeIdValue(details.ownerUserId);
+  const settingsVersion = normalizeSettingsVersion(details.settingsVersion);
+  const storagePath = typeof details.storagePath === 'string' ? details.storagePath : '';
+  const profileAdoptionClause = ownerUserId && settingsVersion
+    ? `
+         AND EXISTS (
+           SELECT 1
+             FROM users
+            WHERE user_id = ?4
+              AND settings_version = ?5
+              AND COALESCE(profile_image_url, '') = ?6
+         )`
+    : '';
+  const bindValues = [r2Key, attachmentId, orgId];
+  if (profileAdoptionClause) {
+    bindValues.push(ownerUserId, settingsVersion, storagePath);
+  }
+  return db
+    .prepare(
+      `
+      DELETE FROM storage_cleanup_jobs
+       WHERE r2_key = ?1
+         AND lease_token IS NULL
+         AND EXISTS (
+           SELECT 1
+             FROM attachments
+            WHERE attachment_id = ?2
+              AND org_id = ?3
+              AND CASE
+                    WHEN JSON_VALID(COALESCE(extra_json, '')) = 1
+                    THEN JSON_EXTRACT(extra_json, '$.r2Key')
+                    ELSE NULL
+                  END = ?1
+         )
+         ${profileAdoptionClause}
+    `
+    )
+    .bind(...bindValues);
+}
+
+async function deleteAttachmentRecords(db, env, attachmentIds, context = {}) {
   if (!db || !Array.isArray(attachmentIds) || !attachmentIds.length) return;
   const uniqueIds = Array.from(new Set(attachmentIds.map((id) => normalizeIdValue(id)).filter(Boolean)));
   if (!uniqueIds.length) return;
+  const orgId = normalizeIdValue(context.orgId);
+  const ownerUserId = normalizeIdValue(context.ownerUserId);
+  const category = String(context.category || '').trim().toLowerCase();
+  if (!orgId || !ownerUserId || category !== 'profile_image') {
+    const error = new Error('Scoped profile attachment deletion requires org, owner, and category.');
+    error.code = 'attachment_delete_scope_required';
+    throw error;
+  }
   const placeholders = uniqueIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const selectStatement = `
-    SELECT attachment_id, extra_json
-      FROM attachments
-     WHERE attachment_id IN (${placeholders})
+    SELECT a.attachment_id, a.extra_json
+      FROM attachments a
+      JOIN memberships owner_membership
+        ON owner_membership.membership_id = a.created_by_membership_id
+       AND owner_membership.org_id = a.org_id
+     WHERE a.attachment_id IN (${placeholders})
+       AND a.org_id = ?${uniqueIds.length + 1}
+       AND owner_membership.user_id = ?${uniqueIds.length + 2}
+       AND LOWER(COALESCE(JSON_EXTRACT(a.extra_json, '$.category'), '')) = ?${uniqueIds.length + 3}
   `;
-  const result = await db.prepare(selectStatement).bind(...uniqueIds).all();
+  const result = await db
+    .prepare(selectStatement)
+    .bind(...uniqueIds, orgId, ownerUserId, category)
+    .all();
   const rows = Array.isArray(result?.results) ? result.results : [];
+  const scopedIds = rows
+    .map((row) => normalizeIdValue(row?.attachment_id))
+    .filter(Boolean);
+  if (!scopedIds.length) return { deletedAttachmentIds: [], cleanupKeys: [] };
   const r2Keys = [];
   for (const row of rows) {
     const extra = safeParseJson(row?.extra_json || null, {});
@@ -7113,17 +11199,40 @@ async function deleteAttachmentRecords(db, env, attachmentIds) {
       r2Keys.push(key);
     }
   }
-  await db.prepare(`DELETE FROM attachments WHERE attachment_id IN (${placeholders})`).bind(...uniqueIds).run();
-  if (env && env.R2 && r2Keys.length) {
-    try {
-      await env.R2.delete(r2Keys);
-    } catch (err) {
-      console.warn('[ShiftFlow][R2] Failed to delete objects', {
-        count: r2Keys.length,
-        message: err && err.message ? err.message : String(err),
-      });
-    }
-  }
+  const cleanupKeys = normalizeR2CleanupKeys(r2Keys);
+  const statements = cleanupKeys.map((key) =>
+    buildStorageCleanupJobStatement(db, key, {
+      ...context,
+      reason: context.reason || 'attachment_record_deleted',
+    })
+  );
+  const scopedPlaceholders = scopedIds.map((_, idx) => `?${idx + 1}`).join(', ');
+  statements.push(
+    db
+      .prepare(
+        `
+        DELETE FROM attachments
+         WHERE attachment_id IN (${scopedPlaceholders})
+           AND org_id = ?${scopedIds.length + 1}
+           AND LOWER(COALESCE(JSON_EXTRACT(extra_json, '$.category'), '')) = ?${
+             scopedIds.length + 2
+           }
+           AND created_by_membership_id IN (
+             SELECT membership_id
+               FROM memberships
+              WHERE org_id = ?${scopedIds.length + 1}
+                AND user_id = ?${scopedIds.length + 3}
+           )
+      `
+      )
+      .bind(...scopedIds, orgId, category, ownerUserId)
+  );
+  await db.batch(statements.filter(Boolean));
+  await cleanupR2KeysWithOutbox(db, env, cleanupKeys, {
+    ...context,
+    reason: context.reason || 'attachment_record_deleted',
+  });
+  return { deletedAttachmentIds: scopedIds, cleanupKeys };
 }
 
 async function ensureMembershipForOrg(db, userId, orgId, defaults = {}) {
@@ -7174,9 +11283,9 @@ async function ensureMembershipForOrg(db, userId, orgId, defaults = {}) {
   };
 }
 
-async function insertAuditLog(db, entry) {
+function buildAuditLogStatement(db, entry) {
   if (!db || !entry || !entry.orgId) {
-    return;
+    return null;
   }
   const timestamp = typeof entry.createdAtMs === 'number' ? entry.createdAtMs : Date.now();
   let payloadJson = null;
@@ -7187,10 +11296,23 @@ async function insertAuditLog(db, entry) {
       payloadJson = null;
     }
   }
-  await db
+  const requestPayloadSha256 =
+    typeof entry.requestPayloadSha256 === 'string' &&
+    /^[0-9a-f]{64}$/.test(entry.requestPayloadSha256.trim())
+      ? entry.requestPayloadSha256.trim()
+      : null;
+  const requestGenerationMs = Number(entry.requestGenerationMs);
+  const normalizedRequestGenerationMs =
+    Number.isFinite(requestGenerationMs) && requestGenerationMs > 0
+      ? Math.floor(requestGenerationMs)
+      : null;
+  const valueClause = entry.onlyIfPreviousStatementChanged
+    ? 'SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE changes() > 0'
+    : 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)';
+  return db
     .prepare(
       `
-      INSERT INTO audit_logs (
+      INSERT OR IGNORE INTO audit_logs (
         audit_id,
         org_id,
         actor_membership_id,
@@ -7198,9 +11320,12 @@ async function insertAuditLog(db, entry) {
         target_id,
         action,
         created_at_ms,
-        payload_json
+        payload_json,
+        request_id,
+        request_payload_sha256,
+        request_generation_ms
       )
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      ${valueClause}
     `
     )
     .bind(
@@ -7211,9 +11336,11 @@ async function insertAuditLog(db, entry) {
       entry.targetId || null,
       entry.action || 'admin_update',
       timestamp,
-      payloadJson
-    )
-    .run();
+      payloadJson,
+      entry.requestId || null,
+      requestPayloadSha256,
+      normalizedRequestGenerationMs
+    );
 }
 
 function clampAuditLimit(value, min = 25, max = 500) {
@@ -7251,11 +11378,55 @@ function describeAdminAction(action, payload) {
       summary: title ? 'タイトル: ' + title : 'タスクを作成しました。',
     };
   }
+  if (normalized === 'task.update') {
+    const fields = Array.isArray(payload?.fields) ? payload.fields.join(', ') : '';
+    return {
+      label: 'タスク更新',
+      summary: fields ? '更新項目: ' + fields : 'タスクを更新しました。',
+    };
+  }
+  if (normalized === 'task.complete') {
+    return { label: 'タスク完了', summary: 'タスクを完了にしました。' };
+  }
+  if (normalized === 'task.delete') {
+    return { label: 'タスク削除', summary: 'タスクを削除しました。' };
+  }
   if (normalized === 'message.create') {
     const title = payload && typeof payload.title === 'string' ? payload.title : '';
     return {
       label: 'メッセージ作成',
       summary: title ? 'タイトル: ' + title : 'メッセージを投稿しました。',
+    };
+  }
+  if (normalized === 'message.delete') {
+    return { label: 'メッセージ削除', summary: 'メッセージを削除しました。' };
+  }
+  if (normalized === 'message.pin') {
+    return { label: 'ピン留め', summary: 'メッセージをピン留めしました。' };
+  }
+  if (normalized === 'message.unpin') {
+    return { label: 'ピン留め解除', summary: 'メッセージのピン留めを解除しました。' };
+  }
+  if (normalized === 'message.comment') {
+    return { label: 'コメント投稿', summary: 'メッセージへコメントを投稿しました。' };
+  }
+  if (normalized === 'folder.create') {
+    return { label: 'フォルダ作成', summary: 'フォルダを作成しました。' };
+  }
+  if (normalized === 'folder.update') {
+    return { label: 'フォルダ更新', summary: 'フォルダ設定を更新しました。' };
+  }
+  if (normalized === 'folder.archive') {
+    return { label: 'フォルダアーカイブ', summary: 'フォルダをアーカイブしました。' };
+  }
+  if (normalized === 'template.create') {
+    return { label: 'テンプレート作成', summary: 'テンプレートを作成しました。' };
+  }
+  if (normalized === 'user_settings.update') {
+    const fields = Array.isArray(payload?.fields) ? payload.fields.join(', ') : '';
+    return {
+      label: '個人設定更新',
+      summary: fields ? '更新項目: ' + fields : '個人設定を更新しました。',
     };
   }
   if (normalized === 'user_status_update') {
@@ -7285,8 +11456,8 @@ function describeAdminAction(action, payload) {
     };
   }
   return {
-    label: normalized || '管理操作',
-    summary: normalized || '管理操作を記録しました。',
+    label: normalized || '業務操作',
+    summary: normalized || '業務操作を記録しました。',
   };
 }
 
@@ -7299,7 +11470,7 @@ function buildAdminAuditEntry(row) {
   return {
     id: row.audit_id || createUlid(createdAt),
     type: 'admin',
-    typeLabel: '管理操作',
+    typeLabel: '業務操作',
     icon: 'fact_check',
     eventLabel: descriptor.label,
     statusLabel: '完了',
@@ -7314,6 +11485,7 @@ function buildAdminAuditEntry(row) {
       action: row.action || '',
       targetType: row.target_type || '',
       targetId: row.target_id || '',
+      requestId: row.request_id || '',
       payload,
       actor: {
         email: row.actor_email || '',
@@ -7325,60 +11497,78 @@ function buildAdminAuditEntry(row) {
   };
 }
 
-function buildLoginAuditEntry(row) {
+function buildAuthEventEntry(row) {
   if (!row) return null;
-  const attemptedAt = row.attempted_at_ms || Date.now();
-  const status = String(row.status || '').toLowerCase();
-  let eventLabel = 'ログイン記録';
-  let statusLabel = '記録';
+  const occurredAt = row.occurred_at_ms || Date.now();
+  const eventType = String(row.event_type || '').toLowerCase();
+  const outcome = String(row.outcome || '').toLowerCase();
+  let eventLabel = '認証イベント';
+  let statusLabel = outcome || '記録';
   let severity = 'info';
-  if (status === 'active') {
+  let icon = 'shield';
+  if (eventType === 'authentication.succeeded') {
     eventLabel = 'ログイン成功';
     statusLabel = '成功';
     severity = 'success';
-  } else if (status === 'pending') {
-    eventLabel = 'ログイン保留';
-    statusLabel = '承認待ち';
+    icon = 'login';
+  } else if (eventType === 'authentication.failed') {
+    eventLabel = 'ログイン失敗';
+    statusLabel = '失敗';
+    severity = 'danger';
+    icon = 'gpp_bad';
+  } else if (eventType === 'session.logged_out') {
+    eventLabel = 'ログアウト';
+    statusLabel = '終了';
+    icon = 'logout';
+  } else if (eventType === 'session.expired') {
+    eventLabel = 'セッション期限切れ';
+    statusLabel = '期限切れ';
     severity = 'warning';
-  } else if (status === 'suspended') {
-    eventLabel = 'ログイン拒否';
-    statusLabel = '停止中';
+    icon = 'timer_off';
+  } else if (eventType === 'authorization.denied') {
+    eventLabel = 'アクセス拒否';
+    statusLabel = row.status || '拒否';
     severity = 'danger';
-  } else if (status === 'revoked') {
-    eventLabel = 'ログイン拒否';
-    statusLabel = '権限剥奪';
+    icon = 'block';
+  } else if (eventType === 'authorization.role_denied') {
+    eventLabel = 'ロール権限拒否';
+    statusLabel = '拒否';
     severity = 'danger';
+    icon = 'gpp_bad';
   }
   const userLabel = row.display_name || row.user_email || '不明なユーザー';
   const summaryParts = [];
-  if (row.reason) summaryParts.push('理由: ' + row.reason);
+  if (row.reason_code) summaryParts.push('理由: ' + row.reason_code);
+  if (row.status) summaryParts.push('状態: ' + row.status);
   if (row.role) summaryParts.push('ロール: ' + row.role);
+  if (row.route) summaryParts.push('経路: ' + row.route);
   const summary = summaryParts.length
     ? summaryParts.join(' / ')
-    : 'ログインイベントを記録しました。';
+    : '認証・アクセスイベントを記録しました。';
   return {
-    id: row.login_id || createUlid(attemptedAt),
-    type: 'login',
-    typeLabel: 'ログイン',
-    icon: 'login',
+    id: row.event_id || createUlid(occurredAt),
+    type: 'auth',
+    typeLabel: '認証・アクセス',
+    icon,
     eventLabel,
     statusLabel,
     severity,
     summary,
-    occurredAt: attemptedAt,
-    occurredLabel: formatJst(attemptedAt, true),
+    occurredAt,
+    occurredLabel: formatJst(occurredAt, true),
     userLabel,
     userEmail: row.user_email || '',
     meta: {
-      source: 'login_audits',
+      source: 'auth_events',
+      eventType,
+      outcome,
       requestId: row.request_id || '',
-      reason: row.reason || '',
+      reasonCode: row.reason_code || '',
       role: row.role || '',
-      clientIp: row.client_ip || '',
-      userAgent: row.user_agent || '',
-      tokenIssuedAt: row.token_iat_ms || null,
+      route: row.route || '',
+      eventSource: row.source || '',
       orgId: row.org_id || '',
-      status,
+      status: row.status || '',
     },
   };
 }
@@ -7401,9 +11591,9 @@ function buildProxyAuditEntry(row) {
   return {
     id: row.log_id || createUlid(createdAt),
     type: 'api',
-    typeLabel: 'API',
-    icon: 'sync_lock',
-    eventLabel: row.event || 'Auth Proxy',
+    typeLabel: 'API障害',
+    icon: 'error_outline',
+    eventLabel: row.event || 'API診断',
     statusLabel: row.status || row.level || 'info',
     severity,
     summary,
@@ -7418,10 +11608,10 @@ function buildProxyAuditEntry(row) {
       message: row.message || '',
       requestId: row.request_id || '',
       route: row.route || '',
-      clientIp: row.client_ip || '',
-      userAgent: row.user_agent || '',
       cfRay: row.cf_ray || '',
       status: row.status || '',
+      orgId: row.org_id || '',
+      userId: row.user_id || '',
       meta,
     },
   };
@@ -7559,125 +11749,22 @@ async function fetchOrgMemberStats(db, orgId) {
   };
 }
 
-function sanitizeDiagnosticsValue(value) {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  const type = typeof value;
-  if (type === 'string') {
-    return value.length > 500 ? value.slice(0, 497) + '...' : value;
-  }
-  if (type === 'number' || type === 'boolean') {
-    return value;
-  }
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  if (Array.isArray(value)) {
-    try {
-      return value.slice(0, 10).map((item) => sanitizeDiagnosticsValue(item));
-    } catch (_err) {
-      return String(value);
-    }
-  }
-  if (type === 'object') {
-    const entries = Object.entries(value);
-    const limited = {};
-    for (let i = 0; i < Math.min(entries.length, 10); i += 1) {
-      const [key, val] = entries[i];
-      if (!key) continue;
-      const sanitized = sanitizeDiagnosticsValue(val);
-      if (sanitized !== undefined) {
-        limited[key] = sanitized;
-      }
-    }
-    return limited;
-  }
-  return String(value);
-}
-
-function createDiagnosticsPayload(level, message, meta) {
-  const safeMetaRaw = meta && typeof meta === 'object' ? meta : {};
-  const safeMeta = {};
-  const entries = Object.entries(safeMetaRaw);
-  const limit = Math.min(entries.length, 20);
-  for (let i = 0; i < limit; i += 1) {
-    const [key, value] = entries[i];
-    if (!key) continue;
-    const sanitized = sanitizeDiagnosticsValue(value);
-    if (sanitized !== undefined) {
-      safeMeta[key] = sanitized;
-    }
-  }
-  const payload = {
-    level,
-    message,
-    timestamp: new Date().toISOString(),
-    requestId: typeof safeMeta.requestId === 'string' ? safeMeta.requestId : '',
-    event: typeof safeMeta.event === 'string' ? safeMeta.event : '',
-    route: typeof safeMeta.route === 'string' ? safeMeta.route : '',
-    email: typeof safeMeta.email === 'string' ? safeMeta.email : '',
-    status: typeof safeMeta.status === 'string' ? safeMeta.status : '',
-    meta: safeMeta,
-  };
-  return payload;
-}
-
-async function sendDiagnostics(config, payload) {
-  if (!config || !config.gasUrl) {
-    return;
-  }
-  const headers = new Headers({
-    'Content-Type': 'application/json',
-  });
-  const primarySharedSecret = getPrimarySharedSecret(config);
-  if (primarySharedSecret) {
-    headers.set('X-ShiftFlow-Secret', primarySharedSecret);
-  }
-  if (payload.requestId) {
-    headers.set('X-ShiftFlow-Request-Id', payload.requestId);
-  }
-  const body = JSON.stringify({
-    route: DIAGNOSTIC_ROUTE,
-    args: [payload],
-  });
-  const response = await fetch(config.gasUrl, {
-    method: 'POST',
-    headers,
-    body,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(
-      `Diagnostic endpoint failed (${response.status}): ${text ? text.slice(0, 200) : 'no body'}`
-    );
-  }
-}
-
-function captureDiagnostics(config, level, message, meta) {
-  try {
-    const payload = createDiagnosticsPayload(level, message, meta);
-    sendDiagnostics(config, payload).catch((err) => {
-      console.warn('[ShiftFlow][Auth] Failed to push diagnostics log', {
-        requestId: payload.requestId || '',
-        message: err && err.message ? err.message : String(err),
-      });
-    });
-  } catch (err) {
-    console.warn('[ShiftFlow][Auth] Failed to prepare diagnostics payload', {
-      message: err && err.message ? err.message : String(err),
-    });
-  }
-}
-
 async function ensurePendingUserInD1(db, tokenDetails, requestId) {
   if (!db || !tokenDetails) return null;
   const email = normalizeEmailValue(tokenDetails.email);
   if (!email) return null;
-  const existing = await db
-    .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
-    .bind(email)
-    .first();
+  let existing;
+  try {
+    existing = await db
+      .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
+      .bind(email)
+      .first();
+  } catch (_error) {
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 pending user lookup is temporarily unavailable.'
+    );
+  }
   if (existing && existing.user_id) {
     return existing.user_id;
   }
@@ -7721,19 +11808,39 @@ async function ensurePendingUserInD1(db, tokenDetails, requestId) {
       logAuthError('Failed to insert pending user into D1', {
         requestId,
         email: storedEmail,
-        message,
+        reasonCode: 'pending_user_insert_failed',
       });
+      throw createServiceUnavailableError(
+        'd1_unavailable',
+        'D1 pending user provisioning is temporarily unavailable.'
+      );
     }
   }
-  const ensuredRow = await db
-    .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
-    .bind(email)
-    .first();
+  let ensuredRow;
+  try {
+    ensuredRow = await db
+      .prepare('SELECT user_id FROM users WHERE lower(email) = ?1 LIMIT 1')
+      .bind(email)
+      .first();
+  } catch (_error) {
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 pending user verification is temporarily unavailable.'
+    );
+  }
   const ensuredUserId = ensuredRow && ensuredRow.user_id ? ensuredRow.user_id : null;
   if (!ensuredUserId) {
     return null;
   }
-  const orgId = await resolveDefaultOrgId(db);
+  let orgId;
+  try {
+    orgId = await resolveDefaultOrgId(db);
+  } catch (_error) {
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 organization lookup is temporarily unavailable.'
+    );
+  }
   if (!orgId) {
     return ensuredUserId;
   }
@@ -7758,143 +11865,24 @@ async function ensurePendingUserInD1(db, tokenDetails, requestId) {
     logAuthError('Failed to insert pending membership into D1', {
       requestId,
       email: storedEmail,
-      message: err && err.message ? err.message : String(err),
+      reasonCode: 'pending_membership_insert_failed',
     });
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 pending membership provisioning is temporarily unavailable.'
+    );
   }
   return ensuredUserId;
 }
 
-async function persistLoginAttemptInD1(db, details) {
-  if (!db || !details) return;
-  const tokenDetails = details.tokenDetails || {};
-  const accessContext = details.accessContext || {};
-  const clientMeta = details.clientMeta || {};
-  const attemptedAt = Date.now();
-  const rawEmailValue = tokenDetails.email || accessContext.email || '';
-  const userEmail = typeof rawEmailValue === 'string' ? rawEmailValue.trim() : '';
-  const normalizedEmail = normalizeEmailValue(userEmail) || null;
-  const userSub = tokenDetails.sub ? String(tokenDetails.sub) : null;
-  const orgId = accessContext.orgId || null;
-  const status = accessContext.status || '';
-  const reason = accessContext.reason || '';
-  const role = accessContext.role || '';
-  const requestId = details.requestId || '';
-  const route = details.route || '';
-  const tokenIatMs =
-    typeof tokenDetails.iat === 'number' && Number.isFinite(tokenDetails.iat) && tokenDetails.iat > 0
-      ? Math.floor(tokenDetails.iat * 1000)
-      : null;
-  const clientIp = clientMeta.ip || '';
-  const userAgent = clientMeta.userAgent || '';
-  const cfRay = clientMeta.cfRay || '';
-  const metaPayload = {
-    allowed: !!accessContext.allowed,
-    reasonCode: accessContext.reasonCode || '',
-    source: accessContext.source || '',
-    orgId,
-    role,
-  };
-  let metaJson;
-  try {
-    const raw = JSON.stringify(metaPayload);
-    metaJson = raw.length > 4000 ? raw.slice(0, 4000) : raw;
-  } catch (_err) {
-    metaJson = '{}';
-  }
-  const statements = [
-    db
-      .prepare(
-        `
-        INSERT INTO login_audits (
-          login_id,
-          org_id,
-          user_email,
-          user_sub,
-          status,
-          reason,
-          request_id,
-          token_iat_ms,
-          attempted_at_ms,
-          client_ip,
-          user_agent,
-          role
-        )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-      `
-      )
-      .bind(
-        createUlid(attemptedAt),
-        orgId || null,
-        userEmail || normalizedEmail || null,
-        userSub,
-        status,
-        reason,
-        requestId,
-        tokenIatMs,
-        attemptedAt,
-        clientIp,
-        userAgent,
-        role
-      ),
-    db
-      .prepare(
-        `
-        INSERT INTO auth_proxy_logs (
-          log_id,
-          level,
-          event,
-          message,
-          request_id,
-          route,
-          email,
-          status,
-          meta_json,
-          source,
-          client_ip,
-          user_agent,
-          cf_ray,
-          created_at_ms
-        )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-      `
-      )
-      .bind(
-        createUlid(attemptedAt + 1),
-        accessContext.allowed ? 'info' : 'warn',
-        'login_attempt',
-        accessContext.allowed ? 'login_allowed' : 'login_denied',
-        requestId,
-        route,
-        userEmail || normalizedEmail || '',
-        status,
-        metaJson,
-        'cf-auth',
-        clientIp,
-        userAgent,
-        cfRay,
-        attemptedAt
-      ),
-  ];
-  try {
-    await db.batch(statements);
-  } catch (err) {
-    logAuthError('Failed to persist login audit into D1', {
-      requestId,
-      email: normalizedEmail || userEmail || '',
-      message: err && err.message ? err.message : String(err),
-    });
-  }
-}
-
-
-async function resolveAccessContext(config, tokenDetails, requestId, clientMeta, options = {}) {
+async function resolveAccessContext(config, tokenDetails, requestId, options = {}) {
   const cacheKey = resolveAccessCacheKey(tokenDetails);
   const cached = options.allowCache ? readAccessCache(cacheKey) : null;
   if (cached) {
     return cached;
   }
 
-  const { db = null, route: routeName = '' } = options;
+  const { db = null } = options;
   const flags = config.flags || {};
   const allowD1 = !!(db && (flags.d1Primary || flags.d1Read));
   let fallbackReason = 'ShiftFlow に登録されていません。管理者に連絡してください。';
@@ -7902,15 +11890,6 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
   if (allowD1) {
     const d1Context = await resolveAccessContextFromD1(db, tokenDetails, requestId);
     if (d1Context) {
-      if (db) {
-        await persistLoginAttemptInD1(db, {
-          tokenDetails,
-          requestId,
-          clientMeta,
-          accessContext: d1Context,
-          route: routeName,
-        });
-      }
       if (options.allowCache && d1Context.allowed && d1Context.status === 'active') {
         writeAccessCache(cacheKey, d1Context, ACTIVE_ACCESS_CACHE_TTL_MS, tokenDetails);
       } else if (cacheKey) {
@@ -7918,8 +11897,12 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
       }
       return d1Context;
     }
-    if (db) {
+    if (db && options.allowProvision !== false) {
       await ensurePendingUserInD1(db, tokenDetails, requestId);
+    } else if (db) {
+      logAuthInfo('Skipped pending user provisioning because D1 writes are disabled', {
+        requestId,
+      });
     }
     logAuthInfo('Falling back after D1 returned no access context', {
       requestId,
@@ -7930,8 +11913,10 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
       requestId,
       email: tokenDetails.email || '',
     });
-    fallbackReason = 'アクセス制御ストアが一時的に利用できません。管理者に連絡してください。';
-    fallbackReasonCode = 'd1_unavailable';
+    throw createServiceUnavailableError(
+      'd1_unavailable',
+      'D1 access control is temporarily unavailable.'
+    );
   }
   const fallbackContext = {
     allowed: false,
@@ -7954,21 +11939,14 @@ async function resolveAccessContext(config, tokenDetails, requestId, clientMeta,
     email: fallbackContext.email,
     reasonCode: fallbackContext.reasonCode,
   });
-  if (allowD1 && db) {
-    await persistLoginAttemptInD1(db, {
-      tokenDetails,
-      requestId,
-      clientMeta,
-      accessContext: fallbackContext,
-      route: routeName,
-    });
-  }
   return fallbackContext;
 }
 
 export async function onRequest(context) {
   const { request, params, env, waitUntil } = context;
   const config = loadConfig(env);
+  config.db = env?.DB || null;
+  config.waitUntil = typeof waitUntil === 'function' ? waitUntil : null;
   let flags = { ...(config.flags || {}) };
   let appliedFlagOverrides = null;
   if (env && env.APP_KV) {
@@ -7986,9 +11964,6 @@ export async function onRequest(context) {
       }
     }
   }
-  flags.d1Read = true;
-  flags.d1Write = true;
-  flags.d1Primary = true;
   config.flags = flags;
   const routeParam = params ? params.route : '';
   const route = Array.isArray(routeParam)
@@ -7996,7 +11971,8 @@ export async function onRequest(context) {
     : routeParam
     ? String(routeParam)
     : '';
-  const requestId = createRequestId();
+  const requestId = createRequestId(request);
+  const authorizationAttemptId = crypto.randomUUID();
   const originHeader = request.headers.get('Origin') || '';
   const allowedOrigin = pickAllowedOrigin(config.allowedOrigins, originHeader);
   if (appliedFlagOverrides) {
@@ -8078,26 +12054,13 @@ export async function onRequest(context) {
     );
   }
 
-  const clientMeta = {
-    ip:
-      request.headers.get('cf-connecting-ip') ||
-      request.headers.get('x-forwarded-for') ||
-      '',
-    userAgent: request.headers.get('user-agent') || '',
-    cfRay: request.headers.get('cf-ray') || '',
-  };
+  // 診断相関にはCloudflareのrequest識別子だけを使い、IP/User-Agentは取得・保存しない。
+  const clientMeta = { cfRay: request.headers.get('cf-ray') || '' };
 
-  const authHeader = request.headers.get('authorization') || '';
   let tokenDetails;
   let sessionCookieHeader = '';
   let sessionContext = null;
   let sessionRecord = null;
-  logAuthInfo('Handling authenticated route request', {
-    requestId,
-    route,
-    hasAuthorizationHeader: !!authHeader,
-    origin: originHeader || '',
-  });
   const cookieHeader = request.headers.get('cookie') || '';
   const mergeHeaders = (headers = {}) => {
     const base =
@@ -8113,9 +12076,25 @@ export async function onRequest(context) {
     logAuthError('Session verification failed', {
       requestId,
       route,
-      message: err && err.message ? err.message : String(err),
+      reasonCode: 'session_verification_unavailable',
     });
-    sessionContext = null;
+    captureDiagnostics(config, 'error', 'session_verification_unavailable', {
+      event: 'session_verification_unavailable',
+      requestId,
+      route,
+      reasonCode: 'session_verification_unavailable',
+      phase: 'session_verify',
+      httpStatus: 503,
+      cfRay: clientMeta.cfRay,
+    });
+    return errorResponse(
+      503,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'session_verification_unavailable',
+      'ログイン状態を一時的に確認できません。時間をおいて再試行してください。'
+    );
   }
   if (!sessionContext) {
     sessionCookieHeader = [
@@ -8137,7 +12116,40 @@ export async function onRequest(context) {
   sessionRecord = sessionContext.record || {};
   const timeoutCheck = evaluateSessionTimeout(sessionRecord);
   if (timeoutCheck.expired) {
-    await destroySession(env, sessionContext.id);
+    const expiredUser = sessionRecord.user || {};
+    const timeoutReason = timeoutCheck.reason === 'absolute' ? 'absolute_timeout' : 'idle_timeout';
+    await recordAuthEvent(env, {
+      eventType: 'session.expired',
+      outcome: 'expired',
+      reasonCode: timeoutReason,
+      requestId,
+      route,
+      source: 'api_session',
+      sessionId: sessionContext.id,
+      user: expiredUser,
+      userSub: expiredUser.sub || '',
+    });
+    try {
+      await destroySession(env, sessionContext.id);
+    } catch (_error) {
+      captureDiagnostics(config, 'error', 'session_expiry_cleanup_failed', {
+        event: 'session_expiry_cleanup_failed',
+        requestId,
+        route,
+        reasonCode: 'session_expiry_cleanup_failed',
+        phase: 'session_destroy',
+        httpStatus: 503,
+        cfRay: clientMeta.cfRay,
+      });
+      return errorResponse(
+        503,
+        allowedOrigin || config.allowedOrigins[0] || '*',
+        requestId,
+        'cf-api',
+        'session_expiry_cleanup_failed',
+        '期限切れセッションを終了できませんでした。時間をおいて再試行してください。'
+      );
+    }
     sessionCookieHeader = [
       buildExpiredSessionCookie(),
       buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
@@ -8147,14 +12159,50 @@ export async function onRequest(context) {
       allowedOrigin || config.allowedOrigins[0] || '*',
       requestId,
       'cf-api',
-      timeoutCheck.reason === 'absolute' ? 'absolute_timeout' : 'idle_timeout',
+      timeoutReason,
       'ログインの有効期限が切れました。もう一度ログインしてください。',
       null,
       mergeHeaders()
     );
   }
 
-  sessionRecord = (await touchSession(env, sessionContext.id, sessionRecord)) || sessionRecord;
+  try {
+    sessionRecord = await touchSession(env, sessionContext.id, sessionRecord);
+  } catch (_error) {
+    captureDiagnostics(config, 'error', 'session_refresh_unavailable', {
+      event: 'session_refresh_unavailable',
+      requestId,
+      route,
+      reasonCode: 'session_refresh_unavailable',
+      phase: 'session_touch',
+      httpStatus: 503,
+      cfRay: clientMeta.cfRay,
+    });
+    return errorResponse(
+      503,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'session_refresh_unavailable',
+      'ログイン状態を更新できません。時間をおいて再試行してください。'
+    );
+  }
+  if (!sessionRecord) {
+    sessionCookieHeader = [
+      buildExpiredSessionCookie(),
+      buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
+    ];
+    return errorResponse(
+      401,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'session_revoked',
+      'このログインセッションは終了しています。もう一度ログインしてください。',
+      null,
+      mergeHeaders()
+    );
+  }
   const sessionUser = sessionRecord.user || {};
   tokenDetails = {
     sub: String(sessionUser.sub || '').trim(),
@@ -8164,7 +12212,19 @@ export async function onRequest(context) {
     picture: String(sessionUser.picture || '').trim(),
   };
   if (!tokenDetails.sub || !tokenDetails.email || !tokenDetails.emailVerified) {
-    await destroySession(env, sessionContext.id);
+    try {
+      await destroySession(env, sessionContext.id);
+    } catch (_error) {
+      captureDiagnostics(config, 'error', 'invalid_session_cleanup_failed', {
+        event: 'invalid_session_cleanup_failed',
+        requestId,
+        route,
+        reasonCode: 'invalid_session_cleanup_failed',
+        phase: 'session_destroy',
+        httpStatus: 503,
+        cfRay: clientMeta.cfRay,
+      });
+    }
     sessionCookieHeader = [
       buildExpiredSessionCookie(),
       buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
@@ -8187,56 +12247,73 @@ export async function onRequest(context) {
     buildExpiredSessionCookie({ domain: 'shiftflow.pages.dev' }),
   ];
 
+  const isMutationRequest = isD1MutationRequest(route, request.method);
+  if (isMutationRequest && !isAllowedMutationMethod(route, request.method)) {
+    return errorResponse(
+      405,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'method_not_allowed',
+      '更新処理は指定されたHTTPメソッドでは実行できません。',
+      null,
+      mergeHeaders()
+    );
+  }
+  if (isMutationRequest && !flags.d1Write) {
+    return errorResponse(
+      503,
+      allowedOrigin || config.allowedOrigins[0] || '*',
+      requestId,
+      'cf-api',
+      'd1_write_disabled',
+      '現在は安全のため更新処理を一時停止しています。時間をおいて再度お試しください。',
+      null,
+      mergeHeaders()
+    );
+  }
+
   let accessContext;
   try {
-    accessContext = await resolveAccessContext(config, tokenDetails, requestId, clientMeta, {
+    accessContext = await resolveAccessContext(config, tokenDetails, requestId, {
       db: env && env.DB ? env.DB : null,
-      route,
       allowCache: false,
+      allowProvision: flags.d1Write,
     });
   } catch (err) {
     logAuthError('resolveAccessContext failed', {
       requestId,
       route,
-      message: err && err.message ? err.message : String(err),
+      reasonCode: 'resolve_access_context_failed',
       email: tokenDetails.email || '',
-      rawSample: err && err.rawResponseSnippet ? err.rawResponseSnippet.slice(0, 200) : '',
-      rawHtml: err && err.isHtml ? (err.rawResponseSnippet || '').slice(0, 200) : '',
-      redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
-    const diagnosticMessage =
-      err && err.isRedirect
-        ? 'Apps Script が認証リダイレクトを返しました。GAS_EXEC_URL が Web アプリの /exec URL になっているか確認し、必要であれば Apps Script で認証を完了してください。'
-        : err && err.isHtml
-        ? 'Apps Script が HTML を返しました。GAS_EXEC_URL をブラウザで開いて Google アカウントの承認を完了してください。'
-        : err && err.message
+    const isD1Unavailable = err && err.code === 'd1_unavailable';
+    const diagnosticMessage = isD1Unavailable
+      ? 'd1_unavailable'
+      : err && err.message
         ? err.message
         : String(err || 'resolveAccessContext failed');
-    const clientMessage =
-      err && err.isRedirect
-        ? 'ログイン状態を確認できませんでした。もう一度ログインしてください。'
-        : 'アクセス権限を確認できませんでした。時間をおいて再度お試しください。';
-    const statusCode = err && err.isRedirect ? 401 : 403;
+    const clientMessage = isD1Unavailable
+      ? 'アクセス権限を一時的に確認できません。時間をおいて再度お試しください。'
+      : 'アクセス権限を確認できませんでした。時間をおいて再度お試しください。';
+    const statusCode = isD1Unavailable ? 503 : 403;
     captureDiagnostics(config, 'error', 'resolve_access_context_failed', {
       event: 'resolve_access_context_failed',
       requestId,
       route,
       email: tokenDetails.email || '',
+      orgId: accessContext?.orgId || '',
+      userId: accessContext?.userId || '',
       detail: diagnosticMessage,
-      clientIp: clientMeta.ip,
-      userAgent: clientMeta.userAgent,
       httpStatus: err && err.httpStatus ? err.httpStatus : '',
-      rawResponseSnippet: err && err.rawResponseSnippet ? err.rawResponseSnippet : '',
-      responseHeaders: err && err.responseHeaders ? err.responseHeaders : {},
       cfRay: clientMeta.cfRay,
-      redirectLocation: err && err.redirectLocation ? err.redirectLocation : '',
     });
     return errorResponse(
       statusCode,
       allowedOrigin || config.allowedOrigins[0] || '*',
       requestId,
       'cf-api',
-      'resolve_access_context_failed',
+      isD1Unavailable ? 'd1_unavailable' : 'resolve_access_context_failed',
       clientMessage,
       {},
       mergeHeaders()
@@ -8252,17 +12329,21 @@ export async function onRequest(context) {
       source: accessContext.source || '',
       reasonCode: accessContext.reasonCode || '',
     });
-    captureDiagnostics(config, 'warn', 'access_denied', {
-      event: 'access_denied',
+    await recordAuthEvent(env, {
+      eventType: 'authorization.denied',
+      outcome: 'denied',
+      reasonCode: accessContext.reasonCode || 'access_denied',
       requestId,
+      authAttemptId: authorizationAttemptId,
       route,
-      email: tokenDetails.email || '',
-      status: accessContext.status,
-      reason: accessContext.reason || '',
-      clientIp: clientMeta.ip,
-      cfRay: clientMeta.cfRay,
-      source: accessContext.source || '',
-      reasonCode: accessContext.reasonCode || '',
+      source: 'api_authorization',
+      sessionId: sessionContext.id,
+      idempotencyScope: accessContext.reasonCode || 'access_denied',
+      user: tokenDetails,
+      userId: accessContext.userId || '',
+      orgId: accessContext.orgId || '',
+      status: accessContext.status || '',
+      role: accessContext.role || '',
     });
     return errorResponse(
       403,
@@ -8280,6 +12361,21 @@ export async function onRequest(context) {
     );
   }
   if (!accessContext.orgId) {
+    await recordAuthEvent(env, {
+      eventType: 'authorization.denied',
+      outcome: 'denied',
+      reasonCode: 'no_membership',
+      requestId,
+      authAttemptId: authorizationAttemptId,
+      route,
+      source: 'api_authorization',
+      sessionId: sessionContext.id,
+      idempotencyScope: 'no_membership',
+      user: tokenDetails,
+      userId: accessContext.userId || '',
+      status: accessContext.status || '',
+      role: accessContext.role || '',
+    });
     return errorResponse(
       403,
       allowedOrigin || config.allowedOrigins[0] || '*',
@@ -8309,14 +12405,21 @@ export async function onRequest(context) {
         role: accessContext.role,
         email: tokenDetails.email || '',
       });
-      captureDiagnostics(config, 'warn', 'role_mismatch', {
-        event: 'role_mismatch',
+      await recordAuthEvent(env, {
+        eventType: 'authorization.role_denied',
+        outcome: 'denied',
+        reasonCode: 'role_not_allowed',
         requestId,
+        authAttemptId: authorizationAttemptId,
         route,
-        email: tokenDetails.email || '',
-        role: accessContext.role,
-        required: routePermissions,
-        cfRay: clientMeta.cfRay,
+        source: 'api_authorization',
+        sessionId: sessionContext.id,
+        idempotencyScope: route,
+        user: tokenDetails,
+        userId: accessContext.userId || '',
+        orgId: accessContext.orgId || '',
+        status: accessContext.status || '',
+        role: accessContext.role || '',
       });
       return errorResponse(
         403,
@@ -8334,17 +12437,176 @@ export async function onRequest(context) {
   const originalUrl = new URL(request.url);
 
   let parsedJsonBody = null;
+  let binaryUpload = null;
+  let releaseStagedUploadSlot = null;
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const contentType = request.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
+    if (STAGED_ATTACHMENT_ROUTES.has(route)) {
+      const purpose = normalizeStagedAttachmentPurpose(
+        route,
+        request.headers.get('x-shiftflow-attachment-purpose') || ''
+      );
+      if (!purpose) {
+        return errorResponse(
+          400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'attachment_purpose_invalid',
+          '添付の用途は message または profile を指定してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      const mimeType = contentType.split(';', 1)[0].trim().toLowerCase();
+      if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
+        return errorResponse(
+          415,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'unsupported_mime_type',
+          '未対応の画像形式です。PNG/JPEG 等の画像を使用してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      releaseStagedUploadSlot = tryAcquireStagedUploadSlot();
+      if (!releaseStagedUploadSlot) {
+        return errorResponse(
+          429,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'staged_upload_busy',
+          '同時アップロード数が上限に達しています。完了後に再試行してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      const maxBytes = resolveStagedAttachmentMaxBytes(purpose);
+      let bodyResult;
       try {
-        const raw = await request.text();
+        bodyResult = await readRequestBytesWithLimit(request, maxBytes);
+      } catch (_error) {
+        releaseStagedUploadSlot();
+        releaseStagedUploadSlot = null;
+        return errorResponse(
+          400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'attachment_body_read_failed',
+          '添付ファイルを読み取れませんでした。もう一度選択してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      if (!bodyResult.ok) {
+        releaseStagedUploadSlot();
+        releaseStagedUploadSlot = null;
+        const bodyTooLarge = bodyResult.code === 'request_body_too_large';
+        return errorResponse(
+          bodyResult.status || 400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          bodyResult.code || 'invalid_request_body',
+          bodyTooLarge
+            ? `添付ファイルが大きすぎます。${Math.floor(maxBytes / (1024 * 1024))}MB 以下にしてください。`
+            : '添付ファイルのサイズ情報と実データが一致しません。もう一度選択してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      if (!bodyResult.sizeBytes) {
+        releaseStagedUploadSlot();
+        releaseStagedUploadSlot = null;
+        return errorResponse(
+          400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'attachment_data_missing',
+          '添付ファイルのデータが空です。',
+          null,
+          mergeHeaders()
+        );
+      }
+      // bounded readerはoffset 0の専用bufferを返すため、digest前の同サイズcopyは不要。
+      let checksum;
+      try {
+        checksum = await computeSha256Hex(bodyResult.bytes.buffer);
+      } catch (_error) {
+        releaseStagedUploadSlot();
+        releaseStagedUploadSlot = null;
+        return errorResponse(
+          503,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'attachment_checksum_unavailable',
+          '添付ファイルの整合性を確認できませんでした。後ほど再試行してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      const clientChecksum = String(
+        request.headers.get('x-shiftflow-content-sha256') || ''
+      )
+        .trim()
+        .toLowerCase();
+      if (clientChecksum && (!/^[0-9a-f]{64}$/.test(clientChecksum) || clientChecksum !== checksum)) {
+        releaseStagedUploadSlot();
+        releaseStagedUploadSlot = null;
+        return errorResponse(
+          400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          'attachment_checksum_mismatch',
+          '添付ファイルの整合性を確認できませんでした。もう一度選択してください。',
+          null,
+          mergeHeaders()
+        );
+      }
+      const fileName = decodeStagedFileName(
+        request.headers.get('x-shiftflow-file-name') || '',
+        purpose === 'profile' ? 'profile' : 'attachment'
+      );
+      binaryUpload = {
+        bytes: bodyResult.bytes,
+        purpose,
+        mimeType,
+        fileName,
+        sizeBytes: bodyResult.sizeBytes,
+        checksum,
+      };
+      parsedJsonBody = { purpose, mimeType, fileName, sizeBytes: bodyResult.sizeBytes, checksum };
+    } else if (contentType.includes('application/json')) {
+      const bodyResult = await readRequestBytesWithLimit(request, API_JSON_BODY_MAX_BYTES);
+      if (!bodyResult.ok) {
+        return errorResponse(
+          bodyResult.status || 400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          bodyResult.code || 'invalid_request_body',
+          bodyResult.code === 'request_body_too_large'
+            ? 'リクエストが大きすぎます。添付ファイルは先に一時アップロードしてください。'
+            : 'リクエストのサイズ情報と実データが一致しません。',
+          null,
+          mergeHeaders()
+        );
+      }
+      try {
+        const raw = new TextDecoder().decode(bodyResult.bytes);
         parsedJsonBody = raw ? JSON.parse(raw) : {};
       } catch (err) {
         logAuthError('Failed to parse JSON body', {
           requestId,
           route,
-          message: err && err.message ? err.message : String(err),
+          reasonCode: 'invalid_json',
         });
         return errorResponse(
           400,
@@ -8357,31 +12619,76 @@ export async function onRequest(context) {
           mergeHeaders()
         );
       }
-    } else if (request.headers.has('content-length')) {
-      // Non-JSON bodies are currently unsupported for API routes.
-      const raw = await request.text();
-      parsedJsonBody = { raw };
     } else {
-      parsedJsonBody = {};
+      // Non-JSON bodies are currently unsupported for API routes.
+      const bodyResult = await readRequestBytesWithLimit(request, API_JSON_BODY_MAX_BYTES);
+      if (!bodyResult.ok) {
+        return errorResponse(
+          bodyResult.status || 400,
+          allowedOrigin || config.allowedOrigins[0] || '*',
+          requestId,
+          'cf-api',
+          bodyResult.code || 'invalid_request_body',
+          'リクエストが大きすぎるか、サイズ情報が一致しません。',
+          null,
+          mergeHeaders()
+        );
+      }
+      const raw = new TextDecoder().decode(bodyResult.bytes);
+      parsedJsonBody = { raw };
     }
   }
 
-  const d1Response = await maybeHandleRouteWithD1({
-    route,
-    flags,
-    db: env && env.DB ? env.DB : null,
-    requestId,
-    allowedOrigin: allowedOrigin || config.allowedOrigins[0] || '*',
-    config,
-    tokenDetails,
-    accessContext,
-    requestMethod: request.method,
-    parsedBody: parsedJsonBody,
-    query: originalUrl.searchParams,
-    clientMeta,
-    env,
-  });
+  const pushSession = { fingerprint: await sha256(sessionContext.id), expiresAt: Date.now() + getSessionCookieMaxAge(sessionRecord) * 1000 };
+  if (isPushConfigured(env)) {
+    try { await renewNotificationSession(env.DB, accessContext, pushSession); }
+    catch (_) { console.warn('[ShiftFlow][Push]', { code: 'push_session_renewal_unavailable' }); }
+  }
+  const idempotencyContext = {
+    bound: false,
+    inserted: false,
+    replay: false,
+    conflict: false,
+    keyId: '',
+    payloadSha256: '',
+    createdAtMs: 0,
+    expiresAtMs: 0,
+  };
+  let d1Response;
+  try {
+    d1Response = await maybeHandleRouteWithD1({
+      route,
+      flags,
+      db: env && env.DB ? env.DB : null,
+      requestId,
+      allowedOrigin: allowedOrigin || config.allowedOrigins[0] || '*',
+      config,
+      tokenDetails,
+      accessContext,
+      requestMethod: request.method,
+      parsedBody: parsedJsonBody,
+      query: originalUrl.searchParams,
+      clientMeta,
+      env,
+      idempotencyContext,
+      binaryUpload,
+      pushSession,
+    });
+  } finally {
+    if (releaseStagedUploadSlot) {
+      releaseStagedUploadSlot();
+      releaseStagedUploadSlot = null;
+    }
+  }
 
+  if (d1Response && d1Response.status < 400 && isPushConfigured(env) &&
+      ['addNewTask','updateTask','completeTask','addNewMessage','addNewComment','testPushNotification'].includes(route)) {
+    const delivery = drainNotifications(env, { maintenance: false }).catch(() => {
+      console.warn('[ShiftFlow][Push]', { code: 'push_dispatch_unavailable' });
+    });
+    if (typeof context.waitUntil === 'function') context.waitUntil(delivery);
+    else await delivery;
+  }
   if (!d1Response) {
     captureDiagnostics(config, 'error', 'route_not_implemented', {
       event: 'route_not_implemented',
@@ -8399,6 +12706,102 @@ export async function onRequest(context) {
       null,
       mergeHeaders()
     );
+  }
+
+  if (d1Response.status >= 500) {
+    let failureCode = 'api_response_failed';
+    try {
+      const failurePayload = await d1Response.clone().json();
+      const candidate = String(failurePayload?.code || '').trim();
+      if (candidate && candidate.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(candidate)) {
+        failureCode = candidate;
+      }
+    } catch (_ignore) {
+      // response codeがないbinary/empty応答もgeneric codeで診断する。
+    }
+    captureDiagnostics(config, 'error', failureCode, {
+      event: failureCode,
+      requestId,
+      route,
+      status: String(d1Response.status),
+      httpStatus: d1Response.status,
+      orgId: accessContext.orgId || '',
+      userId: accessContext.userId || '',
+      detail: failureCode,
+      cfRay: clientMeta.cfRay,
+    });
+  }
+
+  // Route-level RBACを通過した後のobject-level拒否も認証監査へ残す。
+  // 404はtenant/objectの存在を隠す契約を含むため、一律に拒否イベントへ変換しない。
+  if (d1Response.status === 403) {
+    let reasonCode = 'resource_access_denied';
+    try {
+      const denialPayload = await d1Response.clone().json();
+      const candidate = String(denialPayload?.code || '').trim();
+      if (candidate && candidate.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(candidate)) {
+        reasonCode = candidate;
+      }
+    } catch (_ignore) {
+      // 応答本文を監査の必須条件にしない。
+    }
+    await recordAuthEvent(env, {
+      eventType: 'authorization.denied',
+      outcome: 'denied',
+      reasonCode,
+      requestId,
+      authAttemptId: authorizationAttemptId,
+      route,
+      source: 'api_resource_authorization',
+      sessionId: sessionContext.id,
+      idempotencyScope: reasonCode,
+      user: tokenDetails,
+      userId: accessContext.userId || '',
+      orgId: accessContext.orgId || '',
+      status: accessContext.status || '',
+      role: accessContext.role || '',
+    });
+  }
+
+  if (
+    d1Response.status >= 400 &&
+    d1Response.status < 500 &&
+    idempotencyContext.inserted &&
+    !idempotencyContext.conflict &&
+    !idempotencyContext.replay
+  ) {
+    let responseCode = '';
+    try {
+      const responsePayload = await d1Response.clone().json();
+      responseCode = String(responsePayload?.code || '').trim();
+    } catch (_ignore) {
+      // codeが読めない通常4xxも、今回新規作成したkeyだけを解放する。
+    }
+    const protectedCodes = new Set(['idempotency_key_reused', 'idempotency_replay']);
+    if (!protectedCodes.has(responseCode)) {
+      try {
+        await releaseInsertedApiIdempotencyKey(env?.DB || null, {
+          inserted: idempotencyContext.inserted,
+          orgId: accessContext.orgId || '',
+          actorUserId: accessContext.userId || '',
+          requestId,
+          route,
+          keyId: idempotencyContext.keyId,
+          payloadSha256: idempotencyContext.payloadSha256,
+          createdAtMs: idempotencyContext.createdAtMs,
+          expiresAtMs: idempotencyContext.expiresAtMs,
+        });
+      } catch (_error) {
+        captureDiagnostics(config, 'error', 'idempotency_release_failed', {
+          event: 'idempotency_release_failed',
+          requestId,
+          route,
+          orgId: accessContext.orgId || '',
+          userId: accessContext.userId || '',
+          detail: 'idempotency_release_failed',
+        });
+      }
+    }
   }
 
   if (sessionCookieHeader) {

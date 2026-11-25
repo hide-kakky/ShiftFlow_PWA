@@ -1,34 +1,10 @@
 export function loadConfig(env) {
   const cfOrigin = (env?.CF_ORIGIN || '').trim();
-  const rawGasUrl = (env?.GAS_EXEC_URL || env?.GAS_WEB_APP_URL || '').trim();
   const googleClientId = (env?.GOOGLE_OAUTH_CLIENT_ID || env?.GOOGLE_CLIENT_ID || '').trim();
-  const primarySecret = (env?.SHIFT_FLOW_SHARED_SECRET || env?.GAS_SHARED_SECRET || '').trim();
-  const nextSecret = (env?.SHIFT_FLOW_SHARED_SECRET_NEXT || '').trim();
-  const sharedSecrets = [primarySecret, nextSecret].filter((value, index, arr) => value && arr.indexOf(value) === index);
   const flags = readFeatureFlags(env);
 
   if (!cfOrigin) {
     throw new Error('CF_ORIGIN is not configured. Set it in Cloudflare Pages environment variables.');
-  }
-  let gasUrl = '';
-  if (rawGasUrl) {
-    try {
-      const parsedGasUrl = new URL(rawGasUrl);
-      if (
-        parsedGasUrl.hostname.endsWith('googleusercontent.com') &&
-        parsedGasUrl.pathname.includes('/macros/echo')
-      ) {
-        throw new Error(
-          'GAS_EXEC_URL が macros/echo エンドポイントを指しています。Apps Script の Web アプリ (/exec) URL を指定してください。'
-        );
-      }
-      gasUrl = parsedGasUrl.toString();
-    } catch (err) {
-      if (!(err instanceof TypeError)) {
-        throw err;
-      }
-      throw new Error('GAS_EXEC_URL に有効な URL を指定してください。');
-    }
   }
   if (!googleClientId) {
     throw new Error(
@@ -46,10 +22,7 @@ export function loadConfig(env) {
   return {
     cfOrigin,
     allowedOrigins,
-    gasUrl,
     googleClientId,
-    sharedSecret: sharedSecrets.length ? sharedSecrets[0] : '',
-    sharedSecrets,
     flagKvKey: (env?.CFG_FLAG_KV_KEY || 'shiftflow:flags').trim(),
     flags,
   };
@@ -83,6 +56,12 @@ export function readFeatureFlags(env) {
 }
 
 const ROUTE_PERMISSIONS = {
+  getAppBadge: ['admin', 'manager', 'member'],
+  getNotificationSettings: ['admin', 'manager', 'member'],
+  saveNotificationSettings: ['admin', 'manager', 'member'],
+  registerPushSubscription: ['admin', 'manager', 'member'],
+  removePushSubscription: ['admin', 'manager', 'member'],
+  testPushNotification: ['admin', 'manager', 'member'],
   getBootstrapData: ['admin', 'manager', 'member'],
   getHomeContent: ['admin', 'manager', 'member'],
   listMyTasks: ['admin', 'manager', 'member'],
@@ -92,6 +71,9 @@ const ROUTE_PERMISSIONS = {
   getMessageById: ['admin', 'manager', 'member'],
   addNewComment: ['admin', 'manager', 'member'],
   addNewMessage: ['admin', 'manager', 'member'],
+  stageAttachment: ['admin', 'manager', 'member'],
+  stageMessageAttachment: ['admin', 'manager', 'member'],
+  stageProfileAttachment: ['admin', 'manager', 'member'],
   deleteMessageById: ['admin', 'manager', 'member'],
   toggleMemoRead: ['admin', 'manager', 'member'],
   markMemosReadBulk: ['admin', 'manager', 'member'],
@@ -107,6 +89,7 @@ const ROUTE_PERMISSIONS = {
   listActiveUsers: ['admin', 'manager'],
   listActiveFolders: ['admin', 'manager', 'member'],
   adminListUsers: ['admin', 'manager'],
+  adminRetryStorageCleanup: ['admin'],
   adminUpdateUser: ['admin', 'manager'],
   clearCache: ['admin'],
   getAuditLogs: ['admin', 'manager'],

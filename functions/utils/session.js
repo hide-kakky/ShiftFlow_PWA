@@ -1,5 +1,7 @@
 const SESSION_COOKIE_NAME = 'SESSION';
 const SESSION_NAMESPACE = 'sf:sessions:';
+const SESSION_REVOCATION_NAMESPACE = 'sf:session_revoked:';
+const SESSION_REVOCATION_STORE_ERROR = 'session_revocation_store_unavailable';
 const SESSION_VERSION = 2;
 const SESSION_IDLE_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_ABSOLUTE_TIMEOUT_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
@@ -8,6 +10,7 @@ const SESSION_COOKIE_MAX_AGE_SECONDS = Math.ceil(SESSION_IDLE_TIMEOUT_MS / 1000)
 const INIT_NAMESPACE = 'sf:auth_init:';
 const INIT_TTL_SECONDS = 60 * 5; // 5 minutes
 const MIN_SESSION_WRITE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_REVOCATION_PRUNE_LIMIT = 100;
 const SESSION_WRITE_TRACKER = new Map();
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SESSION_KEY_PATTERN = /^[A-Za-z0-9_-]{40,64}$/;
@@ -32,6 +35,99 @@ async function sha256Base64(value) {
   const buffer = typeof value === 'string' ? new TextEncoder().encode(value) : value;
   const digest = await crypto.subtle.digest('SHA-256', buffer);
   return toBase64Url(digest);
+}
+
+async function sha256Hex(value) {
+  const buffer = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function createRevocationStoreError() {
+  const error = new Error(SESSION_REVOCATION_STORE_ERROR);
+  error.code = SESSION_REVOCATION_STORE_ERROR;
+  return error;
+}
+
+function resolvePrimaryD1(env) {
+  if (!env?.DB || typeof env.DB.withSession !== 'function') {
+    throw createRevocationStoreError();
+  }
+  try {
+    const session = env.DB.withSession('first-primary');
+    if (!session || typeof session.prepare !== 'function') {
+      throw createRevocationStoreError();
+    }
+    return session;
+  } catch (_error) {
+    throw createRevocationStoreError();
+  }
+}
+
+async function getSessionRevocationFingerprint(sessionId) {
+  return sha256Hex(String(sessionId || ''));
+}
+
+async function isSessionRevokedInD1(env, sessionId, now = Date.now()) {
+  const fingerprint = await getSessionRevocationFingerprint(sessionId);
+  const db = resolvePrimaryD1(env);
+  try {
+    const row = await db
+      .prepare(
+        `SELECT expires_at_ms
+           FROM session_revocations
+          WHERE session_fingerprint = ?1
+            AND expires_at_ms > ?2
+          LIMIT 1`
+      )
+      .bind(fingerprint, now)
+      .first();
+    return Boolean(row);
+  } catch (_error) {
+    throw createRevocationStoreError();
+  }
+}
+
+async function persistSessionRevocationInD1(env, sessionId, now = Date.now()) {
+  const fingerprint = await getSessionRevocationFingerprint(sessionId);
+  const expiresAt = now + SESSION_ABSOLUTE_TIMEOUT_MS;
+  const db = resolvePrimaryD1(env);
+  try {
+    await db
+      .prepare(
+        `INSERT INTO session_revocations (
+           session_fingerprint, revoked_at_ms, expires_at_ms
+         ) VALUES (?1, ?2, ?3)
+         ON CONFLICT(session_fingerprint) DO UPDATE SET
+           revoked_at_ms = MIN(session_revocations.revoked_at_ms, excluded.revoked_at_ms),
+           expires_at_ms = MAX(session_revocations.expires_at_ms, excluded.expires_at_ms)`
+      )
+      .bind(fingerprint, now, expiresAt)
+      .run();
+  } catch (_error) {
+    throw createRevocationStoreError();
+  }
+
+  // 失効自体は既にprimaryへ確定済み。期限切れ行の整理失敗でlogoutを巻き戻さない。
+  try {
+    await db
+      .prepare(
+        `DELETE FROM session_revocations
+          WHERE session_fingerprint IN (
+            SELECT session_fingerprint
+              FROM session_revocations
+             WHERE expires_at_ms <= ?1
+             ORDER BY expires_at_ms ASC
+             LIMIT ?2
+          )`
+      )
+      .bind(now, SESSION_REVOCATION_PRUNE_LIMIT)
+      .run();
+  } catch (_error) {
+    console.warn('[ShiftFlow][Session] Revocation prune failed', {
+      code: 'session_revocation_prune_failed',
+    });
+  }
 }
 
 export function getSessionCookieName() {
@@ -101,11 +197,30 @@ async function persistSessionRecord(env, sessionId, record, now = Date.now()) {
   return record;
 }
 
-function shouldSkipSessionPersist(sessionId, forcePersist) {
+async function isSessionRevokedInKv(env, sessionId) {
+  if (!sessionId) return false;
+  if (!env?.APP_KV) {
+    throw new Error('APP_KV binding is required for session storage.');
+  }
+  return Boolean(await env.APP_KV.get(`${SESSION_REVOCATION_NAMESPACE}${sessionId}`));
+}
+
+async function isSessionRevoked(env, sessionId, now = Date.now()) {
+  if (!sessionId) return false;
+  // KVのpositive tombstoneは早期拒否にだけ使う。KVに無い場合は必ずD1 primaryを
+  // 最終gateとし、読めない場合もacceptへfallbackせずfail-closedにする。
+  if (await isSessionRevokedInKv(env, sessionId)) return true;
+  return isSessionRevokedInD1(env, sessionId, now);
+}
+
+function shouldSkipSessionPersist(sessionId, record, now, forcePersist) {
   if (forcePersist) return false;
   if (!sessionId) return false;
-  const now = Date.now();
-  const last = SESSION_WRITE_TRACKER.get(sessionId) || 0;
+  const persistedAt = Math.max(
+    Number(record?.updatedAt || 0) || 0,
+    Number(record?.lastAccessAt || 0) || 0
+  );
+  const last = Math.max(SESSION_WRITE_TRACKER.get(sessionId) || 0, persistedAt);
   return now - last < MIN_SESSION_WRITE_INTERVAL_MS;
 }
 
@@ -123,7 +238,9 @@ export async function persistAuthInit(env, state, payload) {
 }
 
 export async function consumeAuthInit(env, state) {
-  if (!env?.APP_KV) return null;
+  if (!env?.APP_KV) {
+    throw new Error('APP_KV binding is required for auth init.');
+  }
   const key = `${INIT_NAMESPACE}${state}`;
   const raw = await env.APP_KV.get(key);
   if (!raw) return null;
@@ -156,7 +273,10 @@ export async function createSession(env, session) {
 }
 
 export async function readSession(env, sessionId) {
-  if (!env?.APP_KV) return null;
+  if (!sessionId) return null;
+  if (!env?.APP_KV) {
+    throw new Error('APP_KV binding is required for session storage.');
+  }
   const raw = await env.APP_KV.get(`${SESSION_NAMESPACE}${sessionId}`);
   if (!raw) return null;
   try {
@@ -167,18 +287,50 @@ export async function readSession(env, sessionId) {
 }
 
 export async function touchSession(env, sessionId, record) {
-  if (!env?.APP_KV || !sessionId || !record) return;
+  if (!sessionId || !record) return;
+  if (!env?.APP_KV) {
+    throw new Error('APP_KV binding is required for session storage.');
+  }
   const now = Date.now();
   const updated = { ...record, updatedAt: now, lastAccessAt: now };
-  if (shouldSkipSessionPersist(sessionId, false)) {
+  if (shouldSkipSessionPersist(sessionId, record, now, false)) {
     return updated;
   }
+  // throttleでKVを書かない通常経路はverifySessionのfinal gateを再利用する。
+  // 実際に古いrecordを書き戻す時だけ、persist直前にD1 primaryを再確認する。
+  if (await isSessionRevoked(env, sessionId, now)) return null;
   return persistSessionRecord(env, sessionId, updated, now);
 }
 
 export async function destroySession(env, sessionId) {
-  if (!env?.APP_KV || !sessionId) return;
-  await env.APP_KV.delete(`${SESSION_NAMESPACE}${sessionId}`);
+  if (!sessionId) return;
+  if (!env?.APP_KV) {
+    throw new Error('APP_KV binding is required for session storage.');
+  }
+
+  // 強整合なD1失効を先に確定し、KVは高速な補助tombstone/cleanupとして後から更新する。
+  await persistSessionRevocationInD1(env, sessionId);
+  let tombstoned = false;
+  let deleted = false;
+  try {
+    await env.APP_KV.put(`${SESSION_REVOCATION_NAMESPACE}${sessionId}`, '1', {
+      expirationTtl: SESSION_TTL_SECONDS,
+    });
+    tombstoned = true;
+  } catch (_error) {
+    console.warn('[ShiftFlow][Session] KV revocation tombstone failed', {
+      code: 'session_kv_tombstone_failed',
+    });
+  }
+  try {
+    await env.APP_KV.delete(`${SESSION_NAMESPACE}${sessionId}`);
+    deleted = true;
+  } catch (_error) {
+    console.warn('[ShiftFlow][Session] KV session cleanup failed', {
+      code: 'session_kv_cleanup_failed',
+    });
+  }
+  return { revoked: true, tombstoned, deleted };
 }
 
 export async function verifySession(env, cookieHeader) {
@@ -194,6 +346,10 @@ export async function verifySession(env, cookieHeader) {
     mismatch |= candidateHash.charCodeAt(index) ^ record.hash.charCodeAt(index);
   }
   if (mismatch !== 0) return null;
+
+  // UUIDだけを大量生成する入力でD1 primaryを増幅させない。KV recordと秘密鍵を
+  // 検証できたsession候補だけを、返却直前のstrong revocation gateへ通す。
+  if (await isSessionRevoked(env, id)) return null;
 
   let verifiedRecord = record;
   if (Number(record.sessionVersion || 0) < SESSION_VERSION) {

@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { SqliteD1 } from './helpers/d1-test-utils.mjs';
+
 const sessionSource = await readFile(
   new URL('../functions/utils/session.js', import.meta.url),
   'utf8'
 );
 const sessionModule = await import(
   `data:text/javascript;base64,${Buffer.from(sessionSource).toString('base64')}`
+);
+const sessionRevocationMigration = await readFile(
+  new URL('../migrations/014_add_session_revocations.sql', import.meta.url),
+  'utf8'
 );
 
 class FakeKv {
@@ -33,7 +39,9 @@ class FakeKv {
 }
 
 function createEnv() {
-  return { APP_KV: new FakeKv() };
+  const DB = new SqliteD1();
+  DB.exec(sessionRevocationMigration);
+  return { APP_KV: new FakeKv(), DB };
 }
 
 function sessionCookie(created) {
@@ -64,6 +72,12 @@ test('新規セッションはGoogleトークンを保存せず、Cookieで再�
   const verified = await sessionModule.verifySession(env, sessionCookie(created));
   assert.equal(verified?.record.user.sub, 'google-subject-1');
   assert.equal(verified?.record.user.email, 'member@example.com');
+  assert.deepEqual(env.DB.sessionConsistencyModes, ['first-primary']);
+  const putCount = env.APP_KV.puts.length;
+  const touched = await sessionModule.touchSession(env, created.sessionId, verified.record);
+  assert.ok(touched);
+  assert.equal(env.APP_KV.puts.length, putCount);
+  assert.deepEqual(env.DB.sessionConsistencyModes, ['first-primary']);
 });
 
 test('SESSION Cookieはhost-onlyで、旧Domain Cookieは明示的に失効できる', () => {
@@ -91,6 +105,15 @@ test('改ざん・不正形式・壊れたURLエンコードのCookieを安全�
     await sessionModule.verifySession(env, `SESSION=${created.sessionId}.${tamperedKey}`),
     null
   );
+  assert.deepEqual(env.DB.sessionConsistencyModes, []);
+  assert.equal(
+    await sessionModule.verifySession(
+      env,
+      `SESSION=${crypto.randomUUID()}.${'A'.repeat(43)}`
+    ),
+    null
+  );
+  assert.deepEqual(env.DB.sessionConsistencyModes, []);
   assert.equal(await sessionModule.verifySession(env, 'SESSION=not-a-session'), null);
   assert.deepEqual(sessionModule.parseCookies('safe=value; broken=%E0%A4%A'), {
     safe: 'value',
@@ -128,7 +151,8 @@ test('Cookie寿命とKV TTLは90日の絶対期限を超えて延長されない
   const nearAbsolute = {
     ...created.record,
     createdAt: Date.now() - 89 * day,
-    lastAccessAt: Date.now(),
+    updatedAt: Date.now() - 10 * 60 * 1000,
+    lastAccessAt: Date.now() - 10 * 60 * 1000,
   };
 
   const maxAge = sessionModule.getSessionCookieMaxAge(nearAbsolute);
@@ -186,6 +210,196 @@ test('未確認メールの旧セッションは移行せず再ログインを�
     })
   );
   assert.equal(await sessionModule.verifySession(env, sessionCookie(created)), null);
+});
+
+test('logout失効はraw sessionを保存せず64桁SHA-256だけをD1 primaryへ冪等保存する', async () => {
+  const env = createEnv();
+  const created = await sessionModule.createSession(env, {
+    user: {
+      sub: 'private-subject',
+      email: 'private-member@example.com',
+      emailVerified: true,
+    },
+  });
+
+  const first = await sessionModule.destroySession(env, created.sessionId);
+  const second = await sessionModule.destroySession(env, created.sessionId);
+  assert.deepEqual(first, { revoked: true, tombstoned: true, deleted: true });
+  assert.deepEqual(second, { revoked: true, tombstoned: true, deleted: true });
+
+  const rows = env.DB.all(
+    'SELECT session_fingerprint, revoked_at_ms, expires_at_ms FROM session_revocations'
+  );
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].session_fingerprint, /^[0-9a-f]{64}$/);
+  const expectedFingerprint = Buffer.from(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(created.sessionId))
+  ).toString('hex');
+  assert.equal(rows[0].session_fingerprint, expectedFingerprint);
+  assert.ok(rows[0].expires_at_ms > rows[0].revoked_at_ms);
+  const persisted = JSON.stringify(rows[0]);
+  assert.doesNotMatch(persisted, new RegExp(created.sessionId.replaceAll('-', '\\-')));
+  assert.doesNotMatch(persisted, new RegExp(created.sessionKey));
+  assert.doesNotMatch(persisted, /private-member@example\.com|private-subject/);
+  assert.ok(env.DB.sessionConsistencyModes.length >= 2);
+  assert.ok(env.DB.sessionConsistencyModes.every((mode) => mode === 'first-primary'));
+});
+
+test('別POP相当のKVが古いrecordを返してもD1失効正本で盗難Cookieを拒否する', async () => {
+  const current = createEnv();
+  const created = await sessionModule.createSession(current, {
+    user: { sub: 'subject', email: 'member@example.com', emailVerified: true },
+  });
+  const staleReplica = new FakeKv();
+  staleReplica.values.set(
+    `sf:sessions:${created.sessionId}`,
+    current.APP_KV.values.get(`sf:sessions:${created.sessionId}`)
+  );
+
+  await sessionModule.destroySession(current, created.sessionId);
+  assert.equal(staleReplica.values.has(`sf:sessions:${created.sessionId}`), true);
+  assert.equal(
+    staleReplica.values.has(`sf:session_revoked:${created.sessionId}`),
+    false
+  );
+  assert.equal(
+    await sessionModule.verifySession(
+      { APP_KV: staleReplica, DB: current.DB },
+      sessionCookie(created)
+    ),
+    null
+  );
+});
+
+test('D1 primaryを確認できないverify/touchはKVへfallbackせずfail-closedにする', async () => {
+  const env = createEnv();
+  const created = await sessionModule.createSession(env, {
+    user: { sub: 'subject', email: 'member@example.com', emailVerified: true },
+  });
+  const unavailableDb = {
+    withSession() {
+      throw new Error('raw database failure must not escape');
+    },
+  };
+  const unavailableEnv = { ...env, DB: unavailableDb };
+
+  await assert.rejects(
+    sessionModule.verifySession(unavailableEnv, sessionCookie(created)),
+    (error) =>
+      error?.code === 'session_revocation_store_unavailable' &&
+      error?.message === 'session_revocation_store_unavailable'
+  );
+  const untrackedId = crypto.randomUUID();
+  const untrackedRecord = {
+    ...created.record,
+    id: untrackedId,
+    updatedAt: Date.now() - 10 * 60 * 1000,
+    lastAccessAt: Date.now() - 10 * 60 * 1000,
+  };
+  await assert.rejects(
+    sessionModule.touchSession(unavailableEnv, untrackedId, untrackedRecord),
+    (error) => error?.code === 'session_revocation_store_unavailable'
+  );
+});
+
+test('touchとlogoutが競合して古いKV recordが再保存されてもD1失効は復活させない', async () => {
+  const current = createEnv();
+  const sessionId = crypto.randomUUID();
+  const sessionKey = 'C'.repeat(43);
+  const sessionHash = Buffer.from(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sessionKey))
+  ).toString('base64url');
+  const staleRecord = {
+    sessionVersion: 2,
+    id: sessionId,
+    hash: sessionHash,
+    user: { sub: 'subject', email: 'member@example.com', emailVerified: true },
+    createdAt: Date.now() - 60 * 60 * 1000,
+    updatedAt: Date.now() - 10 * 60 * 1000,
+    lastAccessAt: Date.now() - 10 * 60 * 1000,
+  };
+  const created = { sessionId, sessionKey, record: staleRecord };
+  await current.APP_KV.put(`sf:sessions:${sessionId}`, JSON.stringify(staleRecord));
+  let releaseSessionWrite;
+  let signalSessionWrite;
+  const sessionWriteStarted = new Promise((resolve) => {
+    signalSessionWrite = resolve;
+  });
+  const sessionWriteRelease = new Promise((resolve) => {
+    releaseSessionWrite = resolve;
+  });
+  const staleReplica = new FakeKv();
+  staleReplica.values.set(
+    `sf:sessions:${created.sessionId}`,
+    current.APP_KV.values.get(`sf:sessions:${created.sessionId}`)
+  );
+  const originalPut = staleReplica.put.bind(staleReplica);
+  let paused = false;
+  staleReplica.put = async (key, value, options) => {
+    if (!paused && key === `sf:sessions:${created.sessionId}`) {
+      paused = true;
+      signalSessionWrite();
+      await sessionWriteRelease;
+    }
+    return originalPut(key, value, options);
+  };
+  const touchPromise = sessionModule.touchSession(
+    { APP_KV: staleReplica, DB: current.DB },
+    created.sessionId,
+    staleRecord
+  );
+  await sessionWriteStarted;
+  await sessionModule.destroySession(current, created.sessionId);
+  releaseSessionWrite();
+  const touched = await touchPromise;
+
+  assert.ok(touched);
+  assert.ok(
+    staleReplica.puts.some(({ key }) => key === `sf:sessions:${created.sessionId}`)
+  );
+  assert.equal(staleReplica.values.has(`sf:sessions:${created.sessionId}`), true);
+  assert.equal(
+    await sessionModule.verifySession(
+      { APP_KV: staleReplica, DB: current.DB },
+      sessionCookie(created)
+    ),
+    null
+  );
+});
+
+test('session失効行は1回100件ずつ期限付きpruneし、有効な失効行を残す', async () => {
+  const env = createEnv();
+  const statement = env.DB.prepare(
+    `INSERT INTO session_revocations (
+       session_fingerprint, revoked_at_ms, expires_at_ms
+     ) VALUES (?1, ?2, ?3)`
+  );
+  for (let index = 0; index < 105; index += 1) {
+    await statement
+      .bind(index.toString(16).padStart(64, '0'), index + 1, index + 2)
+      .run();
+  }
+  const created = await sessionModule.createSession(env, {
+    user: { sub: 'subject', email: 'member@example.com', emailVerified: true },
+  });
+
+  await sessionModule.destroySession(env, created.sessionId);
+  assert.equal(
+    env.DB.get(
+      'SELECT COUNT(*) AS count FROM session_revocations WHERE expires_at_ms <= ?1',
+      Date.now()
+    ).count,
+    5
+  );
+  await sessionModule.destroySession(env, created.sessionId);
+  assert.equal(
+    env.DB.get(
+      'SELECT COUNT(*) AS count FROM session_revocations WHERE expires_at_ms <= ?1',
+      Date.now()
+    ).count,
+    0
+  );
+  assert.equal(env.DB.get('SELECT COUNT(*) AS count FROM session_revocations').count, 1);
 });
 
 test('Service Workerは認証APIレスポンスをキャッシュしない', async () => {

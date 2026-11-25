@@ -29,6 +29,17 @@ test('グローバルヘッダーはBootstrapモーダルの背面に留まる',
   assert.equal(imageViewerZIndex, 1080, '添付画像ビューアはmodal (1055) より前面を維持する');
 });
 
+test('下部ナビと円弧FABもBootstrapモーダルの背面に留まる', () => {
+  const footerBlock = indexSource.match(/(?:^|\n)\s*\.footer-nav\s*\{([^}]*)\}/)?.[1];
+  const fabBlock = indexSource.match(/(?:^|\n)\s*\.fab\s*\{([^}]*)\}/)?.[1];
+  const footerZIndex = Number(footerBlock?.match(/z-index:\s*(\d+)/)?.[1]);
+  const fabZIndex = Number(fabBlock?.match(/z-index:\s*(\d+)/)?.[1]);
+
+  assert.equal(footerZIndex, 1020);
+  assert.equal(fabZIndex, 1030);
+  assert.ok(footerZIndex < 1050 && fabZIndex < 1050, '上下chromeはmodal backdropより低い');
+});
+
 test('メッセージ詳細はモバイル全画面用の固有ヘッダーを持つ', () => {
   const modalMarkup = indexSource.match(
     /<!-- ----- Message detail modal ----- -->([\s\S]*?)<div class="modal" id="quickFolderModal"/
