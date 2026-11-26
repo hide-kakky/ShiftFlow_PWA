@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#557abb" />
+    <meta name="theme-color" content="#f2f4f9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
@@ -54,18 +54,25 @@
             ? 'dark'
             : 'light';
         }
+        function normalColor(mode) {
+          return mode === 'dark' ? '#0b1224' : '#f2f4f9';
+        }
+        function syncThemeColor(mode) {
+          var color = !iosHome && root.dataset.splash === 'true'
+            ? '#557abb'
+            : normalColor(mode);
+          if (meta && meta.getAttribute('content') !== color) meta.setAttribute('content', color);
+        }
         function sync(mode) {
           root.setAttribute('data-theme', mode);
-          var color = root.dataset.splash === 'true'
-            ? '#557abb'
-            : (mode === 'dark' ? '#0b1224' : '#f2f4f9');
-          if (meta && meta.getAttribute('content') !== color) meta.setAttribute('content', color);
+          syncThemeColor(mode);
         }
 
         function setSplash(isVisible) {
           if (isVisible) root.dataset.splash = 'true';
           else delete root.dataset.splash;
-          sync(root.dataset.theme === 'dark' ? 'dark' : 'light');
+          // iOSホーム画面版では、起動表示の変更をOS向けの色ヒントへ波及させない。
+          if (!iosHome) syncThemeColor(root.dataset.theme === 'dark' ? 'dark' : 'light');
         }
 
         var pref = read() || 'light';

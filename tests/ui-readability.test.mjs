@@ -43,7 +43,7 @@ test('iPhoneの上端は通常テーマに追従し、全画面の操作ボタ�
  assert.match(source, /:root\[data-theme='dark'\]\s*\{\s*background-color: var\(--surface\);\s*\}/);
  assert.match(source, /body::before\s*\{[^}]*height: var\(--safe-top\);\s*background: var\(--surface\);/s);
  assert.match(source, /\.modal-fullscreen-sm-down \.modal-header\s*\{\s*padding-top: calc\(18px \+ var\(--safe-top\)\);\s*background: var\(--surface\);/);
- assert.match(source, /root\.dataset\.splash === 'true'[\s\S]*\? '#557abb'[\s\S]*mode === 'dark' \? '#0b1224' : '#f2f4f9'/);
+ assert.match(source, /!iosHome && root\.dataset\.splash === 'true'[\s\S]*\? '#557abb'[\s\S]*normalColor\(mode\)/);
  assert.match(source, /data-theme='dark'\]\[data-ios-home='true'\]:not\(\[data-splash='true'\]\) header\.navbar/);
  assert.doesNotMatch(source, /:root\[data-ios-home='true'\] header\.navbar/);
 });

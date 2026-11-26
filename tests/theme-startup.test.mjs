@@ -10,7 +10,7 @@ const script = html.match(/<script id="shiftflow-theme-startup">([\s\S]*?)<\/scr
 function open(storage, {darkOS = false, blocked = false, iosHome = false} = {}) {
   const root = {dataset: {splash: 'true'}, setAttribute(_attr, value) { this.dataset.theme = value; }};
   const meta = {
-    color: '#557abb', writes: 0,
+    color: '#f2f4f9', writes: 0,
     getAttribute() { return this.color; },
     setAttribute(_attr, color) { this.writes++; this.color = color; },
   };
@@ -28,16 +28,16 @@ function open(storage, {darkOS = false, blocked = false, iosHome = false} = {}) 
 }
 const key = 'shiftflow.theme.v1';
 
-test('共通ブランド青のロゴ画面でも保存済みの暗色を外部CSS読み込み前に先読み', () => {
+test('iOSホーム画面版は保存済み外観の通常色を外部CSS読み込み前に固定', () => {
   assert.ok(html.indexOf('id="shiftflow-theme-startup"') < html.indexOf('rel="manifest"'));
   assert.ok(html.indexOf('id="shiftflow-theme-startup"') < html.indexOf('cdn.jsdelivr.net'));
   assert.equal(manifest.theme_color, '#f2f4f9');
   assert.equal(manifest.background_color, '#f2f4f9');
-  const {root,meta} = open(new Map([[key,'dark']]));
+  const {root,meta} = open(new Map([[key,'dark']]), {iosHome:true});
   assert.equal(root.dataset.theme,'dark');
   assert.equal(root.dataset.splash,'true');
-  assert.equal(meta.color,'#557abb');
-  assert.equal(meta.writes,0);
+  assert.equal(meta.color,'#0b1224');
+  assert.equal(meta.writes,1);
 });
 
 test('切替プレビューは即座に色を更新し、保存が確認された外観だけ次回起動に使う', () => {
@@ -75,36 +75,54 @@ test('「システム」は起動時と変更後のOS外観に従い、無効値
   assert.doesNotThrow(() => b.api.remember('dark'));
 });
 
-test('ロゴの保持中とフェード終了時に、上端・背景・metaを同じ色へ同期', () => {
+test('iOSではロゴの青と通常色のヒントを分けたままフェードを完了', () => {
   assert.match(html, /<html data-theme="light" data-splash="true">/);
-  assert.match(html, /<meta name="theme-color" content="#557abb" \/>/);
+  assert.match(html, /<meta name="theme-color" content="#f2f4f9" \/>/);
   assert.match(html, /:root\[data-splash='true'\] body::before,[\s\S]*\.bootstrap-loading \{[\s\S]*background: var\(--splash-surface\);[\s\S]*background-image: none;/);
   assert.match(html, /if \(themeStartup\) themeStartup\.setSplash\(false\);/);
 
   const {api,root,meta} = open(new Map([[key,'dark']]),{iosHome:true});
   assert.equal(root.dataset.theme,'dark');
-  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.color,'#0b1224');
   api.sync('light');
-  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.color,'#f2f4f9');
   api.setSplash(false);
   assert.equal(root.dataset.splash,undefined);
   assert.equal(meta.color,'#f2f4f9');
   api.setSplash(true);
-  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.color,'#f2f4f9');
 });
 
-test('iOSホーム画面版の濃紺指定はロゴ終了後のダークだけに限定', () => {
+test('iOSホーム画面版は起動表示と同一テーマの操作で色ヒントを書き換えない', () => {
   const {api,root,meta} = open(new Map([[key,'light']]),{iosHome:true});
   assert.equal(root.dataset.iosHome,'true');
   assert.equal(root.dataset.theme,'light');
-  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.color,'#f2f4f9');
+  assert.equal(meta.writes,0);
   api.setSplash(false);
   assert.equal(meta.color,'#f2f4f9');
+  api.setSplash(true);
+  api.setSplash(false);
+  api.sync('light');
+  assert.equal(meta.writes,0);
   api.sync('dark');
   assert.equal(meta.color,'#0b1224');
+  assert.equal(meta.writes,1);
   assert.equal(open(new Map()).root.dataset.iosHome,undefined);
   assert.match(html, /data-theme='dark'\]\[data-ios-home='true'\]:not\(\[data-splash='true'\]\) body::before/);
   assert.doesNotMatch(html, /:root\[data-ios-home='true'\] header\.navbar/);
+});
+
+test('通常ブラウザは従来どおり起動青から通常テーマ色へ移る', () => {
+  const {api,meta} = open(new Map([[key,'dark']]));
+  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.writes,1);
+  api.setSplash(false);
+  assert.equal(meta.color,'#0b1224');
+  assert.equal(meta.writes,2);
+  api.setSplash(true);
+  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.writes,3);
 });
 
 test('ホームを公開する描画で通常背景へ同期し、青はフェード層だけに残す', () => {
@@ -114,7 +132,7 @@ test('ホームを公開する描画で通常背景へ同期し、青はフェ�
   const loadingClasses = new Set(['is-visible']);
   const attributes = new Map();
   const root = {dataset: {theme: 'dark', splash: 'true'}};
-  const meta = {color: '#557abb'};
+  const meta = {color: '#0b1224', writes: 1};
   const loadingEl = {
     __shownAt: 0,
     classList: {
@@ -129,7 +147,6 @@ test('ホームを公開する描画で通常背景へ同期し、青はフェ�
     setSplash(visible) {
       if (visible) root.dataset.splash = 'true';
       else delete root.dataset.splash;
-      meta.color = visible ? '#557abb' : (root.dataset.theme === 'dark' ? '#0b1224' : '#f2f4f9');
     },
   };
   const context = {
@@ -150,13 +167,14 @@ test('ホームを公開する描画で通常背景へ同期し、青はフェ�
   // 最小表示時間中はホームを青い下地の上へ先に公開しない。
   assert.equal(classes.has('bootstrapping'), true);
   assert.equal(root.dataset.splash, 'true');
-  assert.equal(meta.color, '#557abb');
+  assert.equal(meta.color, '#0b1224');
 
   timers.shift().callback();
-  // ホームが描画可能になる最初のフレームで下地・上端・metaを通常色へそろえる。
+  // ホームが描画可能になる最初のフレームでも通常色のヒントを維持する。
   assert.equal(classes.has('bootstrapping'), false);
   assert.equal(root.dataset.splash, undefined);
   assert.equal(meta.color, '#0b1224');
+  assert.equal(meta.writes, 1);
   assert.equal(loadingClasses.has('is-splash-exit'), true);
   assert.equal(loadingClasses.has('is-fading'), true);
   assert.match(html, /\.bootstrap-loading\.is-splash-exit \{[\s\S]*background: var\(--splash-surface\);/);
