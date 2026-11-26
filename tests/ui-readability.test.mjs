@@ -41,7 +41,7 @@ test('ダークの下部ナビと主要ボタンは十分なコントラスト�
 test('iPhoneのステータスバーの背景は暗色画面と揃い、全画面の操作ボタンを覆わない',()=>{
  assert.match(source, /viewport-fit=cover/);
  assert.match(source, /:root\[data-theme='dark'\]\s*\{\s*background-color: var\(--surface\);\s*\}/);
- assert.match(source, /:root\[data-theme='dark'\] body::before\s*\{\s*background: var\(--surface\);/);
+ assert.match(source, /body::before\s*\{[^}]*height: var\(--safe-top\);\s*background: var\(--surface\);/s);
  assert.match(source, /\.modal-fullscreen-sm-down \.modal-header\s*\{\s*padding-top: calc\(18px \+ var\(--safe-top\)\);\s*background: var\(--surface\);/);
- assert.match(source, /return theme === 'dark' \? computeSurfaceColor\(theme\) : computePrimaryColor\(theme\);/);
+ assert.match(source, /var color = mode === 'dark' \? '#0b1224' : '#f2f4f9';/);
 });

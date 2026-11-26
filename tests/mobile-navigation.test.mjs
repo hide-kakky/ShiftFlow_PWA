@@ -59,7 +59,7 @@ test('ステータスバー、下部ナビ、FABはモバイル表示ルール�
   assert.doesNotMatch(indexSource, /statusBar: 'default'/);
   assert.match(
     indexSource,
-    /appleStatus\.setAttribute\('content', 'black-translucent'\)/
+    /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" \/>/
   );
   assert.equal(JSON.parse(manifestSource).background_color, '#f2f4f9');
   assert.match(

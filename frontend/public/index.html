@@ -5,13 +5,61 @@
     <meta charset="UTF-8" />
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#557abb" />
+    <meta name="theme-color" content="#f2f4f9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <!-- 外部CSSやログイン読込より先に、端末の保存済み外観で初回描画する。 -->
+    <style>
+      :root { --surface: #f2f4f9; background-color: var(--surface); color-scheme: light; }
+      :root[data-theme='dark'] { --surface: #0b1224; color-scheme: dark; }
+    </style>
+    <script id="shiftflow-theme-startup">
+      (function () {
+        var key = 'shiftflow.theme.v1';
+        var root = document.documentElement;
+        var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        var meta = document.querySelector('meta[name="theme-color"]');
+
+        function valid(value) {
+          return value === 'light' || value === 'dark' || value === 'system';
+        }
+        function read() {
+          try {
+            var value = window.localStorage.getItem(key);
+            return valid(value) ? value : null;
+          } catch (err) {
+            return null;
+          }
+        }
+        function remember(value) {
+          if (!valid(value)) return;
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (err) {
+            /* 外観のキャッシュが使えなくても設定やログインは続ける。 */
+          }
+        }
+        function resolve(value) {
+          return value === 'dark' || (value === 'system' && media && media.matches)
+            ? 'dark'
+            : 'light';
+        }
+        function sync(mode) {
+          root.setAttribute('data-theme', mode);
+          var color = mode === 'dark' ? '#0b1224' : '#f2f4f9';
+          if (meta && meta.getAttribute('content') !== color) meta.setAttribute('content', color);
+        }
+
+        var pref = read() || 'light';
+        root.dataset.themePref = pref;
+        sync(resolve(pref));
+        window.__SHIFT_FLOW_THEME__ = { read: read, remember: remember, resolve: resolve, sync: sync };
+      })();
+    </script>
+    <link rel="manifest" href="/manifest.webmanifest" />
     <!-- ===== External UI stylesheets ===== -->
     <link
       href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css"
@@ -397,62 +445,6 @@
       })();
     </script>
 
-    <!-- ===== Theme helpers for syncing CSS custom properties ===== -->
-    <script>
-      (function () {
-        var themeMeta = {
-          light: { statusBar: 'black-translucent' },
-          dark: { statusBar: 'black-translucent' },
-        };
-        function readCSSVariable(name) {
-          try {
-            var styles = window.getComputedStyle(document.documentElement);
-            var value = styles ? styles.getPropertyValue(name) : '';
-            return typeof value === 'string' ? value.trim() : '';
-          } catch (err) {
-            return '';
-          }
-        }
-        function computeSurfaceColor(theme) {
-          var fallback = theme === 'dark' ? '#0b1224' : '#f2f4f9';
-          return readCSSVariable('--surface') || fallback;
-        }
-        function computePrimaryColor(theme) {
-          var fallback = theme === 'dark' ? '#4b67b3' : '#557abb';
-          return readCSSVariable('--primary') || fallback;
-        }
-        window.__SHIFT_FLOW_THEME_META__ = themeMeta;
-        window.__SHIFT_FLOW_GET_SURFACE__ = computeSurfaceColor;
-        window.__SHIFT_FLOW_GET_PRIMARY__ = computePrimaryColor;
-        window.__SHIFT_FLOW_GET_CHROME_COLOR__ = function (theme) {
-          return theme === 'dark' ? computeSurfaceColor(theme) : computePrimaryColor(theme);
-        };
-        window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
-          var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
-          var metaTheme = document.querySelector('meta[name="theme-color"]');
-          if (metaTheme) {
-            metaTheme.setAttribute('content', window.__SHIFT_FLOW_GET_CHROME_COLOR__(resolvedTheme));
-          }
-          var appleStatus = document.querySelector(
-            'meta[name="apple-mobile-web-app-status-bar-style"]'
-          );
-          var statusBar =
-            (themeMeta[resolvedTheme] && themeMeta[resolvedTheme].statusBar) || 'black-translucent';
-          if (appleStatus && statusBar) {
-            appleStatus.setAttribute('content', statusBar);
-          }
-        };
-
-        var bootstrap = window.__SHIFT_FLOW_BOOTSTRAP__ || {};
-        var pref = (bootstrap.userInfo && bootstrap.userInfo.theme) || bootstrap.theme || 'light';
-        var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-        var resolved = pref === 'system' && media ? (media.matches ? 'dark' : 'light') : pref;
-        document.documentElement.setAttribute('data-theme', resolved);
-        document.documentElement.dataset.themePref = pref;
-        window.__SHIFT_FLOW_SYNC_THEME_META__(resolved);
-      })();
-    </script>
-
     <link
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap"
       rel="stylesheet"
@@ -654,8 +646,8 @@
         top: 0;
         left: 0;
         right: 0;
-        height: env(safe-area-inset-top);
-        background: var(--primary);
+        height: var(--safe-top);
+        background: var(--surface);
         pointer-events: none;
         z-index: 1;
       }
@@ -1057,9 +1049,6 @@
       }
       :root[data-theme='dark'] {
         background-color: var(--surface);
-      }
-      :root[data-theme='dark'] body::before {
-        background: var(--surface);
       }
       :root[data-theme='dark'] body {
         background-color: var(--surface);
@@ -9416,48 +9405,12 @@
       let AUTH_SESSION = { authenticated: false, user: null, expiresAt: 0 };
       let PRIVATE_STORAGE_BLOCKED = false;
 
-      var syncThemeMeta =
-        typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function'
-          ? window.__SHIFT_FLOW_SYNC_THEME_META__
-          : function (theme) {
-              var palette = window.__SHIFT_FLOW_THEME_META__ || {
-                light: { statusBar: 'black-translucent' },
-                dark: { statusBar: 'black-translucent' },
-              };
-              var getChromeColor =
-                typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
-                  ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
-                  : function (mode) {
-                      if (mode === 'dark') return '#0b1224';
-                      return '#557abb';
-                    };
-              var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
-              var statusBar =
-                (palette[resolvedTheme] && palette[resolvedTheme].statusBar) ||
-                'black-translucent';
-              var metaTheme = document.querySelector('meta[name="theme-color"]');
-              if (metaTheme) {
-                metaTheme.setAttribute('content', getChromeColor(resolvedTheme));
-              }
-              var appleStatus = document.querySelector(
-                'meta[name="apple-mobile-web-app-status-bar-style"]'
-              );
-              if (appleStatus && statusBar) {
-                appleStatus.setAttribute('content', statusBar);
-              }
-            };
-      if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ !== 'function') {
-        window.__SHIFT_FLOW_SYNC_THEME_META__ = syncThemeMeta;
-      }
-
       // ===== テーマ適用 =====
       const THEME_MEDIA = window.matchMedia
         ? window.matchMedia('(prefers-color-scheme: dark)')
         : null;
-      let themePreference =
-        (typeof document.documentElement.dataset.themePref === 'string' &&
-          document.documentElement.dataset.themePref) ||
-        'light';
+      const DEVICE_THEME = window.__SHIFT_FLOW_THEME__;
+      let themePreference = document.documentElement.dataset.themePref || 'light';
       let pendingProfileImage = null;
       let pendingMessageAttachments = [];
 
@@ -9479,7 +9432,7 @@
         revokePendingProfilePreview();
         pendingProfileImage = null;
       }
-      if (__BOOT__.theme) themePreference = __BOOT__.theme || themePreference;
+      if (__BOOT__.currentEmail && __BOOT__.theme) themePreference = __BOOT__.theme;
 
       function applyBootstrapBindings(bootstrap) {
         const source = bootstrap || window.__SHIFT_FLOW_BOOTSTRAP__ || {};
@@ -10318,31 +10271,6 @@
         if (body) {
           body.classList.toggle('bootstrapping', !!isLoading);
         }
-        var metaTheme = document.querySelector('meta[name="theme-color"]');
-        var appleStatus = document.querySelector(
-          'meta[name="apple-mobile-web-app-status-bar-style"]'
-        );
-        var pref = document.documentElement.dataset.themePref || 'light';
-        var resolvedPref =
-          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
-        if (isLoading) {
-          var getChromeColor =
-            typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
-              ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
-              : function (mode) {
-                  if (mode === 'dark') return '#0b1224';
-                  return '#557abb';
-                };
-          var chromeColor = getChromeColor(resolvedPref);
-          if (metaTheme && chromeColor) {
-            metaTheme.setAttribute('content', chromeColor);
-          }
-          if (appleStatus) {
-            appleStatus.setAttribute('content', 'black-translucent');
-          }
-        } else if (typeof syncThemeMeta === 'function') {
-          syncThemeMeta(resolvedPref);
-        }
         var loadingEl = byId('bootstrap-loading');
         if (!loadingEl) return;
         var fadeMs = 600;
@@ -10389,7 +10317,7 @@
         return msg.indexOf('Non-JSON response from backend') !== -1;
       }
 
-      function applyBootstrapState(bootstrap) {
+      function applyBootstrapState(bootstrap, fromCache) {
         var normalized = bootstrap || {};
         window.__SHIFT_FLOW_BOOTSTRAP__ = normalized;
         window.userInfo = normalized.userInfo || {};
@@ -10426,7 +10354,9 @@
         rebuildUserMap();
         applyBootstrapBindings(normalized);
         applyUserAvatar(userInfo.imageUrl || '');
-        var themeValue = userInfo.theme || normalized.theme || themePreference;
+        var confirmedTheme = userInfo.theme || normalized.theme;
+        var themeValue = (fromCache && DEVICE_THEME.read()) || confirmedTheme || themePreference;
+        if (!fromCache && HAS_ACTIVE_EMAIL) DEVICE_THEME.remember(confirmedTheme);
         applyThemePreference(themeValue);
         updateThemeStatus(themeValue);
         if (
@@ -11006,10 +10936,7 @@
       })();
 
       function resolveThemePreference(pref) {
-        if (pref === 'system') {
-          return THEME_MEDIA && THEME_MEDIA.matches ? 'dark' : 'light';
-        }
-        return pref || 'light';
+        return DEVICE_THEME.resolve(pref);
       }
       function createRequestId() {
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -11018,8 +10945,7 @@
         return 'req_' + Math.random().toString(16).slice(2) + Date.now().toString(16);
       }
       function applyResolvedTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        syncThemeMeta(theme);
+        DEVICE_THEME.sync(theme);
       }
       function applyThemePreference(pref) {
         themePreference = pref || 'light';
@@ -11735,7 +11661,6 @@
           document.body.classList.add('auth-screen');
         }
         setAppShellHidden(true);
-        applyAuthMetaTheme();
         if (overlay) {
           overlay.classList.remove('d-none');
           overlay.setAttribute('aria-hidden', 'false');
@@ -11750,39 +11675,6 @@
               /* noop */
             }
           }, 50);
-        }
-      }
-
-      function applyAuthMetaTheme() {
-        var metaTheme = document.querySelector('meta[name="theme-color"]');
-        var appleStatus = document.querySelector(
-          'meta[name="apple-mobile-web-app-status-bar-style"]'
-        );
-        var getChromeColor =
-          typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
-            ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
-            : function (mode) {
-                if (mode === 'dark') return '#0b1224';
-                return '#557abb';
-              };
-        var pref = document.documentElement.dataset.themePref || 'light';
-        var resolvedPref =
-          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
-        var chromeColor = getChromeColor(resolvedPref);
-        if (metaTheme && chromeColor) {
-          metaTheme.setAttribute('content', chromeColor);
-        }
-        if (appleStatus) {
-          appleStatus.setAttribute('content', 'black-translucent');
-        }
-      }
-
-      function restoreMetaTheme() {
-        var pref = document.documentElement.dataset.themePref || 'light';
-        var resolvedPref =
-          typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
-        if (typeof window.__SHIFT_FLOW_SYNC_THEME_META__ === 'function') {
-          window.__SHIFT_FLOW_SYNC_THEME_META__(resolvedPref);
         }
       }
 
@@ -11805,7 +11697,6 @@
           setAppShellHidden(true);
           return;
         }
-        restoreMetaTheme();
         if (document.body) {
           document.body.classList.remove('auth-screen');
         }
@@ -12837,7 +12728,7 @@
         if (sessionEmail) {
           restorePromise = restoreBootstrapSnapshot(sessionEmail).then(function (record) {
             if (record && record.bootstrap) {
-              applyBootstrapState(record.bootstrap);
+              applyBootstrapState(record.bootstrap, true);
               RESTORED_BOOTSTRAP_FROM_CACHE = true;
               ensureTaskBootstrap();
               return true;
@@ -17304,6 +17195,7 @@
         if (['light', 'dark', 'system'].indexOf(themeVal) === -1) {
           themeVal = 'light';
         }
+        DEVICE_THEME.remember(themeVal);
         var themeInput = byId('setting-theme');
         if (themeInput) {
           themeInput.value = themeVal;
@@ -17386,6 +17278,7 @@
             // response loss後の手動再試行は新しいrequest IDになる。primaryの現在値が
             // 送信内容と完全一致する場合だけ、mutationを再送せず保存済みとして収束する。
             if (submittedStateIsCurrent) {
+              DEVICE_THEME.remember(current.theme);
               ProfileImageController.applySaveResult(current);
               if (
                 current.language &&
@@ -17426,6 +17319,7 @@
               );
               restoreSaveButton();
               if (res && res.success) {
+                DEVICE_THEME.remember(payload.theme);
                 if (typeof res.settingsVersion === 'string' && res.settingsVersion.trim()) {
                   CURRENT_SETTINGS_VERSION = res.settingsVersion.trim().toLowerCase();
                 }
