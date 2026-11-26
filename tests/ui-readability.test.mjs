@@ -38,10 +38,12 @@ test('ダークの下部ナビと主要ボタンは十分なコントラスト�
  ]) assert.ok(contrast(color(ink),color(bg))>=minimum,`${ink}/${bg}`);
  assert.match(source, /\.footer-nav \.navbar-nav \.nav-link\s*\{\s*color: var\(--footer-dark-ink\)/);
 });
-test('iPhoneのステータスバーの背景は暗色画面と揃い、全画面の操作ボタンを覆わない',()=>{
+test('iPhoneの上端は通常テーマに追従し、全画面の操作ボタンを覆わない',()=>{
  assert.match(source, /viewport-fit=cover/);
  assert.match(source, /:root\[data-theme='dark'\]\s*\{\s*background-color: var\(--surface\);\s*\}/);
  assert.match(source, /body::before\s*\{[^}]*height: var\(--safe-top\);\s*background: var\(--surface\);/s);
  assert.match(source, /\.modal-fullscreen-sm-down \.modal-header\s*\{\s*padding-top: calc\(18px \+ var\(--safe-top\)\);\s*background: var\(--surface\);/);
- assert.match(source, /var color = iosHome \|\| mode === 'dark' \? '#0b1224' : '#f2f4f9';/);
+ assert.match(source, /root\.dataset\.splash === 'true'[\s\S]*\? '#557abb'[\s\S]*mode === 'dark' \? '#0b1224' : '#f2f4f9'/);
+ assert.match(source, /data-theme='dark'\]\[data-ios-home='true'\]:not\(\[data-splash='true'\]\) header\.navbar/);
+ assert.doesNotMatch(source, /:root\[data-ios-home='true'\] header\.navbar/);
 });

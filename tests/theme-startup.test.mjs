@@ -8,9 +8,9 @@ const manifest = JSON.parse(await readFile(new URL('../frontend/public/manifest.
 const script = html.match(/<script id="shiftflow-theme-startup">([\s\S]*?)<\/script>/)[1];
 
 function open(storage, {darkOS = false, blocked = false, iosHome = false} = {}) {
-  const root = {dataset: {}, setAttribute(_attr, value) { this.dataset.theme = value; }};
+  const root = {dataset: {splash: 'true'}, setAttribute(_attr, value) { this.dataset.theme = value; }};
   const meta = {
-    color: '#f2f4f9', writes: 0,
+    color: '#557abb', writes: 0,
     getAttribute() { return this.color; },
     setAttribute(_attr, color) { this.writes++; this.color = color; },
   };
@@ -28,15 +28,16 @@ function open(storage, {darkOS = false, blocked = false, iosHome = false} = {}) 
 }
 const key = 'shiftflow.theme.v1';
 
-test('飾りの青を初期起動画面に出さず、保存済みの暗色を外部CSS読み込み前に適用', () => {
+test('共通ブランド青のロゴ画面でも保存済みの暗色を外部CSS読み込み前に先読み', () => {
   assert.ok(html.indexOf('id="shiftflow-theme-startup"') < html.indexOf('rel="manifest"'));
   assert.ok(html.indexOf('id="shiftflow-theme-startup"') < html.indexOf('cdn.jsdelivr.net'));
   assert.equal(manifest.theme_color, '#f2f4f9');
   assert.equal(manifest.background_color, '#f2f4f9');
   const {root,meta} = open(new Map([[key,'dark']]));
   assert.equal(root.dataset.theme,'dark');
-  assert.equal(meta.color,'#0b1224');
-  assert.equal(meta.writes,1);
+  assert.equal(root.dataset.splash,'true');
+  assert.equal(meta.color,'#557abb');
+  assert.equal(meta.writes,0);
 });
 
 test('切替プレビューは即座に色を更新し、保存が確認された外観だけ次回起動に使う', () => {
@@ -44,6 +45,8 @@ test('切替プレビューは即座に色を更新し、保存が確認され�
   const {api,root,meta} = open(storage);
   api.sync(api.resolve('dark'));
   assert.equal(root.dataset.theme,'dark');
+  assert.equal(meta.color,'#557abb');
+  api.setSplash(false);
   assert.equal(meta.color,'#0b1224');
   assert.equal(open(storage).root.dataset.theme,'light');
   api.remember('dark');
@@ -60,6 +63,8 @@ test('「システム」は起動時と変更後のOS外観に従い、無効値
   assert.equal(a.root.dataset.theme,'dark');
   a.media.matches = false;
   a.api.sync(a.api.resolve('system'));
+  assert.equal(a.meta.color,'#557abb');
+  a.api.setSplash(false);
   assert.equal(a.meta.color,'#f2f4f9');
   assert.equal(storage.get(key),'system');
   a.api.remember('bad');
@@ -70,20 +75,34 @@ test('「システム」は起動時と変更後のOS外観に従い、無効値
   assert.doesNotThrow(() => b.api.remember('dark'));
 });
 
-test('ロゴ表示から表示切替まで、読み込み画面も保存済みの外観色を保つ', () => {
-  assert.match(html, /\.bootstrap-loading \{[^}]*background: var\(--surface\);/s);
-  assert.match(html, /body\.bootstrapping \{\s*background: var\(--surface\);/);
+test('ロゴの保持中とフェード終了時に、上端・背景・metaを同じ色へ同期', () => {
+  assert.match(html, /<html data-theme="light" data-splash="true">/);
+  assert.match(html, /<meta name="theme-color" content="#557abb" \/>/);
+  assert.match(html, /:root\[data-splash='true'\] body::before,[\s\S]*\.bootstrap-loading \{[\s\S]*background: var\(--splash-surface\);[\s\S]*background-image: none;/);
+  assert.match(html, /if \(themeStartup\) themeStartup\.setSplash\(false\);/);
+
+  const {api,root,meta} = open(new Map([[key,'dark']]),{iosHome:true});
+  assert.equal(root.dataset.theme,'dark');
+  assert.equal(meta.color,'#557abb');
+  api.sync('light');
+  assert.equal(meta.color,'#557abb');
+  api.setSplash(false);
+  assert.equal(root.dataset.splash,undefined);
+  assert.equal(meta.color,'#f2f4f9');
+  api.setSplash(true);
+  assert.equal(meta.color,'#557abb');
 });
 
-test('iOSホーム画面版では設定を変えても上端の基準色を固定し、他の環境では画面に追従', () => {
+test('iOSホーム画面版の濃紺指定はロゴ終了後のダークだけに限定', () => {
   const {api,root,meta} = open(new Map([[key,'light']]),{iosHome:true});
   assert.equal(root.dataset.iosHome,'true');
   assert.equal(root.dataset.theme,'light');
-  assert.equal(meta.color,'#0b1224');
+  assert.equal(meta.color,'#557abb');
+  api.setSplash(false);
+  assert.equal(meta.color,'#f2f4f9');
   api.sync('dark');
-  assert.equal(root.dataset.theme,'dark');
   assert.equal(meta.color,'#0b1224');
-  assert.equal(meta.writes,1);
   assert.equal(open(new Map()).root.dataset.iosHome,undefined);
-  assert.match(html, /data-ios-home='true'\] body::before\s*\{\s*background: var\(--ios-top\)/);
+  assert.match(html, /data-theme='dark'\]\[data-ios-home='true'\]:not\(\[data-splash='true'\]\) body::before/);
+  assert.doesNotMatch(html, /:root\[data-ios-home='true'\] header\.navbar/);
 });

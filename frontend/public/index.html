@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html data-theme="light">
+<html data-theme="light" data-splash="true">
   <head>
     <!-- ===== Base PWA metadata and viewport configuration ===== -->
     <meta charset="UTF-8" />
     <base target="_top" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f2f4f9" />
+    <meta name="theme-color" content="#557abb" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ShiftFlow" />
@@ -13,9 +13,9 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <!-- 外部CSSやログイン読込より先に、端末の保存済み外観で初回描画する。 -->
     <style>
-      :root { --surface: #f2f4f9; background-color: var(--surface); color-scheme: light; }
+      :root { --surface: #f2f4f9; --splash-surface: #557abb; background-color: var(--surface); color-scheme: light; }
       :root[data-theme='dark'] { --surface: #0b1224; color-scheme: dark; }
-      :root[data-ios-home='true'] { --ios-top: #0b1224; background-color: var(--ios-top); }
+      :root[data-splash='true'] { background-color: var(--splash-surface); }
     </style>
     <script id="shiftflow-theme-startup">
       (function () {
@@ -56,14 +56,24 @@
         }
         function sync(mode) {
           root.setAttribute('data-theme', mode);
-          var color = iosHome || mode === 'dark' ? '#0b1224' : '#f2f4f9';
+          var color = root.dataset.splash === 'true'
+            ? '#557abb'
+            : (mode === 'dark' ? '#0b1224' : '#f2f4f9');
           if (meta && meta.getAttribute('content') !== color) meta.setAttribute('content', color);
+        }
+
+        function setSplash(isVisible) {
+          if (isVisible) root.dataset.splash = 'true';
+          else delete root.dataset.splash;
+          sync(root.dataset.theme === 'dark' ? 'dark' : 'light');
         }
 
         var pref = read() || 'light';
         root.dataset.themePref = pref;
         sync(resolve(pref));
-        window.__SHIFT_FLOW_THEME__ = { read: read, remember: remember, resolve: resolve, sync: sync };
+        window.__SHIFT_FLOW_THEME__ = {
+          read: read, remember: remember, resolve: resolve, sync: sync, setSplash: setSplash
+        };
       })();
     </script>
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -472,6 +482,7 @@
       :root {
         color-scheme: light;
         --primary: #557abb;
+        --splash-surface: #557abb;
         --primary-700: #3d5c8a;
         --primary-ink: #3d5c8a;
         --primary-ink-hover: #29466f;
@@ -5333,31 +5344,32 @@
       }
 
       /* iOSのホーム画面版でOS側の色が残っても、上端と操作ヘッダーは一つの面にする。 */
-      :root[data-ios-home='true'] {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) {
+        --ios-top: #0b1224;
         background-color: var(--ios-top);
       }
-      :root[data-ios-home='true'] body::before {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) body::before {
         background: var(--ios-top);
       }
-      :root[data-ios-home='true'] :is(.bootstrap-loading, .auth-backdrop) {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) :is(.bootstrap-loading, .auth-backdrop) {
         background-image: linear-gradient(
           to bottom, var(--ios-top) 0 var(--safe-top), var(--surface) calc(var(--safe-top) + 10px)
         );
       }
-      :root[data-ios-home='true'] header.navbar {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) header.navbar {
         padding-bottom: 10px;
         background: linear-gradient(
           to bottom, var(--ios-top) 0 calc(100% - 8px), var(--surface) 100%
         );
       }
-      :root[data-ios-home='true'] header.navbar > .container-xl {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) header.navbar > .container-xl {
         background: #172440;
         border-color: #384a6b;
         box-shadow: none;
         -webkit-backdrop-filter: none;
         backdrop-filter: none;
       }
-      :root[data-ios-home='true'] header.navbar :is(
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) header.navbar :is(
         .app-brand, .app-view-heading__title, .app-view-heading__folder-select,
         .app-view-heading__scope-trigger, .app-view-heading__folder > .material-icons-outlined,
         .header-action-button, .header-view-refresh, .user-menu-trigger,
@@ -5365,24 +5377,36 @@
       ) {
         color: #edf3ff;
       }
-      :root[data-ios-home='true'] header.navbar :is(
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) header.navbar :is(
         .app-view-heading__folder-select, .app-view-heading__scope-trigger,
         .header-action-button, .header-view-refresh, .user-menu-trigger
       ) {
         background: #25375c;
         border-color: #536784;
       }
-      :root[data-ios-home='true'] header.navbar .app-view-heading__folder-select {
+      :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) header.navbar .app-view-heading__folder-select {
         color-scheme: dark;
       }
       @media (max-width: 575.98px) {
-        :root[data-ios-home='true'] .modal-fullscreen-sm-down .modal-header {
+        :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) .modal-fullscreen-sm-down .modal-header {
           padding-top: calc(18px + var(--safe-top));
           background: var(--ios-top);
         }
-        :root[data-ios-home='true'] .modal-fullscreen-sm-down .modal-header :is(.modal-title, .btn-link) {
+        :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) .modal-fullscreen-sm-down .modal-header :is(.modal-title, .btn-link) {
           color: #edf3ff;
         }
+      }
+      /* ロゴ表示中はテーマやiOSホーム画面の後勝ち指定も共通のブランド青で上書きする。 */
+      :root[data-splash='true'],
+      :root[data-splash='true'] body,
+      :root[data-splash='true'] body.bootstrapping {
+        background-color: var(--splash-surface);
+        background-image: none;
+      }
+      :root[data-splash='true'] body::before,
+      :root[data-splash='true'] .bootstrap-loading {
+        background: var(--splash-surface);
+        background-image: none;
       }
     </style>
       <link rel="stylesheet" href="/push-settings.css" />
@@ -10332,7 +10356,12 @@
           body.classList.toggle('bootstrapping', !!isLoading);
         }
         var loadingEl = byId('bootstrap-loading');
-        if (!loadingEl) return;
+        var themeStartup = window.__SHIFT_FLOW_THEME__;
+        if (isLoading && themeStartup) themeStartup.setSplash(true);
+        if (!loadingEl) {
+          if (!isLoading && themeStartup) themeStartup.setSplash(false);
+          return;
+        }
         var fadeMs = 600;
         var minShowMs = 700;
         if (loadingEl.__fadeTimer) {
@@ -10359,6 +10388,7 @@
               loadingEl.setAttribute('hidden', '');
               loadingEl.__fadeTimer = null;
               loadingEl.__shownAt = null;
+              if (themeStartup) themeStartup.setSplash(false);
             }, fadeMs);
           };
           if (waitMs > 0) {

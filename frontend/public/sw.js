@@ -1,5 +1,5 @@
 // アプリ全体のバージョン。フロントコードに変更が入ったら必ず更新する。
-const APP_VERSION = '2.3.15';
+const APP_VERSION = '2.3.16';
 
 const CACHE_PREFIX = 'shiftflow-';
 const APP_SHELL_CACHE = `${CACHE_PREFIX}app-shell-${APP_VERSION}`;
