@@ -106,3 +106,70 @@ test('iOSホーム画面版の濃紺指定はロゴ終了後のダークだけ�
   assert.match(html, /data-theme='dark'\]\[data-ios-home='true'\]:not\(\[data-splash='true'\]\) body::before/);
   assert.doesNotMatch(html, /:root\[data-ios-home='true'\] header\.navbar/);
 });
+
+test('ホームを公開する描画で通常背景へ同期し、青はフェード層だけに残す', () => {
+  const source = html.match(/function setBootstrapLoading\(isLoading\) \{[\s\S]*?\n      \}\n\n      function isAuthError/)[0]
+    .replace(/\n\n      function isAuthError[\s\S]*/, '');
+  const classes = new Set(['bootstrapping']);
+  const loadingClasses = new Set(['is-visible']);
+  const attributes = new Map();
+  const root = {dataset: {theme: 'dark', splash: 'true'}};
+  const meta = {color: '#557abb'};
+  const loadingEl = {
+    __shownAt: 0,
+    classList: {
+      add: (...names) => names.forEach(name => loadingClasses.add(name)),
+      remove: (...names) => names.forEach(name => loadingClasses.delete(name)),
+    },
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: name => attributes.delete(name),
+  };
+  const timers = [];
+  const themeStartup = {
+    setSplash(visible) {
+      if (visible) root.dataset.splash = 'true';
+      else delete root.dataset.splash;
+      meta.color = visible ? '#557abb' : (root.dataset.theme === 'dark' ? '#0b1224' : '#f2f4f9');
+    },
+  };
+  const context = {
+    document: {
+      body: {classList: {toggle: (name, on) => on ? classes.add(name) : classes.delete(name)}},
+    },
+    window: {__SHIFT_FLOW_THEME__: themeStartup},
+    byId: () => loadingEl,
+    Date: {now: () => 100},
+    clearTimeout: () => {},
+    setTimeout(callback, ms) {
+      timers.push({callback, ms});
+      return timers.length;
+    },
+  };
+  runInNewContext(source + '\nsetBootstrapLoading(false);', context);
+
+  // 最小表示時間中はホームを青い下地の上へ先に公開しない。
+  assert.equal(classes.has('bootstrapping'), true);
+  assert.equal(root.dataset.splash, 'true');
+  assert.equal(meta.color, '#557abb');
+
+  timers.shift().callback();
+  // ホームが描画可能になる最初のフレームで下地・上端・metaを通常色へそろえる。
+  assert.equal(classes.has('bootstrapping'), false);
+  assert.equal(root.dataset.splash, undefined);
+  assert.equal(meta.color, '#0b1224');
+  assert.equal(loadingClasses.has('is-splash-exit'), true);
+  assert.equal(loadingClasses.has('is-fading'), true);
+  assert.match(html, /\.bootstrap-loading\.is-splash-exit \{[\s\S]*background: var\(--splash-surface\);/);
+
+  timers.shift().callback();
+  // 次の状態でも通常背景を維持し、フェード専用の青だけを片付ける。
+  assert.equal(root.dataset.splash, undefined);
+  assert.equal(meta.color, '#0b1224');
+  assert.equal(loadingClasses.has('is-splash-exit'), false);
+});
+
+test('iOSホーム画面版の上端だけを半透明でぼかし、読みやすい代替面を持つ', () => {
+  assert.match(html, /data-ios-home='true'\]:not\(\[data-splash='true'\]\) body::before \{[\s\S]*background: rgba\(242, 244, 249, 0\.68\);[\s\S]*-webkit-backdrop-filter: saturate\(145%\) blur\(14px\);[\s\S]*backdrop-filter: saturate\(145%\) blur\(14px\);/);
+  assert.match(html, /prefers-reduced-transparency: reduce[\s\S]*data-ios-home='true'[\s\S]*background: rgba\(242, 244, 249, 0\.96\);[\s\S]*backdrop-filter: none;/);
+  assert.match(html, /data-theme='dark'\]\[data-ios-home='true'[\s\S]*body::before \{[\s\S]*background: rgba\(11, 18, 36, 0\.68\);/);
+});

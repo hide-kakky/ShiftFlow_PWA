@@ -558,6 +558,7 @@
         --safe-right: env(safe-area-inset-right, 0px);
         --footer-bottom-inset: max(4px, calc(var(--safe-bottom) - 12px));
         --fab-rest-bottom: max(14px, calc(var(--safe-bottom) + 8px));
+        --fab-wide-bottom: 26px;
         font-family: var(--app-font);
       }
       /* ===== Dark theme overrides ===== */
@@ -2709,7 +2710,7 @@
       @media (min-width: 768px) {
         .fab {
           right: 26px;
-          bottom: 26px;
+          bottom: var(--fab-wide-bottom);
           transform: none;
         }
         .fab__trigger {
@@ -4487,6 +4488,10 @@
         visibility: hidden;
         pointer-events: none;
       }
+      .bootstrap-loading.is-splash-exit {
+        background: var(--splash-surface) !important;
+        background-image: none !important;
+      }
       .bootstrap-loading__card {
         background: transparent;
         border-radius: 24px;
@@ -5343,13 +5348,28 @@
         }
       }
 
-      /* iOSのホーム画面版でOS側の色が残っても、上端と操作ヘッダーは一つの面にする。 */
+      /* iOSホーム画面版だけ、画面内容が時計の背後へ自然につながる半透明の面にする。 */
+      :root[data-ios-home='true']:not([data-splash='true']) body::before {
+        background: rgba(242, 244, 249, 0.68);
+        -webkit-backdrop-filter: saturate(145%) blur(14px);
+        backdrop-filter: saturate(145%) blur(14px);
+      }
       :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) {
         --ios-top: #0b1224;
         background-color: var(--ios-top);
       }
       :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) body::before {
-        background: var(--ios-top);
+        background: rgba(11, 18, 36, 0.68);
+      }
+      @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+        :root[data-ios-home='true']:not([data-splash='true']) body::before {
+          background: rgba(242, 244, 249, 0.96);
+          -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+        }
+        :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) body::before {
+          background: rgba(11, 18, 36, 0.96);
+        }
       }
       :root[data-theme='dark'][data-ios-home='true']:not([data-splash='true']) :is(.bootstrap-loading, .auth-backdrop) {
         background-image: linear-gradient(
@@ -10352,14 +10372,17 @@
 
       function setBootstrapLoading(isLoading) {
         var body = document.body;
-        if (body) {
-          body.classList.toggle('bootstrapping', !!isLoading);
-        }
         var loadingEl = byId('bootstrap-loading');
         var themeStartup = window.__SHIFT_FLOW_THEME__;
-        if (isLoading && themeStartup) themeStartup.setSplash(true);
+        if (isLoading) {
+          if (body) body.classList.toggle('bootstrapping', true);
+          if (themeStartup) themeStartup.setSplash(true);
+        }
         if (!loadingEl) {
-          if (!isLoading && themeStartup) themeStartup.setSplash(false);
+          if (!isLoading) {
+            if (themeStartup) themeStartup.setSplash(false);
+            if (body) body.classList.toggle('bootstrapping', false);
+          }
           return;
         }
         var fadeMs = 600;
@@ -10371,6 +10394,7 @@
         if (isLoading) {
           loadingEl.__shownAt = Date.now();
           loadingEl.classList.remove('is-fading');
+          loadingEl.classList.remove('is-splash-exit');
           loadingEl.classList.add('is-visible');
           loadingEl.removeAttribute('hidden');
           loadingEl.setAttribute('aria-hidden', 'false');
@@ -10379,16 +10403,20 @@
           var elapsed = loadingEl.__shownAt ? Date.now() - loadingEl.__shownAt : 0;
           var waitMs = Math.max(0, minShowMs - elapsed);
           var startHide = function () {
+            // ホームを公開する描画で、下地・safe area・metaを通常テーマへ同時に戻す。
+            if (themeStartup) themeStartup.setSplash(false);
+            loadingEl.classList.add('is-splash-exit');
             loadingEl.classList.add('is-fading');
+            if (body) body.classList.toggle('bootstrapping', false);
             loadingEl.setAttribute('aria-hidden', 'true');
             loadingEl.removeAttribute('aria-busy');
             loadingEl.__fadeTimer = setTimeout(function () {
               loadingEl.classList.remove('is-visible');
               loadingEl.classList.remove('is-fading');
+              loadingEl.classList.remove('is-splash-exit');
               loadingEl.setAttribute('hidden', '');
               loadingEl.__fadeTimer = null;
               loadingEl.__shownAt = null;
-              if (themeStartup) themeStartup.setSplash(false);
             }, fadeMs);
           };
           if (waitMs > 0) {
