@@ -10443,6 +10443,8 @@
       }
 
       function applyBootstrapState(bootstrap, fromCache) {
+        // 所属IDを新規取得せず、適用した認可snapshotごとに共有readの境界を分ける。
+        READ_SCOPE_EPOCH += 1;
         var normalized = bootstrap || {};
         window.__SHIFT_FLOW_BOOTSTRAP__ = normalized;
         window.userInfo = normalized.userInfo || {};
@@ -10802,6 +10804,9 @@
         function invokeRemote(route, argsSnapshot, handlers) {
           var url = API_BASE_PATH + '/' + encodeURIComponent(route);
           var isReadOnly = REMOTE_READ_ROUTES.has(route);
+          // この2経路は画面sourceが世代を持つ。旧世代readをmutation後に再送しない。
+          var sourceReadContext = (route === 'getHomeContent' || route === 'getMessages') &&
+            typeof createReadRequestContext === 'function' ? createReadRequestContext() : null;
           var requestId = _rid();
 
           async function _doFetch(forceRefresh) {
@@ -10869,7 +10874,8 @@
               if (
                 error &&
                 error.code === 'REQUEST_COALESCER_CLEARED' &&
-                error.reason === 'mutation'
+                error.reason === 'mutation' &&
+                (!sourceReadContext || isReadRequestContextCurrent(sourceReadContext))
               ) {
                 return remoteReadCoalescer.run(requestKey, _requestPacket);
               }
@@ -11937,6 +11943,7 @@
 
       function invalidateReadRequests(reason) {
         const invalidationReason = reason || 'manual';
+        READ_REQUEST_REVISION += 1;
         if (invalidationReason === 'mutation' && typeof window !== 'undefined' && window.ShiftFlowAppBadge) window.ShiftFlowAppBadge.refresh(true);
         DIRECT_API_READ_COALESCER.clear(invalidationReason);
         const remote = globalThis.__SHIFT_FLOW_REMOTE_READ_COALESCER__;
@@ -13893,6 +13900,7 @@
           ]).then(function () {});
         }
         if (CURRENT_VIEW === 'messages') {
+          if (opts.force === true) return refreshHomeAndMessages({ freshOperation: true });
           return Promise.all([
             Promise.resolve(loadMessages({ force: opts.force === true })),
             Promise.resolve(loadHome({ force: opts.force === true })),
@@ -14323,6 +14331,7 @@
         return readUserCacheEntry('home').then(function (entry) {
           if (!entry || !entry.value) return null;
           var value = entry.value || {};
+          if (value.readScope && value.readScope !== resolveReadCacheScope()) return null;
           return {
             tasks: normalizeArray(value.tasks),
             messages: normalizeArray(value.messages),
@@ -14335,6 +14344,7 @@
 
       function cacheHomePayload(data) {
         return writeUserCacheEntry('home', {
+          readScope: resolveReadCacheScope(),
           tasks: normalizeArray(data && data.tasks),
           messages: normalizeArray(data && data.messages),
         });
@@ -14359,11 +14369,16 @@
           return Promise.resolve(false);
         }
         var identity = resolveCurrentIdentity();
-        if (HOME_SOURCE.identity !== identity) {
+        var readContext = createReadRequestContext();
+        if (HOME_SOURCE.identity !== identity || (HOME_SOURCE.scope && HOME_SOURCE.scope !== readContext.scope)) {
           HOME_LOAD_REQUEST_ID += 1;
           HOME_SOURCE = { identity: identity, payload: null, inflight: null, renderedPayload: null };
+          LAST_HOME_FETCH_AT = 0;
         }
         var source = HOME_SOURCE;
+        source.scope = readContext.scope;
+        var currentInflight = source.inflight && isReadRequestContextCurrent(source.inflightContext);
+        if (source.payload && source.freshRevision === undefined) source.freshRevision = readContext.revision;
         function renderSource() {
           var day = new Date().toDateString();
           if (!source.payload || (source.renderedPayload === source.payload && source.renderedDay === day)) return;
@@ -14373,13 +14388,13 @@
         }
         if (source.payload) {
           renderSource();
-          if (!opts.force && shouldThrottleFetch(LAST_HOME_FETCH_AT, opts)) return source.inflight || Promise.resolve(false);
+          if (!opts.force && source.freshRevision === readContext.revision && shouldThrottleFetch(LAST_HOME_FETCH_AT, opts)) return currentInflight ? source.inflight : Promise.resolve(false);
         }
-        if (source.inflight && !opts.force) return source.inflight;
+        if (currentInflight && !opts.force) return source.inflight;
         const requestId = ++HOME_LOAD_REQUEST_ID;
         function isCurrent() {
           return source === HOME_SOURCE && requestId === HOME_LOAD_REQUEST_ID && HAS_ACTIVE_EMAIL &&
-            !PRIVATE_STORAGE_BLOCKED && identity === resolveCurrentIdentity();
+            !PRIVATE_STORAGE_BLOCKED && identity === resolveCurrentIdentity() && isReadRequestContextCurrent(readContext);
         }
         function ensureSkeleton() {
           if (source.payload || CURRENT_VIEW !== 'home') return;
@@ -14405,7 +14420,8 @@
                 .withSuccessHandler(function (d) {
                   if (!isCurrent()) { resolve(false); return; }
                   source.payload = d || {};
-                  primeMessagesFromHome(d);
+                  source.freshRevision = readContext.revision;
+                  primeMessagesFromHome(d, opts.messageRefresh);
                   cacheHomePayload(source.payload).catch(function () {});
                   LAST_HOME_FETCH_AT = Date.now();
                   renderSource();
@@ -14416,11 +14432,12 @@
                   notify('ホーム読み込み失敗: ' + e.message, false);
                   resolve(false);
                 })
-                .getHomeContent({ refreshGeneration: opts.force ? requestId : undefined });
+                .getHomeContent({ refreshGeneration: readContext.scope + ':' + readContext.revision + ':' + requestId });
             });
           });
         source.inflight = operation;
-        operation.finally(function () { if (source.inflight === operation) source.inflight = null; });
+        source.inflightContext = readContext;
+        operation.finally(function () { if (source.inflight === operation) { source.inflight = null; source.inflightContext = null; } });
         return operation;
       }
 
@@ -15628,19 +15645,63 @@
           .map(function (entry) { return entry.row; });
       }
       var MESSAGE_LOAD_REQUEST_ID = 0;
+      var READ_REQUEST_REVISION = 0;
+      var READ_SCOPE_EPOCH = 0;
+      var HOME_MESSAGE_REFRESH = null;
+      function resolveReadCacheScope() {
+        var info = (typeof window !== 'undefined' && window.userInfo) || {};
+        var session = typeof AUTH_SESSION !== 'undefined' && AUTH_SESSION && AUTH_SESSION.user || {};
+        return JSON.stringify([resolveCurrentIdentity(),
+          info.orgId || session.orgId || '', info.membershipId || session.membershipId || '', info.role || '']);
+      }
+      function resolveReadRequestScope() {
+        return JSON.stringify([resolveReadCacheScope(), READ_SCOPE_EPOCH]);
+      }
+      function createReadRequestContext() {
+        return { scope: resolveReadRequestScope(), revision: READ_REQUEST_REVISION };
+      }
+      function isReadRequestContextCurrent(context) {
+        return context && context.scope === resolveReadRequestScope() && context.revision === READ_REQUEST_REVISION &&
+          HAS_ACTIVE_EMAIL && !PRIVATE_STORAGE_BLOCKED && !IDENTITY_RELOAD_IN_PROGRESS && !RETURN_AUTH_SYNC_INFLIGHT;
+      }
+      function refreshHomeAndMessages(options) {
+        var opts = options || {};
+        if (RETURN_AUTH_SYNC_INFLIGHT || IDENTITY_RELOAD_IN_PROGRESS) {
+          return awaitAuthIdentityGate().then(function () { return refreshHomeAndMessages(opts); }).catch(function () { return false; });
+        }
+        // 手動更新はmutationがなくても新しい操作。先行forceの完了待ちへ合流しない。
+        if (opts.freshOperation) READ_REQUEST_REVISION += 1;
+        var context = createReadRequestContext();
+        if (HOME_MESSAGE_REFRESH && isReadRequestContextCurrent(HOME_MESSAGE_REFRESH.context)) return HOME_MESSAGE_REFRESH.operation;
+        // この明示した同一操作だけHomeの全件取得を共有する。独立forceは従来どおり。
+        var refresh = { context: context, messagesAdopted: false };
+        HOME_MESSAGE_REFRESH = refresh;
+        refresh.home = loadHome({ force: true, messageRefresh: refresh });
+        var messages = loadMessages({ force: true, homeRefresh: refresh });
+        refresh.operation = Promise.all([refresh.home, messages]).then(function (results) { return results[0] || results[1]; });
+        function clear() { if (HOME_MESSAGE_REFRESH === refresh) HOME_MESSAGE_REFRESH = null; }
+        refresh.operation.then(clear, clear);
+        return refresh.operation;
+      }
       // 閲覧可能な全件を本人単位で共有する。未読・検索・フォルダは描画時に絞る。
       var MESSAGE_SOURCE = { identity: '', rows: [], loaded: false, inflight: null };
       var MESSAGE_PAGE_SIZE = 24;
-      function primeMessagesFromHome(payload) {
+      function primeMessagesFromHome(payload, refresh) {
         // Homeのfresh応答は、同じ権限で取得した未読を含む全件である。
         if (!payload || !Array.isArray(payload.messages) || !HAS_ACTIVE_EMAIL || PRIVATE_STORAGE_BLOCKED) return;
         var identity = resolveCurrentIdentity();
         var source = MESSAGE_SOURCE;
-        if ((source.identity && source.identity !== identity) || source.loaded || source.inflight) return;
+        var paired = refresh && isReadRequestContextCurrent(refresh.context) &&
+          refresh.messageSource === source && refresh.messageRequestId === MESSAGE_LOAD_REQUEST_ID;
+        if (refresh && !paired) return;
+        if (!paired && ((source.identity && source.identity !== identity) || source.loaded || source.inflight)) return;
         source.identity = identity;
+        source.scope = resolveReadRequestScope();
         source.rows = sortMessagesByActivity(payload.messages);
         source.loaded = true;
+        source.freshRevision = READ_REQUEST_REVISION;
         LAST_MESSAGES_FETCH_AT = Date.now();
+        if (paired) refresh.messagesAdopted = true;
       }
       function clearMessagePresentation(source) {
         if (source && source.presentation && source.presentation.observer) source.presentation.observer.disconnect();
@@ -15717,12 +15778,14 @@
       function loadMessagesFromCache(cacheKey) {
         return readUserCacheEntry(cacheKey).then(function (entry) {
           if (!entry || !entry.value) return null;
+          if (entry.value.readScope && entry.value.readScope !== resolveReadCacheScope()) return null;
           var rows = normalizeArray(entry.value.rows);
           return { rows: rows, empty: entry.value.empty };
         });
       }
       function cacheMessages(cacheKey, rows) {
         return writeUserCacheEntry(cacheKey, {
+          readScope: resolveReadCacheScope(),
           rows: Array.isArray(rows) ? rows : [],
           empty: !rows || rows.length === 0,
         });
@@ -15773,23 +15836,29 @@
           return Promise.resolve(false);
         }
         var identity = resolveCurrentIdentity();
-        if (MESSAGE_SOURCE.identity !== identity) {
+        var readContext = createReadRequestContext();
+        if (MESSAGE_SOURCE.identity !== identity || (MESSAGE_SOURCE.scope && MESSAGE_SOURCE.scope !== readContext.scope)) {
           MESSAGE_LOAD_REQUEST_ID += 1;
           clearMessagePresentation(MESSAGE_SOURCE);
           MESSAGE_SOURCE = { identity: identity, rows: [], loaded: false, inflight: null };
+          LAST_MESSAGES_FETCH_AT = 0;
         }
         var source = MESSAGE_SOURCE;
+        source.scope = readContext.scope;
+        var currentInflight = source.inflight && isReadRequestContextCurrent(source.inflightContext);
+        if (source.loaded && source.freshRevision === undefined) source.freshRevision = readContext.revision;
         var resetPagePending = !!opts.resetPage;
-        if (opts.prefetch && !opts.force && !opts.skipHomeWait && !source.loaded && !source.inflight && HOME_SOURCE && HOME_SOURCE.inflight) {
+        if (opts.prefetch && !opts.force && !opts.skipHomeWait && !source.loaded && !source.inflight &&
+            HOME_SOURCE && HOME_SOURCE.inflight && isReadRequestContextCurrent(HOME_SOURCE.inflightContext)) {
           function afterHome() {
-            if (source !== MESSAGE_SOURCE || !HAS_ACTIVE_EMAIL || PRIVATE_STORAGE_BLOCKED || identity !== resolveCurrentIdentity()) return false;
+            if (source !== MESSAGE_SOURCE || !HAS_ACTIVE_EMAIL || PRIVATE_STORAGE_BLOCKED || identity !== resolveCurrentIdentity() || !isReadRequestContextCurrent(readContext)) return false;
             return loadMessages(Object.assign({}, opts, { skipHomeWait: true }));
           }
           return HOME_SOURCE.inflight.then(afterHome, afterHome);
         }
         function isCurrent() {
           return source === MESSAGE_SOURCE && requestId === MESSAGE_LOAD_REQUEST_ID &&
-            HAS_ACTIVE_EMAIL && !PRIVATE_STORAGE_BLOCKED && identity === resolveCurrentIdentity();
+            HAS_ACTIVE_EMAIL && !PRIVATE_STORAGE_BLOCKED && identity === resolveCurrentIdentity() && isReadRequestContextCurrent(readContext);
         }
         function renderSource() {
           if (CURRENT_VIEW !== 'messages') return;
@@ -15807,12 +15876,16 @@
         // この描画はPromiseの外で行い、タップ・スワイプへの反応を待たせない。
         if (source.loaded) {
           renderSource();
-          if (!opts.force && shouldThrottleFetch(LAST_MESSAGES_FETCH_AT, opts)) {
-            return source.inflight || Promise.resolve(false);
+          if (!opts.force && source.freshRevision === readContext.revision && shouldThrottleFetch(LAST_MESSAGES_FETCH_AT, opts)) {
+            return currentInflight ? source.inflight : Promise.resolve(false);
           }
         }
-        if (source.inflight && !opts.force) return source.inflight;
+        // cold一覧への独立入場は、別操作のpaired Home待ちに拘束しない。
+        var coldForeground = !source.loaded && !opts.prefetch && !opts.homeRefresh && source.inflightRefresh;
+        if (currentInflight && !opts.force && !coldForeground) return source.inflight;
         const requestId = ++MESSAGE_LOAD_REQUEST_ID;
+        var refresh = opts.homeRefresh;
+        if (refresh) { refresh.messageRequestId = requestId; refresh.messageSource = source; }
         const cacheKey = 'messages:complete:v2';
         if (!source.loaded && CURRENT_VIEW === 'messages') setMsgLoading(true);
         var cachePromise = source.loaded ? Promise.resolve(null) : loadMessagesFromCache(cacheKey).catch(function () { return null; });
@@ -15823,7 +15896,7 @@
               source.loaded = true;
               renderSource();
             }
-            return new Promise(function (resolve) {
+            function fetchMessages() { return new Promise(function (resolve) {
               google.script.run
                 .withSuccessHandler(function (list) {
                   if (!isCurrent()) {
@@ -15832,6 +15905,7 @@
                   }
                   source.rows = sortMessagesByActivity(normalizeArray(list));
                   source.loaded = true;
+                  source.freshRevision = readContext.revision;
                   cacheMessages(cacheKey, source.rows).catch(function () {});
                   LAST_MESSAGES_FETCH_AT = Date.now();
                   renderSource();
@@ -15853,13 +15927,28 @@
                 .getMessages({
                   unreadOnly: false,
                   // forceはbridgeの既存readへ合流させず、新しい状態を取得する。
-                  refreshGeneration: opts.force ? requestId : undefined,
+                  refreshGeneration: readContext.scope + ':' + readContext.revision + ':' + requestId,
                 });
-            });
+            }); }
+            if (refresh) {
+              return refresh.home.then(function () {
+                if (!isCurrent()) return false;
+                if (refresh.messagesAdopted) {
+                  cacheMessages(cacheKey, source.rows).catch(function () {});
+                  renderSource();
+                  return true;
+                }
+                // Home失敗・messages欠落時だけ、同じ世代の専用経路へ進む。
+                return fetchMessages();
+              });
+            }
+            return fetchMessages();
           });
         source.inflight = operation;
+        source.inflightContext = readContext;
+        source.inflightRefresh = refresh || null;
         operation.finally(function () {
-          if (source.inflight === operation) source.inflight = null;
+          if (source.inflight === operation) { source.inflight = null; source.inflightContext = null; source.inflightRefresh = null; }
         });
         return operation;
       }
@@ -15909,8 +15998,7 @@
           .then(function (res) {
             setButtonLoading(btn, false);
             notify(shouldPin ? '自分用にピン留めしました。' : '自分のピンを解除しました。', true);
-            loadMessages({ force: true });
-            loadHome({ force: true });
+            refreshHomeAndMessages();
           })
           .catch(function (err) {
             setButtonLoading(btn, false);
@@ -15968,8 +16056,7 @@
                     res && res.success !== false
                   );
                   restoreButton();
-                  loadMessages({ force: true });
-                  loadHome({ force: true });
+                  refreshHomeAndMessages();
                 })
                 .withFailureHandler(function (e) {
                   notify('既読処理に失敗しました: ' + e.message, false);
@@ -16596,8 +16683,7 @@
                 renderMessageDetail(data);
                 byId('msg-detail-loading').classList.add('d-none');
                 byId('msg-detail-content').classList.remove('d-none');
-                loadMessages({ force: true });
-                loadHome({ force: true });
+                refreshHomeAndMessages();
               })
               .getMessageById(memoId);
           })
@@ -16716,8 +16802,7 @@
               notify(res && res.message ? res.message : '削除しました', res && res.success !== false);
               var inst = bootstrap.Modal.getInstance(byId('messageDetailModal'));
               if (inst) inst.hide();
-              loadMessages({ force: true });
-              loadHome({ force: true });
+              refreshHomeAndMessages();
             })
             .withFailureHandler(function (e) {
               MESSAGE_DELETE_INFLIGHT = false;
@@ -17172,8 +17257,7 @@
               }
             }
             notify(res && res.message ? res.message : '完了', res && res.success !== false);
-            loadHome({ force: true });
-            loadMessages({ force: true });
+            refreshHomeAndMessages();
           };
         }
 

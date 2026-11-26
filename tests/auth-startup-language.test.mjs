@@ -12,6 +12,8 @@ function block(start, end) {
 }
 const listener = block("document.addEventListener('shiftflow:languagechange', function () {\n        updateViewHeader(CURRENT_VIEW);", 'function showPanel');
 const homeLoader = block('function loadHome(options)', '// ===== Tasks =====');
+// Home loaderが参照する実scope/世代helperも同じVMへ読み込む。
+const readContext = block('var READ_REQUEST_REVISION = 0;', 'function refreshHomeAndMessages');
 
 function setup({ view = 'home', active = false, blocked = false } = {}) {
   const events = new Map(), notices = [], calls = { headers: 0, cards: 0, homeApi: 0, messages: 0 };
@@ -46,7 +48,7 @@ function setup({ view = 'home', active = false, blocked = false } = {}) {
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
-  runInNewContext(homeLoader + listener + i18n, sandbox);
+  runInNewContext(readContext + homeLoader + listener + i18n, sandbox);
   return { sandbox, calls, notices, events };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
