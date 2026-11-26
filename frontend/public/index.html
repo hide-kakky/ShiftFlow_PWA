@@ -414,7 +414,7 @@
           }
         }
         function computeSurfaceColor(theme) {
-          var fallback = theme === 'dark' ? '#050b18' : '#f2f4f9';
+          var fallback = theme === 'dark' ? '#0b1224' : '#f2f4f9';
           return readCSSVariable('--surface') || fallback;
         }
         function computePrimaryColor(theme) {
@@ -424,12 +424,14 @@
         window.__SHIFT_FLOW_THEME_META__ = themeMeta;
         window.__SHIFT_FLOW_GET_SURFACE__ = computeSurfaceColor;
         window.__SHIFT_FLOW_GET_PRIMARY__ = computePrimaryColor;
+        window.__SHIFT_FLOW_GET_CHROME_COLOR__ = function (theme) {
+          return theme === 'dark' ? computeSurfaceColor(theme) : computePrimaryColor(theme);
+        };
         window.__SHIFT_FLOW_SYNC_THEME_META__ = function (theme) {
           var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
           var metaTheme = document.querySelector('meta[name="theme-color"]');
-          var primaryColor = computePrimaryColor(resolvedTheme);
-          if (metaTheme && primaryColor) {
-            metaTheme.setAttribute('content', primaryColor);
+          if (metaTheme) {
+            metaTheme.setAttribute('content', window.__SHIFT_FLOW_GET_CHROME_COLOR__(resolvedTheme));
           }
           var appleStatus = document.querySelector(
             'meta[name="apple-mobile-web-app-status-bar-style"]'
@@ -616,6 +618,14 @@
         --nav-glass-shadow: 0 18px 44px rgba(2, 7, 20, 0.62);
         --nav-glass-active: rgba(122, 162, 255, 0.22);
         --nav-glass-fg: #edf3ff;
+        --footer-dark-bg: #172440;
+        --footer-dark-active: #34558b;
+        --footer-dark-ink: #cbd9f5;
+        --button-dark-ink: #cad9f5;
+        --button-dark-border: #647da5;
+        --button-dark-hover: #243657;
+        --button-dark-primary: #355899;
+        --button-dark-primary-hover: #4267ab;
       }
       /* ===== Global element resets ===== */
       * {
@@ -1045,8 +1055,11 @@
           opacity: 1 !important;
         }
       }
-      :root[data-theme='dark'] html {
+      :root[data-theme='dark'] {
         background-color: var(--surface);
+      }
+      :root[data-theme='dark'] body::before {
+        background: var(--surface);
       }
       :root[data-theme='dark'] body {
         background-color: var(--surface);
@@ -1242,9 +1255,6 @@
       }
       :root[data-theme='dark'] .topbar {
         background: var(--card);
-      }
-      :root[data-theme='dark'] .footer-nav {
-        background: linear-gradient(135deg, rgba(10, 18, 40, 0.92), rgba(5, 12, 30, 0.95));
       }
 
       /* Desktop layout shell */
@@ -5057,8 +5067,32 @@
         color: var(--primary-ink-hover);
         transform: none;
       }
-      :root[data-theme='dark'] .footer-nav .nav-link.active {
-        color: #f3f6ff;
+      :root[data-theme='dark'] .footer-nav .container-fluid {
+        background: var(--footer-dark-bg);
+      }
+      :root[data-theme='dark'] .footer-nav .navbar-nav {
+        --bs-nav-link-color: var(--footer-dark-ink);
+        --bs-nav-link-hover-color: var(--text-900);
+      }
+      :root[data-theme='dark'] .footer-nav .navbar-nav .nav-link {
+        color: var(--footer-dark-ink);
+      }
+      :root[data-theme='dark'] .footer-nav .nav-link .material-icons-outlined {
+        opacity: 1;
+      }
+      :root[data-theme='dark'] .footer-nav .navbar-nav .nav-link:is(.active, :hover, :focus-visible) {
+        color: var(--text-900);
+        background: var(--footer-dark-active);
+      }
+      :root[data-theme='dark'] .footer-nav .nav-link:focus-visible {
+        outline: 2px solid var(--primary-ink);
+        outline-offset: -3px;
+      }
+      :root[data-theme='dark'] .footer-nav .nav-icon-badge {
+        box-shadow: 0 0 0 2px var(--footer-dark-bg);
+      }
+      :root[data-theme='dark'] .footer-nav .badge-overdue {
+        color: var(--surface);
       }
       .footer-nav .nav-link.active::after {
         bottom: 5px;
@@ -5235,6 +5269,48 @@
       }
       :root[data-theme='dark'] .text-primary {
         color: var(--primary-ink) !important;
+      }
+      :root[data-theme='dark'] .btn-outline-secondary {
+        --bs-btn-color: var(--button-dark-ink);
+        --bs-btn-border-color: var(--button-dark-border);
+        --bs-btn-hover-color: var(--text-900);
+        --bs-btn-hover-bg: var(--button-dark-hover);
+        --bs-btn-hover-border-color: var(--primary-ink);
+        --bs-btn-active-color: var(--text-900);
+        --bs-btn-active-bg: var(--button-dark-hover);
+        --bs-btn-active-border-color: var(--primary-ink);
+        --bs-btn-disabled-color: var(--button-dark-ink);
+        --bs-btn-disabled-border-color: var(--button-dark-border);
+      }
+      :root[data-theme='dark'] .btn-primary {
+        --bs-btn-color: var(--text-900);
+        --bs-btn-bg: var(--button-dark-primary);
+        --bs-btn-border-color: var(--button-dark-border);
+        --bs-btn-hover-color: var(--text-900);
+        --bs-btn-hover-bg: var(--button-dark-primary-hover);
+        --bs-btn-hover-border-color: var(--primary-ink);
+        --bs-btn-active-color: var(--text-900);
+        --bs-btn-active-bg: var(--button-dark-primary-hover);
+        --bs-btn-active-border-color: var(--primary-ink);
+        --bs-btn-disabled-color: var(--text-900);
+        --bs-btn-disabled-bg: var(--button-dark-primary);
+        --bs-btn-disabled-border-color: var(--button-dark-border);
+      }
+      :root[data-theme='dark'] .btn-link {
+        --bs-btn-color: var(--primary-ink);
+        --bs-btn-hover-color: var(--primary-ink-hover);
+        --bs-btn-active-color: var(--primary-ink-hover);
+      }
+      :root[data-theme='dark'] .btn:not(:disabled):focus-visible {
+        outline: 2px solid var(--primary-ink);
+        outline-offset: 2px;
+      }
+      @media (max-width: 575.98px) {
+        /* 全画面ダイアログでもステータスバーの下に操作領域を確保する。 */
+        :root[data-theme='dark'] .modal-fullscreen-sm-down .modal-header {
+          padding-top: calc(18px + var(--safe-top));
+          background: var(--surface);
+        }
       }
       :root[data-theme='dark'] .btn-outline-primary {
         border-color: var(--primary-ink);
@@ -9348,11 +9424,11 @@
                 light: { statusBar: 'black-translucent' },
                 dark: { statusBar: 'black-translucent' },
               };
-              var getPrimary =
-                typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
-                  ? window.__SHIFT_FLOW_GET_PRIMARY__
+              var getChromeColor =
+                typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
+                  ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
                   : function (mode) {
-                      if (mode === 'dark') return '#4b67b3';
+                      if (mode === 'dark') return '#0b1224';
                       return '#557abb';
                     };
               var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
@@ -9361,7 +9437,7 @@
                 'black-translucent';
               var metaTheme = document.querySelector('meta[name="theme-color"]');
               if (metaTheme) {
-                metaTheme.setAttribute('content', getPrimary(resolvedTheme));
+                metaTheme.setAttribute('content', getChromeColor(resolvedTheme));
               }
               var appleStatus = document.querySelector(
                 'meta[name="apple-mobile-web-app-status-bar-style"]'
@@ -10250,16 +10326,16 @@
         var resolvedPref =
           typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
         if (isLoading) {
-          var getPrimary =
-            typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
-              ? window.__SHIFT_FLOW_GET_PRIMARY__
+          var getChromeColor =
+            typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
+              ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
               : function (mode) {
-                  if (mode === 'dark') return '#4b67b3';
+                  if (mode === 'dark') return '#0b1224';
                   return '#557abb';
                 };
-          var primaryColor = getPrimary(resolvedPref);
-          if (metaTheme && primaryColor) {
-            metaTheme.setAttribute('content', primaryColor);
+          var chromeColor = getChromeColor(resolvedPref);
+          if (metaTheme && chromeColor) {
+            metaTheme.setAttribute('content', chromeColor);
           }
           if (appleStatus) {
             appleStatus.setAttribute('content', 'black-translucent');
@@ -11682,19 +11758,19 @@
         var appleStatus = document.querySelector(
           'meta[name="apple-mobile-web-app-status-bar-style"]'
         );
-        var getPrimary =
-          typeof window.__SHIFT_FLOW_GET_PRIMARY__ === 'function'
-            ? window.__SHIFT_FLOW_GET_PRIMARY__
+        var getChromeColor =
+          typeof window.__SHIFT_FLOW_GET_CHROME_COLOR__ === 'function'
+            ? window.__SHIFT_FLOW_GET_CHROME_COLOR__
             : function (mode) {
-                if (mode === 'dark') return '#4b67b3';
+                if (mode === 'dark') return '#0b1224';
                 return '#557abb';
               };
         var pref = document.documentElement.dataset.themePref || 'light';
         var resolvedPref =
           typeof resolveThemePreference === 'function' ? resolveThemePreference(pref) : pref;
-        var primaryColor = getPrimary(resolvedPref);
-        if (metaTheme && primaryColor) {
-          metaTheme.setAttribute('content', primaryColor);
+        var chromeColor = getChromeColor(resolvedPref);
+        if (metaTheme && chromeColor) {
+          metaTheme.setAttribute('content', chromeColor);
         }
         if (appleStatus) {
           appleStatus.setAttribute('content', 'black-translucent');

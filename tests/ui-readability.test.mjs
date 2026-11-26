@@ -29,3 +29,19 @@ test('部品ライブラリの文字色もダークテーマへ追従',()=>{
  assert.match(source,/--bs-body-color: var\(--text-900\)/);
  assert.match(source,/:root\[data-theme='dark'\] \.form-text/);
 });
+test('ダークの下部ナビと主要ボタンは十分なコントラストを持つ',()=>{
+ for(const [ink,bg,minimum] of [
+   ['footer-dark-ink','footer-dark-bg',4.5], ['text-900','footer-dark-active',4.5],
+   ['button-dark-ink','card',4.5], ['button-dark-ink','input-bg',4.5],
+   ['button-dark-border','card',3], ['primary-ink','surface',4.5],
+   ['text-900','button-dark-primary',4.5], ['text-900','button-dark-primary-hover',4.5],
+ ]) assert.ok(contrast(color(ink),color(bg))>=minimum,`${ink}/${bg}`);
+ assert.match(source, /\.footer-nav \.navbar-nav \.nav-link\s*\{\s*color: var\(--footer-dark-ink\)/);
+});
+test('iPhoneのステータスバーの背景は暗色画面と揃い、全画面の操作ボタンを覆わない',()=>{
+ assert.match(source, /viewport-fit=cover/);
+ assert.match(source, /:root\[data-theme='dark'\]\s*\{\s*background-color: var\(--surface\);\s*\}/);
+ assert.match(source, /:root\[data-theme='dark'\] body::before\s*\{\s*background: var\(--surface\);/);
+ assert.match(source, /\.modal-fullscreen-sm-down \.modal-header\s*\{\s*padding-top: calc\(18px \+ var\(--safe-top\)\);\s*background: var\(--surface\);/);
+ assert.match(source, /return theme === 'dark' \? computeSurfaceColor\(theme\) : computePrimaryColor\(theme\);/);
+});

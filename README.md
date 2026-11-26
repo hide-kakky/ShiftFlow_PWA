@@ -7,7 +7,7 @@ Cloudflare Pages と Pages Functions を中核に、Google OAuth・Cloudflare D1
 
 ## 運用メモ（Codex / Service Worker）
 
-- 現在の APP_VERSION: `2.3.12`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
+- 現在の APP_VERSION: `2.3.13`（`frontend/public/app-config.js` と `frontend/public/sw.js`）。フロントのファイルを一行でも触ったら、必ずこの値をインクリメントし、回答にも記載すること。
 - アプリ本体の更新案内は [更新案内の仕様](docs/app-update-notice.md) を参照。
 - 通知の現在仕様・アイコン件数・朝10時の任意リマインダーは [通知仕様](docs/web-push.md) と [2.2.9の変更・検証](docs/app-badge-reminder.md) を参照。
 - すべての回答で日本語のコミットメッセージ案と `git commit` コマンド例を提示すること。
